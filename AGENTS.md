@@ -70,7 +70,7 @@ read its latest review comment for what it's still flagging.
 
 ### Strict mode
 
-Strict mode is **off** in this repo (advisory only). Toggle by editing `.claude/skills/.clud-bug.json`:
+Strict mode is **on** in this repo (workflow check fails on critical findings). Toggle by editing `.claude/skills/.clud-bug.json`:
 
 ```json
 { "strictMode": true | false, ... }
@@ -94,5 +94,5 @@ Anthropic's `claude-code-action` refuses to run on PRs that modify its own
 workflow file. Use `clud-bug edit-workflow` to bundle workflow tweaks into
 their own isolated PR — see [README](https://github.com/thrillmot/clud-bug#when-you-edit-the-workflow).
 
-_Installed at clud-bug v0.5.10._
+_Installed at clud-bug v0.5.12._
 <!-- clud-bug-end -->

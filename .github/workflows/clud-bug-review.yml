@@ -1,4 +1,4 @@
-# clud-bug-template-version: v4
+# clud-bug-template-version: v6
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -50,7 +50,7 @@ jobs:
           echo "::error::Set it: Settings → Secrets and variables → Actions → New repository secret."
           exit 1
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@v1.0.133
         if: steps.guard.outputs.skip != 'true'
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -60,7 +60,7 @@ jobs:
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api graphql:*),Bash(gh api repos/:*),Bash(git show:*),Bash(cat .claude/skills/.clud-bug.json),Bash(cat .claude/skills/*/SKILL.md)"
           prompt: |
-            This project is "clud-bug". Claude PR review with project-aware skills. CLI installs a working GitHub Actions workflow and curates skills from skills.sh. It's primarily javascript.
+            This project is "clud-bug". Skill-driven Claude PR review. Ship a brand-voice skill, get brand reviews. Each finding cites the skill that motivated it. CLI installs the workflow + a baseline kit; add more from skills.sh. It's primarily javascript.
 
             Review this pull request for critical issues only. Focus on:
             - Bugs, logic errors, or incorrect behaviour
@@ -223,6 +223,6 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.10
+        uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.12
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
