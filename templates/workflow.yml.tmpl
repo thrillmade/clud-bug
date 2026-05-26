@@ -162,6 +162,14 @@ jobs:
                these threads — without inline review comments, the gate
                has nothing to gate on and the loop never closes.
 
+               Pass `confirmed: true` on every call to the tool. These
+               are final review comments, not test probes. Without
+               `confirmed: true` the tool defers each call to an
+               auto-classifier that decides post-hoc whether the comment
+               is "real" — and a classifier miscategorization re-opens
+               the exact silent-no-op failure mode this prompt is
+               designed to prevent.
+
                Findings that genuinely don't anchor to a specific line
                (cross-cutting observations, "missing test coverage for
                the new endpoint as a whole", etc.) stay in the summary
@@ -255,10 +263,17 @@ jobs:
               gh pr comment "$PR_NUMBER" --body "<your review>"
 
             Each inline finding is posted separately via the
-            mcp__github_inline_comment__create_inline_comment tool —
-            do that BEFORE posting the summary so the "still open" /
-            "resolved from prior" counters in the status block are
-            accurate.
+            mcp__github_inline_comment__create_inline_comment tool
+            (with `confirmed: true` per surface 1 above). Ordering
+            within the review pass that matters for counter accuracy:
+            (a) post new inline findings, (b) resolve prior threads
+            whose issue is now fixed (FIX-PUSH FLOW below — this is
+            what feeds the "resolved from prior" counter), (c) post
+            the summary comment. The summary's "still open" and
+            "resolved from prior" counters depend on the resolve-
+            mutations in step (b), not on the new posts in (a) —
+            so step (b) MUST run before the summary, but step (a)
+            and (b) can run in either order.
 
             FIX-PUSH FLOW (when prior claude[bot] threads exist):
             If you see prior claude[bot] inline review threads from
