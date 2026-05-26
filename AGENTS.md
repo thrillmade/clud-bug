@@ -7,41 +7,52 @@ files like `CLAUDE.md` or `.cursorrules` are stubs that point here so the
 guidance lives in one place.
 
 <!-- logmind-start -->
-<!-- logmind-block-version: v3-slim -->
-## Decision logging — see the `logmind` skill
+<!-- logmind-block-version: v4-slim -->
+## Decision logging — `logmind log` is the commit primitive
 
-This project uses [logmind](https://logmind.dev). The full procedure
-(when to log, how to log, what counts as a decision, branch routing) lives
-in the **`logmind` agent skill** which your runtime should auto-load.
+This project uses [logmind](https://logmind.dev) for decision logging. **`logmind log` replaces `git add`, `git commit`, and `git push`** for any change that carries a decision. Do not run those git commands directly when logging a decision — `logmind log` does all three in one step.
 
-If the skill isn't loaded for some reason, install it once:
+```bash
+logmind log "decision summary" -r "why" -a "alternative" -i "implication"
+```
+
+That single command:
+
+1. Writes the decision file (default branch → `docs/decisions.md`, feature branch → `docs/decisions-branches/<branch>.md`).
+2. Regenerates `docs/timeline.md` (and `file-structure.md` on the default branch).
+3. **`git add`** every change in the working tree (default `--stage all` since v0.2.7).
+4. **`git commit`** with message `logmind: <decision>`.
+5. **`git push`** to remote.
+
+That's it. No follow-up `git add`, no follow-up `git commit`, no follow-up `git push`, no follow-up `logmind timeline --write`.
+
+### When NOT to use `logmind log`
+
+- **The change has no decision worth recording** (typo fix, formatting, dependency-only patch bump) — use plain `git commit` then.
+- **You have unrelated WIP in the working tree** you don't want to commit — pass `--stage scoped` to stage only the decision files (rare for automated agents; they should be working on one thing at a time).
+
+### The full skill
+
+The complete procedure (when something counts as a decision, branch routing, doctor, refresh patterns) lives in the **`logmind` agent skill** at https://github.com/thrillmot/agent-skills/tree/main/skills/logmind. Most agent runtimes auto-load it. If yours doesn't:
 
 ```bash
 npx skills add https://github.com/thrillmot/agent-skills --skill logmind
 ```
 
-### Project-specific paths
+### Required reading before non-trivial work
 
-- **[docs/timeline.md](docs/timeline.md)** — auto-generated chronological overview across all branches; start here.
-- Recent decisions on the default branch: **[docs/decisions.md](docs/decisions.md)**
-- Per-branch decisions (in-flight feature work): **docs/decisions-branches/**
-- Archived decisions: **[docs/decisions-archive.md](docs/decisions-archive.md)**
-- Project tree (regenerated on main-branch logs + post-PR-merge): **[docs/file-structure.md](docs/file-structure.md)**
-
-### Quick reference
+1. **[docs/timeline.md](docs/timeline.md)** — chronological overview across all branches; start here.
+2. **[docs/decisions.md](docs/decisions.md)** — recent decisions on the default branch.
+3. **`docs/decisions-branches/<your-branch>.md`** if present — earlier decisions on this branch.
+4. **[docs/file-structure.md](docs/file-structure.md)** — current project tree.
 
 ```bash
-logmind log "decision summary" -r "why" -a "alternative" -i "implication"
 logmind show               # recent decisions on the current branch
 logmind search "keyword"   # full-text across recent + archive
+logmind doctor             # check installed version + workflow template drift
 ```
 
-**Use `logmind log` for the commit, not `git add` + `git commit`.** The
-`log` command writes the decision file, stages the decision log + its
-companion files, and creates the commit in one step. Use
-`--stage all` to also stage the rest of the working tree.
-
-**Read `docs/decisions.md` and the matching `docs/decisions-branches/<branch>.md` (if any) before starting any non-trivial task.** The team has likely already decided things you'd otherwise re-litigate.
+The team has likely already decided things you'd otherwise re-litigate.
 <!-- logmind-end -->
 
 ## Project Overview
