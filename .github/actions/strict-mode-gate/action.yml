@@ -3,7 +3,7 @@
 # Replaces the ~24 lines of inline shell that v0.5.x rendered into every
 # workflow template. Templates now reference it via:
 #
-#   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.10
+#   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.12
 #     if: success()
 #     with:
 #       github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -193,8 +193,9 @@ runs:
           exit 0
         fi
 
-        # Fetch comments + delegate body selection to Node via the same
-        # selectReviewBody helper the gate step uses for header selection.
+        # Fetch comments + delegate body selection to Node via the
+        # selectReviewBody helper (sibling of selectReviewHeader the
+        # gate step uses; same comment-filter contract, different return).
         # Pre-v0.5.12 this step had the same broken `.body | startswith(...)`
         # jq filter as the gate, so per-skill check-runs were silently
         # disabled on every install with strictSkills since BB.3 shipped
