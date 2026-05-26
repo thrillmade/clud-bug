@@ -1,6 +1,6 @@
 {
   "name": "clud-bug",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "description": "Claude PR review with project-aware skills. CLI installs a working GitHub Actions workflow and curates skills from skills.sh.",
   "homepage": "https://cludbug.dev",
   "bugs": "https://github.com/thrillmot/clud-bug/issues",

@@ -4,6 +4,24 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.5.12] — 2026-05-26
+
+### Fixed (correctness regression)
+
+- **Strict-mode gate now actually fires on critical findings.** The composite `strict-mode-gate` action's pre-v0.5.12 jq filter used `.body | startswith("## 🐛 Clud Bug review")` to find the bot's review comment. But `anthropics/claude-code-action` prepends a `**Claude finished @user's task in Nm Ns** —— [View job](...)` preamble to every bot comment, so the H2 sentinel never appears at body position 0. The filter matched **zero** comments in practice — silently disabling strict mode on every install with `strictMode: true` since v0.5.8 shipped the composite. Bot wrote `## 🐛 Clud Bug review — critical findings`, gate passed anyway.
+
+  **Discovery:** this repo dogfooded BB.3 on PR #60 (the first PR after #59 opted in). clud-bug-review flagged 1 critical finding with the strict-mode header — and the check passed when it shouldn't have. Caught by reading the workflow logs after merge.
+
+  **Fix:** moved the header-selection logic from bash regex into `lib/skills.js` as `selectReviewHeader(comments, botLogin)` + `extractFirstReviewHeaderLine(body)` + `isCriticalReviewHeader(headerLine)`. The composite action now calls into Node (same pattern v0.5.10's `classifyPerSkillOutcome` established for BB.3). Header-extraction is a multi-line regex anchored on start-of-line: `/^## 🐛 Clud Bug review[^\n]*/m`. Preserves the original "don't trip on quoted sentinels in body text" safety property — a comment that mentions the sentinel in prose (inline-code, blockquote) won't match because it's not at start-of-line.
+
+- **11 new unit tests** in `test/skills.test.js` pin the contract: extraction past the claude-code-action preamble (regression guard), null on no-sentinel input, no-match on quoted-in-prose, first-of-multiple H2 picked, bot-login filter respected, configurable `bot-login` for the v0.6 App's `clud-bug[bot]` identity, end-to-end with `isCriticalReviewHeader`.
+
+### Changed
+
+- **Composite action ref bumped `@v0.5.10` → `@v0.5.12`** in the 3 review workflow templates. Existing v5 installs auto-upgrade to v6 via v0.5.7's refresh-mode on the next `clud-bug update` and pick up the corrected gate.
+- **Template marker bumped `v5` → `v6`** in `workflow.yml.tmpl`, `workflow-ts.yml.tmpl`, `workflow-py.yml.tmpl`. `audit.yml.tmpl` (`v2`) and `self-update.yml.tmpl` (`v1`) unchanged — they don't carry the gate.
+- **`strict-mode-gate@v0.5.10` and `@v0.5.8` are now KNOWN-BROKEN.** Users on those refs should refresh via `npx clud-bug update` (or wait for Monday's self-update cron) to land on `@v0.5.12`. No data is at risk; the gate just hasn't been doing what its name promises.
+
 ## [0.5.11] — 2026-05-26
 
 ### Added
@@ -156,6 +174,7 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - **Bot-authored PRs are now handled gracefully.** PRs from `dependabot[bot]`, `renovate[bot]`, or forks (where GitHub deliberately doesn't pass repository secrets) used to fail loudly red — wrong signal. Now a guard step detects the case, posts a one-line advisory comment ("Clud Bug skipped — bot/fork PR cannot access secrets"), and exits 0. Check stays green; the skip is visible. Owner-authored PRs without the secret still fail loud.
 - **Site polish (carries over from the unreleased entry):** alive bug emoji (layered breathe + twitch + scuttle animations), Plate label gloss, thrillmot footer credit.
 
+[0.5.12]: https://github.com/thrillmot/clud-bug/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/thrillmot/clud-bug/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/thrillmot/clud-bug/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/thrillmot/clud-bug/compare/v0.5.8...v0.5.9
