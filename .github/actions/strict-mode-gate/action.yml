@@ -3,7 +3,7 @@
 # Replaces the ~24 lines of inline shell that v0.5.x rendered into every
 # workflow template. Templates now reference it via:
 #
-#   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.15
+#   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.16
 #     if: success()
 #     with:
 #       github-token: ${{ secrets.GITHUB_TOKEN }}

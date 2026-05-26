@@ -4,6 +4,23 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.5.16] — 2026-05-26
+
+### Improved (UX)
+
+- **`classifyPerSkillOutcome` accepts natural bot phrasings** in `lib/skills.js`. Previously the classifier required literal `0 findings` / `0 finding` / `n/a` to mark a per-skill check-run success. Natural phrasings the bot actually uses — `0 critical findings`, `no findings to anchor`, `zero performance findings`, `not applicable`, `✓ all anchored` — all classified as failure, causing recurring false-positive per-skill check-run fails on every clean PR with `strictSkills` set. v0.5.16 broadens the success regex:
+  - `\b(?:0|no|zero)\s+(?:\S+\s+){0,3}finding` — quantifier + 0–3 modifier words + "finding(s)". Matches "0 findings", "no findings to anchor", "0 critical findings", "zero performance findings".
+  - `\bnot\s+applicable\b` — explicit "not applicable" phrase.
+  - `(?:^|\s)✓(?:\s|$|[.,;:])` — checkmark as the bot's universal clean signal, anchored on whitespace/punctuation to avoid false matches.
+- **Hard-failure override preserved.** A new `\b[1-9]\d*\s+(?:\w+\s+){0,3}finding` regex catches any positive finding count (`1 finding`, `2 critical findings`, `10 findings`) BEFORE the success checks fire. So even if a line contains both `5 critical findings` AND `✓`, the failure wins. Existing `"10 findings"` regression test (from PR #57) still passes.
+- **Documented limitation:** skill-specific vocabulary like `0 pattern fights` or `0 contract breaks` (no literal `finding` word) still classifies as failure. Skill authors should prefer the canonical `0 findings` wording in per-skill scan lines so the classifier doesn't need per-skill vocabulary knowledge. The `✓` checkmark works as a universal escape hatch.
+
+### Changed
+
+- **Composite pin bumped `@v0.5.15` → `@v0.5.16`** in all 3 review templates per the v0.5.15 release-discipline lock-step rule. No functional composite change — same byte content; the pin moves with `lib/skills.js`.
+- **Template marker bumped `v9` → `v10`** so v0.5.7's refresh-mode propagates the new pin to existing installs.
+- **Test count: 165** (+8 new in `test/skills.test.js` covering the broadened classifier).
+
 ## [0.5.15] — 2026-05-26
 
 ### Added (release discipline)
@@ -234,6 +251,7 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - **Bot-authored PRs are now handled gracefully.** PRs from `dependabot[bot]`, `renovate[bot]`, or forks (where GitHub deliberately doesn't pass repository secrets) used to fail loudly red — wrong signal. Now a guard step detects the case, posts a one-line advisory comment ("Clud Bug skipped — bot/fork PR cannot access secrets"), and exits 0. Check stays green; the skip is visible. Owner-authored PRs without the secret still fail loud.
 - **Site polish (carries over from the unreleased entry):** alive bug emoji (layered breathe + twitch + scuttle animations), Plate label gloss, thrillmot footer credit.
 
+[0.5.16]: https://github.com/thrillmot/clud-bug/compare/v0.5.15...v0.5.16
 [0.5.15]: https://github.com/thrillmot/clud-bug/compare/v0.5.14...v0.5.15
 [0.5.14]: https://github.com/thrillmot/clud-bug/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/thrillmot/clud-bug/compare/v0.5.12...v0.5.13
