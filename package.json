@@ -1,7 +1,7 @@
 {
   "name": "clud-bug",
   "version": "0.5.12",
-  "description": "Claude PR review with project-aware skills. CLI installs a working GitHub Actions workflow and curates skills from skills.sh.",
+  "description": "Skill-driven Claude PR review. Ship a brand-voice skill, get brand reviews. Each finding cites the skill that motivated it. CLI installs the workflow + a baseline kit; add more from skills.sh.",
   "homepage": "https://cludbug.dev",
   "bugs": "https://github.com/thrillmot/clud-bug/issues",
   "type": "module",

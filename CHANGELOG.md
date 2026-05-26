@@ -4,6 +4,10 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Changed (docs/marketing, Stream BB.4)
+- **README first paragraph + npm `description` reframed skill-first.** Lead with "Ship a brand-voice skill, get brand reviews. Each finding cites the skill that motivated it." instead of the prior "project-aware skills" framing. Names the causal claim (write skill → get matching review) instead of describing the architecture. Baselines (bug-finding/security/perf/evidence) explicitly called out as out-of-the-box.
+- **`site/app/page.tsx` hero subtitle** swapped from `A field naturalist for your codebase.` → `Skills you write. Reviews the bot does.` Same field-naturalist binomial below as visual signature. Concrete value prop in the position a reader actually reads first.
+
 ## [0.5.12] — 2026-05-26
 
 ### Fixed (correctness regression)
