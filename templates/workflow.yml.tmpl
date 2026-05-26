@@ -1,4 +1,4 @@
-# clud-bug-template-version: v7
+# clud-bug-template-version: v8
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -316,6 +316,6 @@ jobs:
       # Letting the action's own failure fail the check is louder and right.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.12
+        uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.13
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
