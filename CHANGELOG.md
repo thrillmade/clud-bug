@@ -4,6 +4,18 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.5.14] — 2026-05-26
+
+### Fixed (shipping gap from v0.5.13)
+
+- **Composite ref bumped `@v0.5.12` → `@v0.5.13`** in `workflow.yml.tmpl`, `workflow-ts.yml.tmpl`, `workflow-py.yml.tmpl`. v0.5.13 shipped a sort fix in `lib/skills.js` (`selectReviewHeader` / `selectReviewBody` now sort newest-first explicitly) — but the templates kept the `@v0.5.12` composite pin. The composite resolves `lib/skills.js` from `${{ github.action_path }}/../../../lib/skills.js`, which is the composite's own checkout at the pinned tag. So at `@v0.5.12`, the composite kept loading the OLD `lib/skills.js` without the sort fix — meaning v0.5.13's fix was on npm but unreachable from any deployed workflow.
+- **Template marker bumped `v7` → `v8`** to trigger v0.5.7's refresh-mode on existing v7 installs. Existing strictMode installs auto-upgrade and finally pick up the gate fix that was supposed to land in v0.5.13.
+- No code or test changes — `lib/skills.js` is byte-identical to v0.5.13. The fix is purely the version pin in templates.
+
+### Process note
+
+This is the second time a fix in `lib/skills.js` shipped without the matching composite pin bump (v0.5.10 → v0.5.12 had the same pattern, but the bump was bundled into v0.5.12's PR). When `lib/skills.js` changes for the composite's use case, the templates MUST bump the composite pin in lock-step — otherwise installs run the old code. Worth adding a test that asserts the composite pin in templates matches the current package.json version.
+
 ## [0.5.13] — 2026-05-26
 
 ### Fixed (caught by PR #64 dogfood after the prompt change)
@@ -207,6 +219,7 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - **Bot-authored PRs are now handled gracefully.** PRs from `dependabot[bot]`, `renovate[bot]`, or forks (where GitHub deliberately doesn't pass repository secrets) used to fail loudly red — wrong signal. Now a guard step detects the case, posts a one-line advisory comment ("Clud Bug skipped — bot/fork PR cannot access secrets"), and exits 0. Check stays green; the skip is visible. Owner-authored PRs without the secret still fail loud.
 - **Site polish (carries over from the unreleased entry):** alive bug emoji (layered breathe + twitch + scuttle animations), Plate label gloss, thrillmot footer credit.
 
+[0.5.14]: https://github.com/thrillmot/clud-bug/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/thrillmot/clud-bug/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/thrillmot/clud-bug/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/thrillmot/clud-bug/compare/v0.5.10...v0.5.11
