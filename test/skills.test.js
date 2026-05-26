@@ -9,6 +9,8 @@ import {
   removeSkill, listInstalled, diffManifest,
   readReviewMode, partitionByReviewMode,
   extractPerSkillLine, classifyPerSkillOutcome,
+  selectReviewHeader, extractFirstReviewHeaderLine, isCriticalReviewHeader,
+  selectReviewBody,
   _internal,
 } from '../lib/skills.js';
 
@@ -632,4 +634,228 @@ test('readReviewMode: all 4 bundled baseline skills declare shared mode', async 
     const content = await readFile(join(baselineDir, name), 'utf8');
     assert.equal(readReviewMode(content), 'shared', `baseline ${name} should be shared-mode`);
   }
+});
+
+// --- v0.5.12: strict-mode-gate header selection (preamble bug fix) ---
+// Pre-v0.5.12, the composite filter used `.body | startswith("## 🐛 Clud Bug review")`
+// in jq. claude-code-action prepends `**Claude finished @user's task in Nm Ns**`
+// to every bot comment, so the H2 header never sat at body position 0 — the
+// filter matched zero comments and strict mode was silently disabled on every
+// install with strictMode: true. PR #60 dogfooded BB.3 and caught it; v0.5.12
+// extracts the H2 line by multi-line regex anchor instead.
+
+// The exact body shape claude-code-action posts in production: a "Claude
+// finished" preamble + a horizontal rule + the real review body.
+const BOT_PREAMBLE_COMMENT = [
+  "**Claude finished @thrillmot's task in 3m 23s** —— [View job](https://example.com)",
+  '',
+  '---',
+  '## 🐛 Clud Bug review — critical findings',
+  '',
+  '**This round:** 1 critical · 0 minor · 0 resolved from prior · 0 still open',
+  '',
+  '### Critical findings',
+  '...',
+].join('\n');
+
+const BOT_CLEAN_COMMENT = [
+  "**Claude finished @thrillmot's task in 1m 47s** —— [View job](https://example.com)",
+  '',
+  '---',
+  '## 🐛 Clud Bug review — clean',
+  '',
+  '**This round:** 0 critical · 0 minor · 0 resolved from prior · 0 still open',
+].join('\n');
+
+test('extractFirstReviewHeaderLine: extracts the H2 header line past claude-code-action preamble', () => {
+  // REGRESSION GUARD: pre-v0.5.12 startswith() returned null/empty here.
+  assert.equal(
+    extractFirstReviewHeaderLine(BOT_PREAMBLE_COMMENT),
+    '## 🐛 Clud Bug review — critical findings',
+  );
+  assert.equal(
+    extractFirstReviewHeaderLine(BOT_CLEAN_COMMENT),
+    '## 🐛 Clud Bug review — clean',
+  );
+});
+
+test('extractFirstReviewHeaderLine: returns null when no H2 sentinel present', () => {
+  assert.equal(extractFirstReviewHeaderLine('just some comment text'), null);
+  assert.equal(extractFirstReviewHeaderLine(''), null);
+  assert.equal(extractFirstReviewHeaderLine(null), null);
+  assert.equal(extractFirstReviewHeaderLine(42), null);
+});
+
+test('extractFirstReviewHeaderLine: does NOT match the sentinel quoted in prose (start-of-line anchored)', () => {
+  // The "don't trip on quoted sentinels" safety property the pre-v0.5.12
+  // gate had via startswith — preserved here via the (?m)^ anchor.
+  const quotedInProse = [
+    'Some bot mentioning the strict-mode header `## 🐛 Clud Bug review — critical findings`',
+    'in inline-code, not as a real header.',
+  ].join('\n');
+  assert.equal(extractFirstReviewHeaderLine(quotedInProse), null);
+});
+
+test('extractFirstReviewHeaderLine: picks the FIRST H2 sentinel when multiple appear', () => {
+  // Bot's prompt body sometimes documents the strict-mode header variants
+  // in its own output. The FIRST line-anchored match is the real header.
+  const multiSentinel = [
+    'preamble',
+    '## 🐛 Clud Bug review — clean',
+    '',
+    'In strict mode the header is either:',
+    '## 🐛 Clud Bug review — clean',
+    '## 🐛 Clud Bug review — critical findings',
+  ].join('\n');
+  assert.equal(extractFirstReviewHeaderLine(multiSentinel), '## 🐛 Clud Bug review — clean');
+});
+
+test('selectReviewHeader: returns the H2 header from the latest claude[bot] comment past the preamble', () => {
+  // Comments arrive newest-first from `gh api ...?sort=created&direction=desc`.
+  const comments = [
+    { user: { login: 'claude[bot]' }, body: BOT_PREAMBLE_COMMENT },
+    { user: { login: 'claude[bot]' }, body: 'older bot comment without the H2 sentinel' },
+  ];
+  assert.equal(
+    selectReviewHeader(comments, 'claude[bot]'),
+    '## 🐛 Clud Bug review — critical findings',
+  );
+});
+
+test('selectReviewHeader: skips non-bot comments even when they contain the sentinel', () => {
+  // A user comment that quotes the sentinel must not satisfy the gate.
+  const comments = [
+    { user: { login: 'someuser' }, body: '## 🐛 Clud Bug review — critical findings (quoting the bot)' },
+    { user: { login: 'claude[bot]' }, body: BOT_CLEAN_COMMENT },
+  ];
+  assert.equal(
+    selectReviewHeader(comments, 'claude[bot]'),
+    '## 🐛 Clud Bug review — clean',
+  );
+});
+
+test('selectReviewHeader: returns null when no bot comment has the sentinel', () => {
+  const comments = [
+    { user: { login: 'claude[bot]' }, body: 'preamble only, no review header' },
+    { user: { login: 'claude[bot]' }, body: '**Claude finished**\n\nWorking...' },
+  ];
+  assert.equal(selectReviewHeader(comments, 'claude[bot]'), null);
+});
+
+test('selectReviewHeader: handles missing/malformed inputs safely', () => {
+  assert.equal(selectReviewHeader(null, 'claude[bot]'), null);
+  assert.equal(selectReviewHeader([], 'claude[bot]'), null);
+  assert.equal(selectReviewHeader([{ user: { login: 'claude[bot]' }, body: BOT_CLEAN_COMMENT }], ''), null);
+  assert.equal(selectReviewHeader([{ user: null, body: BOT_CLEAN_COMMENT }], 'claude[bot]'), null);
+  assert.equal(selectReviewHeader([null, undefined, 'not-an-object'], 'claude[bot]'), null);
+});
+
+test('selectReviewHeader: configurable bot-login works for the v0.6 App identity (clud-bug[bot])', () => {
+  // The composite action exposes `bot-login` as an input (defaults to claude[bot]).
+  // v0.6 will post as clud-bug[bot]; the same logic must drive that gate.
+  const comments = [
+    { user: { login: 'clud-bug[bot]' }, body: BOT_PREAMBLE_COMMENT },
+  ];
+  assert.equal(
+    selectReviewHeader(comments, 'clud-bug[bot]'),
+    '## 🐛 Clud Bug review — critical findings',
+  );
+  // Wrong bot-login finds nothing.
+  assert.equal(selectReviewHeader(comments, 'claude[bot]'), null);
+});
+
+test('isCriticalReviewHeader: only matches the "— critical findings" variant', () => {
+  assert.equal(isCriticalReviewHeader('## 🐛 Clud Bug review — critical findings'), true);
+  assert.equal(isCriticalReviewHeader('## 🐛 Clud Bug review — clean'), false);
+  // The non-strict-mode bare header should also not fire the gate.
+  assert.equal(isCriticalReviewHeader('## 🐛 Clud Bug review'), false);
+  assert.equal(isCriticalReviewHeader(null), false);
+  assert.equal(isCriticalReviewHeader(''), false);
+});
+
+test('selectReviewBody: returns FULL body of the latest bot review past the preamble (BB.3 fix)', () => {
+  // REGRESSION GUARD: pre-v0.5.12 BB.3 step 2 used the same broken
+  // .body | startswith() jq filter as the gate step. Per-skill check-runs
+  // were silently disabled on every install with strictSkills since v0.5.10.
+  // Caught by both bots on PR #61.
+  const comments = [
+    { user: { login: 'claude[bot]' }, body: BOT_PREAMBLE_COMMENT },
+    { user: { login: 'claude[bot]' }, body: 'older bot comment without the H2 sentinel' },
+  ];
+  // Must return the FULL body (not just the header line) — BB.3 needs the
+  // body to grep the "### Per-skill scan" block for per-skill outcomes.
+  assert.equal(selectReviewBody(comments, 'claude[bot]'), BOT_PREAMBLE_COMMENT);
+});
+
+test('selectReviewBody: filters out user-authored comments even when they contain the sentinel', () => {
+  const comments = [
+    { user: { login: 'someuser' }, body: BOT_CLEAN_COMMENT }, // user quoting the bot
+    { user: { login: 'claude[bot]' }, body: BOT_PREAMBLE_COMMENT },
+  ];
+  assert.equal(selectReviewBody(comments, 'claude[bot]'), BOT_PREAMBLE_COMMENT);
+});
+
+test('selectReviewBody: returns null when no bot comment has the sentinel', () => {
+  const comments = [
+    { user: { login: 'claude[bot]' }, body: 'preamble only, no review header' },
+    { user: { login: 'claude[bot]' }, body: '**Claude finished**\n\nWorking...' },
+  ];
+  assert.equal(selectReviewBody(comments, 'claude[bot]'), null);
+});
+
+test('selectReviewBody: handles missing/malformed inputs safely', () => {
+  assert.equal(selectReviewBody(null, 'claude[bot]'), null);
+  assert.equal(selectReviewBody([], 'claude[bot]'), null);
+  assert.equal(selectReviewBody([{ user: { login: 'claude[bot]' }, body: BOT_CLEAN_COMMENT }], ''), null);
+  assert.equal(selectReviewBody([{ user: null, body: BOT_CLEAN_COMMENT }], 'claude[bot]'), null);
+  assert.equal(selectReviewBody([null, undefined, 'not-an-object'], 'claude[bot]'), null);
+});
+
+test('selectReviewBody: configurable bot-login works for v0.6 App identity', () => {
+  // Symmetric with selectReviewHeader — both helpers must accept the
+  // App's clud-bug[bot] identity when v0.6 ships.
+  const comments = [{ user: { login: 'clud-bug[bot]' }, body: BOT_CLEAN_COMMENT }];
+  assert.equal(selectReviewBody(comments, 'clud-bug[bot]'), BOT_CLEAN_COMMENT);
+  assert.equal(selectReviewBody(comments, 'claude[bot]'), null);
+});
+
+test('selectReviewBody + extractPerSkillLine: end-to-end BB.3 path works through the preamble', () => {
+  // The full BB.3 step 2 flow:
+  //   1. gh api → comments list with preamble-prefixed bot comments
+  //   2. selectReviewBody → real review body
+  //   3. extractPerSkillLine → per-skill outcome line
+  //   4. classifyPerSkillOutcome → check-run conclusion
+  // Pre-v0.5.12 step 2 silently returned empty body for every install.
+  const reviewWithSkills = [
+    "**Claude finished @user's task in 2m 47s** —— [View job](https://example.com)",
+    '',
+    '---',
+    '## 🐛 Clud Bug review — clean',
+    '',
+    '**This round:** 0 critical · 0 minor · 0 resolved from prior · 0 still open',
+    '',
+    '### Per-skill scan',
+    '- [critical-issues-only]: scanned all paths. 0 findings.',
+    '- [evidence-based-review]: applied to all findings. ✓ all anchored.',
+    '- [brand-voice-review]: scanned 2 microcopy changes. 1 finding (below).',
+  ].join('\n');
+  const comments = [{ user: { login: 'claude[bot]' }, body: reviewWithSkills }];
+  const body = selectReviewBody(comments, 'claude[bot]');
+  assert.ok(body, 'selectReviewBody must return the body past the preamble');
+  // Now the BB.3 step can extract per-skill outcomes from it.
+  assert.equal(extractPerSkillLine(body, 'critical-issues-only'), 'scanned all paths. 0 findings.');
+  assert.equal(extractPerSkillLine(body, 'brand-voice-review'), 'scanned 2 microcopy changes. 1 finding (below).');
+});
+
+test('isCriticalReviewHeader: end-to-end with selectReviewHeader matches the v0.5.x gate contract', () => {
+  // Synthesize the exact data flow the composite action sees: a list of
+  // comments from gh api, filter via selectReviewHeader, then ask whether
+  // the result is the critical variant.
+  const failingComments = [{ user: { login: 'claude[bot]' }, body: BOT_PREAMBLE_COMMENT }];
+  const passingComments = [{ user: { login: 'claude[bot]' }, body: BOT_CLEAN_COMMENT }];
+  const noReviewYet = [];
+
+  assert.equal(isCriticalReviewHeader(selectReviewHeader(failingComments, 'claude[bot]')), true);
+  assert.equal(isCriticalReviewHeader(selectReviewHeader(passingComments, 'claude[bot]')), false);
+  assert.equal(isCriticalReviewHeader(selectReviewHeader(noReviewYet, 'claude[bot]')), false);
 });

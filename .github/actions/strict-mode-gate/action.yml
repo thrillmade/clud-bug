@@ -3,7 +3,7 @@
 # Replaces the ~24 lines of inline shell that v0.5.x rendered into every
 # workflow template. Templates now reference it via:
 #
-#   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.10
+#   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.12
 #     if: success()
 #     with:
 #       github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -78,26 +78,68 @@ runs:
         STRICT=$(echo "$BASE_MANIFEST" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(s).strictMode===true)}catch(e){console.log('false')}})")
         [ "$STRICT" = "true" ] || exit 0
 
-        # Use startswith (not regex contains) so comments that *quote* the
-        # sentinel header (other reviews, @claude responses, meta-PRs about
-        # strict mode itself) don't get picked up as "the latest review."
+        # Header selection + critical-findings classification is delegated
+        # to Node helpers in lib/skills.js. Two reasons:
+        #   1. Bash regex is the source of the v0.5.10→v0.5.12 regression
+        #      this action exists to prevent: pre-v0.5.12 the filter used
+        #      `.body | startswith(...)` in jq, which matched zero comments
+        #      because anthropics/claude-code-action prepends a `**Claude
+        #      finished ...**` preamble to every bot comment. Strict mode
+        #      was silently disabled on every install with strictMode: true.
+        #      Caught when this repo dogfooded BB.3 on PR #60.
+        #   2. The v0.6 GitHub App will reuse the SAME selectReviewHeader +
+        #      isCriticalReviewHeader helpers when it routes its own
+        #      parallel calls. Single source of truth, unit-tested at
+        #      test/skills.test.js, no bash-vs-JS drift.
         #
-        # BOT_LOGIN is read by jq via env.BOT_LOGIN (jq's native env-var
-        # access) so a value containing `"` or `\` can't break the filter
-        # the way shell interpolation would. Defense in depth — current
-        # callers (claude[bot], the v0.6 clud-bug[bot]) are safe literals,
-        # but this guards any future caller that wires bot-login from a
-        # less-trusted source.
-        LATEST=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100" \
-          --jq '[.[] | select(.user.login == env.BOT_LOGIN and (.body | startswith("## 🐛 Clud Bug review")))][0].body // ""')
-
-        # Scope the critical-findings match to the FIRST LINE so quoted
-        # sentinels deeper in the review can't trip the gate.
-        if echo "$LATEST" | head -n1 | grep -q "Clud Bug review — critical findings"; then
-          echo "::error title=Clud Bug 🐛::Critical issues found and strictMode is enabled — failing this check."
-          echo "::error::See the latest Clud Bug review comment for details. Push a fix and the gate will clear on the next run."
+        # The classifier is sourced from this repo at the same ref the
+        # composite is pinned at (thrillmot/clud-bug@<ref>/lib/skills.js
+        # is the action's own checkout when consumed remotely via
+        # `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`).
+        SKILLS_LIB="${{ github.action_path }}/../../../lib/skills.js"
+        if [ ! -f "$SKILLS_LIB" ]; then
+          echo "::error title=Clud Bug 🐛::Strict-mode gate classifier not found at $SKILLS_LIB."
+          echo "::error::Composite action may be running outside its expected layout. Falling open is unsafe for strict mode — failing the check."
           exit 1
         fi
+
+        # Fetch all bot-authored PR comments as JSON. gh api returns them
+        # in created order; we pass desc so newest is first, matching what
+        # selectReviewHeader walks. Pipe to Node for selection.
+        COMMENTS_JSON=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100")
+
+        # Returns "CRITICAL", "CLEAN", or "NONE" (no review header found).
+        # "CLEAN" includes both the strict-mode "— clean" header and the
+        # non-strict bare header — neither fires the gate. "NONE" includes
+        # the case where the bot hasn't posted yet (review-in-flight),
+        # which should also not fail the gate (the master check status
+        # already reflects an action failure if one occurred).
+        VERDICT=$(SKILLS_LIB="$SKILLS_LIB" BOT_LOGIN="$BOT_LOGIN" COMMENTS_JSON="$COMMENTS_JSON" node -e "
+          import('file://' + process.env.SKILLS_LIB).then(({ selectReviewHeader, isCriticalReviewHeader }) => {
+            const comments = JSON.parse(process.env.COMMENTS_JSON || '[]');
+            const header = selectReviewHeader(comments, process.env.BOT_LOGIN);
+            if (header === null) process.stdout.write('NONE');
+            else if (isCriticalReviewHeader(header)) process.stdout.write('CRITICAL');
+            else process.stdout.write('CLEAN');
+          }).catch(e => { console.error('gate classifier failed:', e.message); process.exit(2); });
+        ") || {
+          echo "::error::Strict-mode gate classifier failed — see preceding error."
+          exit 1
+        }
+
+        case "$VERDICT" in
+          CRITICAL)
+            echo "::error title=Clud Bug 🐛::Critical issues found and strictMode is enabled — failing this check."
+            echo "::error::See the latest Clud Bug review comment for details. Push a fix and the gate will clear on the next run."
+            exit 1
+            ;;
+          CLEAN)
+            echo "::notice title=Clud Bug 🐛::Clean review — strict mode passed."
+            ;;
+          NONE)
+            echo "::notice title=Clud Bug 🐛::No clud-bug review comment found yet — strict mode advisory for this run."
+            ;;
+        esac
 
     - name: 'Per-skill check-runs (BB.3)'
       # Always run after the gate — even on strict-mode failure, the
@@ -141,9 +183,34 @@ runs:
           exit 0
         fi
 
-        # Fetch the latest review comment again (different step, no shared state).
-        LATEST=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100" \
-          --jq '[.[] | select(.user.login == env.BOT_LOGIN and (.body | startswith("## 🐛 Clud Bug review")))][0].body // ""')
+        # The classifier is sourced from this repo at the same ref the
+        # composite is pinned at (thrillmot/clud-bug@<ref>/lib/skills.js
+        # is the action's own checkout when consumed remotely via
+        # `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`).
+        SKILLS_LIB="${{ github.action_path }}/../../../lib/skills.js"
+        if [ ! -f "$SKILLS_LIB" ]; then
+          echo "::warning::Per-skill check-runs disabled — classifier at $SKILLS_LIB not found. (Composite action may be running outside its expected layout.)"
+          exit 0
+        fi
+
+        # Fetch comments + delegate body selection to Node via the
+        # selectReviewBody helper (sibling of selectReviewHeader the
+        # gate step uses; same comment-filter contract, different return).
+        # Pre-v0.5.12 this step had the same broken `.body | startswith(...)`
+        # jq filter as the gate, so per-skill check-runs were silently
+        # disabled on every install with strictSkills since BB.3 shipped
+        # in v0.5.10. Caught by both bots on PR #61.
+        COMMENTS_JSON=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100")
+        LATEST=$(SKILLS_LIB="$SKILLS_LIB" BOT_LOGIN="$BOT_LOGIN" COMMENTS_JSON="$COMMENTS_JSON" node -e "
+          import('file://' + process.env.SKILLS_LIB).then(({ selectReviewBody }) => {
+            const comments = JSON.parse(process.env.COMMENTS_JSON || '[]');
+            const body = selectReviewBody(comments, process.env.BOT_LOGIN);
+            if (body !== null) process.stdout.write(body);
+          }).catch(e => { console.error('body-selector failed:', e.message); process.exit(2); });
+        ") || {
+          echo "::error::Per-skill check-runs body-selector failed — see preceding error."
+          exit 1
+        }
 
         if [ -z "$LATEST" ]; then
           echo "::warning::No clud-bug review comment found yet — skipping per-skill check-runs."
@@ -156,16 +223,6 @@ runs:
         # the source of a "0 findings substring matches 10 findings" bug
         # caught on PR #57. See classifyPerSkillOutcome in lib/skills.js
         # for the contract.
-        #
-        # The classifier is sourced from this repo at the same ref the
-        # composite is pinned at (thrillmot/clud-bug@<ref>/lib/skills.js
-        # is the action's own checkout when consumed remotely via
-        # `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`).
-        SKILLS_LIB="${{ github.action_path }}/../../../lib/skills.js"
-        if [ ! -f "$SKILLS_LIB" ]; then
-          echo "::warning::Per-skill check-runs disabled — classifier at $SKILLS_LIB not found. (Composite action may be running outside its expected layout.)"
-          exit 0
-        fi
 
         # Pre-export the constants Node needs.
         export LATEST STRICT_SKILLS SKILLS_LIB
