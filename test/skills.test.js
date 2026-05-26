@@ -563,6 +563,67 @@ test('classifyPerSkillOutcome: any other finding count → failure', () => {
   assert.equal(classifyPerSkillOutcome('scanned 3 microcopy changes. 1 finding (below).'), 'failure');
 });
 
+// --- v0.5.16: classifier broadened to accept natural bot phrasings ---
+// Pre-v0.5.16 required literal "0 findings" / "n/a"; natural phrasings like
+// "0 critical findings" or "no findings to anchor" or "applied. ✓ all anchored"
+// classified as failure even though they're clearly clean reports. Caused
+// recurring false-positive per-skill check-run fails on every clean PR with
+// strictSkills set.
+
+test('classifyPerSkillOutcome v0.5.16: "0 critical findings" → success', () => {
+  // Bot's natural phrasing when no findings of the dominant severity.
+  assert.equal(classifyPerSkillOutcome('scanned all paths. 0 critical findings.'), 'success');
+  assert.equal(classifyPerSkillOutcome('0 critical findings, 0 minor.'), 'success');
+});
+
+test('classifyPerSkillOutcome v0.5.16: "no findings" / "no findings to anchor" → success', () => {
+  assert.equal(classifyPerSkillOutcome('no findings to anchor — nothing to apply against.'), 'success');
+  assert.equal(classifyPerSkillOutcome('no findings.'), 'success');
+  assert.equal(classifyPerSkillOutcome('scanned the diff. no findings.'), 'success');
+});
+
+test('classifyPerSkillOutcome v0.5.16: "zero findings" / "zero X findings" → success', () => {
+  assert.equal(classifyPerSkillOutcome('zero findings.'), 'success');
+  assert.equal(classifyPerSkillOutcome('zero performance findings on this diff.'), 'success');
+});
+
+test('classifyPerSkillOutcome v0.5.16: "not applicable" → success', () => {
+  assert.equal(classifyPerSkillOutcome('not applicable — no public API surface.'), 'success');
+  assert.equal(classifyPerSkillOutcome('Not applicable.'), 'success');
+});
+
+test('classifyPerSkillOutcome v0.5.16: ✓ checkmark as clean signal → success', () => {
+  // Bot's universal "all good" mark, anchored on whitespace/punctuation.
+  assert.equal(classifyPerSkillOutcome('applied to all findings. ✓ all anchored.'), 'success');
+  assert.equal(classifyPerSkillOutcome('scanned. ✓'), 'success');
+  assert.equal(classifyPerSkillOutcome('✓ everything checks out.'), 'success');
+});
+
+test('classifyPerSkillOutcome v0.5.16: REGRESSION — broadened patterns must NOT pass real failures', () => {
+  // Hard-failure override stays loud even when the line ALSO contains a
+  // success-like signal. Example: "1 critical finding ✓ verified anchored"
+  // — the ✓ refers to evidence anchoring, NOT a clean verdict.
+  assert.equal(classifyPerSkillOutcome('1 critical finding ✓ verified anchored.'), 'failure');
+  assert.equal(classifyPerSkillOutcome('5 critical findings below. ✓'), 'failure');
+  // "10 findings" must still fail under the new regex (regression from PR #57 bug).
+  assert.equal(classifyPerSkillOutcome('scanned. 10 findings (below).'), 'failure');
+  assert.equal(classifyPerSkillOutcome('scanned. 100 findings.'), 'failure');
+  // "applied to all findings" without a numeric/no/zero qualifier ≠ clean.
+  // Without the ✓ at end this should be ambiguous → failure (loud).
+  assert.equal(classifyPerSkillOutcome('applied to all findings.'), 'failure');
+});
+
+test('classifyPerSkillOutcome v0.5.16: skill-specific vocab without "finding" still fails (documented limitation)', () => {
+  // The bot sometimes writes per-skill vocab ("0 pattern fights",
+  // "0 contract breaks", etc.) instead of canonical "0 findings".
+  // The classifier doesn't know skill-specific synonyms; documented
+  // limitation. Skill authors should prefer canonical wording.
+  assert.equal(classifyPerSkillOutcome('scanned for pattern fights. 0 pattern fights.'), 'failure');
+  assert.equal(classifyPerSkillOutcome('checked for contract breaks. 0 contract breaks.'), 'failure');
+  // BUT: if they include "✓" as the universal clean signal, it passes.
+  assert.equal(classifyPerSkillOutcome('scanned for pattern fights. ✓'), 'success');
+});
+
 test('classifyPerSkillOutcome: "n/a" → success', () => {
   assert.equal(classifyPerSkillOutcome('n/a — no API surface in this diff.'), 'success');
   // Trailing punctuation handled.
