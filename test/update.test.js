@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runUpdate } from '../lib/update.js';
+import { DEFAULTS } from '../lib/render.js';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(REPO_ROOT, 'templates');
@@ -152,8 +153,19 @@ test('runUpdate: re-renders audit + self-update workflows when installed (stale 
     const audit = await readFile(join(dir, '.github/workflows/clud-bug-audit.yml'), 'utf8');
     assert.match(audit, /Clud Bug 🐛 Audit/);
     assert.ok(r.changed.some((c) => c.label === 'audit workflow'));
+    // v0.5.11 regression guard: audit must flow through renderFile so
+    // {{CCA_VERSION}} substitution lands. The pre-v0.5.11 readFile path
+    // would leak the literal placeholder into installed workflows. Both
+    // bots on PR #60 caught the test gap — pin the wiring at this layer.
+    const ccaPin = DEFAULTS.CCA_VERSION.replace(/\./g, '\\.');
+    assert.match(audit, new RegExp(`claude-code-action@${ccaPin}`));
+    assert.doesNotMatch(audit, /\{\{CCA_VERSION\}\}/);
     const selfUpd = await readFile(join(dir, '.github/workflows/clud-bug-self-update.yml'), 'utf8');
     assert.match(selfUpd, /Self-Update/);
     assert.ok(r.changed.some((c) => c.label === 'self-update workflow'));
+    // Same regression guard for self-update — no CCA ref today but the
+    // file must not contain ANY unsubstituted {{X}} placeholders, which
+    // would indicate renderFile silently regressed back to readFile.
+    assert.doesNotMatch(selfUpd, /\{\{[A-Z_]+\}\}/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
