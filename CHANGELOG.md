@@ -4,7 +4,26 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
-### Changed (docs/marketing, Stream BB.4)
+## [0.5.13] — 2026-05-26
+
+### Fixed (silent no-op since launch)
+
+- **The bot now actually posts inline review threads.** Pre-v0.5.13 the workflow prompt told the bot to "post your review as a single PR comment" with a buried, weakly-phrased mention of the `mcp__github_inline_comment__create_inline_comment` MCP tool. Effect: every review across every install posted a top-level PR comment (not gateable) and **zero inline review threads** (the only thing GitHub's `required_review_thread_resolution` rule operates on). The reporulez `clud-bug-logmind` ruleset variant has the rule turned on, so the gate has been sitting idle waiting for the bot to actually produce threads — *the entire fix-and-resolve loop the README + status block were designed around has been a silent no-op since the bot shipped*. Caught when verifying PR #63's gate behavior end-to-end.
+
+- **Prompt restructure makes inline threads the primary surface for each finding**, with the top-level summary PR comment as the secondary surface for the strict-mode gate header + status block. The default is now: if a finding can name `file:line`, post it inline via the MCP tool; fall back to summary-only only for structural / cross-cutting findings. Each inline finding becomes a resolvable conversation the author can mark resolved when the fix lands; the loop that produces the "resolved from prior" counter in v0.5.4's status block now has real data to count.
+
+- **Fix-push flow strengthened.** The prompt now explicitly tells the bot to list prior `claude[bot]` inline review threads via GraphQL and resolve the ones whose issue is verifiably fixed in the head diff, ordered BEFORE the new review posts. This is the loop-closing signal — the "resolved from prior" counter proving the bot read the author's fixes — that v0.5.4 introduced as a UI feature without the underlying prompt flow.
+
+### Changed
+
+- **Template marker bumped `v6` → `v7`** in `workflow.yml.tmpl`, `workflow-ts.yml.tmpl`, `workflow-py.yml.tmpl`. Existing v6 installs auto-upgrade via v0.5.7's refresh-mode on the next `clud-bug update`.
+- `audit.yml.tmpl` (`v2`) and `self-update.yml.tmpl` (`v1`) unchanged — they don't carry the review prompt.
+
+### Migration / dogfood
+
+Repos already running with `required_review_thread_resolution: true` (any install from the reporulez `clud-bug-logmind` variant) immediately benefit on the next PR opened against `main` after `clud-bug update` lands. Threads block merge until resolved. No ruleset change required.
+
+### Changed (docs/marketing, Stream BB.4 — carry over)
 - **README first paragraph + npm `description` reframed skill-first.** Lead with "Ship a brand-voice skill, get brand reviews. Each finding cites the skill that motivated it." instead of the prior "project-aware skills" framing. Names the causal claim (write skill → get matching review) instead of describing the architecture. Baselines (bug-finding/security/perf/evidence) explicitly called out as out-of-the-box.
 - **`site/app/page.tsx` hero subtitle** swapped from `A field naturalist for your codebase.` → `Skills you write. Reviews the bot does.` Same field-naturalist binomial below as visual signature. Concrete value prop in the position a reader actually reads first.
 
@@ -184,6 +203,7 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - **Bot-authored PRs are now handled gracefully.** PRs from `dependabot[bot]`, `renovate[bot]`, or forks (where GitHub deliberately doesn't pass repository secrets) used to fail loudly red — wrong signal. Now a guard step detects the case, posts a one-line advisory comment ("Clud Bug skipped — bot/fork PR cannot access secrets"), and exits 0. Check stays green; the skip is visible. Owner-authored PRs without the secret still fail loud.
 - **Site polish (carries over from the unreleased entry):** alive bug emoji (layered breathe + twitch + scuttle animations), Plate label gloss, thrillmot footer credit.
 
+[0.5.13]: https://github.com/thrillmot/clud-bug/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/thrillmot/clud-bug/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/thrillmot/clud-bug/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/thrillmot/clud-bug/compare/v0.5.9...v0.5.10
