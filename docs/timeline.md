@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-26** — Stream BB.4: skill-first marketing copy refresh (README + npm + site hero) *(docs/skill-first-marketing-bb4)* — [decisions-branches/docs__skill-first-marketing-bb4.md](decisions-branches/docs__skill-first-marketing-bb4.md)
 - **2026-05-26** — Fix strict-mode-gate body-start matching bug (v0.5.12) *(fix/strict-mode-gate-preamble-v0.5.12)* — [decisions-branches/fix__strict-mode-gate-preamble-v0.5.12.md](decisions-branches/fix__strict-mode-gate-preamble-v0.5.12.md)
 - **2026-05-26** — Pin claude-code-action via {{CCA_VERSION}} substitution + route audit/self-update through renderFile (v0.5.11) *(feat/cca-version-pinning)* — [decisions-branches/feat__cca-version-pinning.md](decisions-branches/feat__cca-version-pinning.md)
 - **2026-05-26** — Opt this repo into strictMode + strictSkills for the 4 baselines (dogfood BB.3) *(chore/strict-skills-opt-in-baselines)* — [decisions-branches/chore__strict-skills-opt-in-baselines.md](decisions-branches/chore__strict-skills-opt-in-baselines.md)

@@ -28,7 +28,7 @@ export default async function Home() {
             Clud <em>Bug</em>.
           </h1>
           <p className="subtitle appear-2">
-            A field naturalist for your codebase.
+            Skills you write. Reviews the bot does.
             <em className="binomial">— Cluddus bugfindii, observed crawling on every PR.</em>
           </p>
           <pre className="install-box appear-3">npx clud-bug init</pre>

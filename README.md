@@ -3,9 +3,11 @@
 
 > **[cludbug.dev](https://cludbug.dev)** · live field journal.
 
-Clud Bug is a Claude PR-review naturalist for your GitHub repo. It pins **project-aware skills** auto-discovered from [skills.sh](https://skills.sh) and ships a baseline kit of review discipline so reviews stay focused on what matters: bugs, security, performance, and missing tests.
+Clud Bug is **skill-driven PR review** for your GitHub repo. Ship a brand-voice skill, get brand reviews. Ship a compliance skill, get PII checks on every diff. Each finding cites the skill that motivated it — the bot's authority comes from your specimens, not from generic advice.
 
-One command to install. The first PR you open afterwards gets a real review comment back — typically within two minutes.
+Four baseline skills ship by default — covering bug-finding, evidence-based review discipline, pattern conformity, and agent coordination. Add more from [skills.sh](https://skills.sh) or write your own — the bot loads them automatically.
+
+One command to install. The first PR you open afterwards gets a real review back — typically within two minutes.
 
 ## Quickstart
 
