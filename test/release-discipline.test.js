@@ -63,6 +63,42 @@ test('release discipline: composite pin in templates matches package.json versio
   }
 });
 
+test('release discipline: action.yml header docstring example matches package.json version', async () => {
+  // The composite action's header has a usage-example comment block:
+  //   #   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX.Y.Z
+  // Readers copy-paste this when wiring the composite into their own
+  // workflows. If the example drifts behind the actual shipped pin,
+  // anyone following the docs lands on a stale (potentially broken)
+  // ref — exactly what bit on v0.5.10 → v0.5.12 (the @v0.5.10 ref had
+  // the strict-mode-gate body-start matching bug).
+  //
+  // clud-bug-review flagged this on PR #65 as a pre-existing drift
+  // (header still said @v0.5.12 while templates were on @v0.5.13).
+  // v0.5.15 fixes the header manually AND extends this test so the
+  // next release that bumps the templates without bumping the header
+  // fails CI immediately — making the lock-step rule self-policing
+  // for the most paste-able surface.
+  const pkg = JSON.parse(await readFile(join(REPO_ROOT, 'package.json'), 'utf8'));
+  const expectedRef = `strict-mode-gate@v${pkg.version}`;
+  const actionYml = await readFile(
+    join(REPO_ROOT, '.github', 'actions', 'strict-mode-gate', 'action.yml'),
+    'utf8',
+  );
+  const m = actionYml.match(/strict-mode-gate@(v[0-9]+\.[0-9]+\.[0-9]+)/);
+  assert.ok(m, 'action.yml has no strict-mode-gate ref in its header');
+  assert.equal(
+    `strict-mode-gate@${m[1]}`,
+    expectedRef,
+    `action.yml header usage-example ref out of sync with package.json.
+     Expected: ${expectedRef}
+     Found:    strict-mode-gate@${m[1]}
+     Fix: bump the @vX.Y.Z reference in the header comment block of
+     .github/actions/strict-mode-gate/action.yml to match the current
+     package.json version. The header is what readers paste; stale
+     examples lead users onto deprecated/buggy refs.`,
+  );
+});
+
 test('release discipline: composite pin matches across all 3 review templates', async () => {
   // Stronger property — even ignoring package.json, the three templates
   // must agree on the pin. Catches the case where someone edits one
