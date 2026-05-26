@@ -4,10 +4,5 @@
   "lastUpdate": "2026-05-26T19:43:54.597Z",
   "lastUpdateVersion": "0.5.15",
   "strictMode": true,
-  "strictSkills": [
-    "critical-issues-only",
-    "evidence-based-review",
-    "respect-existing-conventions",
-    "clud-bug-collaboration"
-  ]
+  "strictSkills": []
 }

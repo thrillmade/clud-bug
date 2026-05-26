@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-26** — Revert strictSkills to empty array (was misconfigured) *(chore/empty-strictskills)* — [decisions-branches/chore__empty-strictskills.md](decisions-branches/chore__empty-strictskills.md)
 - **2026-05-26** — Self-mod ceremony: bump this repo to v9 templates + @v0.5.15 composite *(ceremony/self-mod-bump-to-v0.5.15)* — [decisions-branches/ceremony__self-mod-bump-to-v0.5.15.md](decisions-branches/ceremony__self-mod-bump-to-v0.5.15.md)
 - **2026-05-26** — Add release-discipline test for composite-pin lock-step (v0.5.15) *(feat/composite-pin-lockstep-test-v0.5.15)* — [decisions-branches/feat__composite-pin-lockstep-test-v0.5.15.md](decisions-branches/feat__composite-pin-lockstep-test-v0.5.15.md)
 - **2026-05-26** — Self-mod ceremony: bump this repo to v8 templates + @v0.5.13 composite (unmask sort fix) *(ceremony/self-mod-bump-to-v0.5.14)* — [decisions-branches/ceremony__self-mod-bump-to-v0.5.14.md](decisions-branches/ceremony__self-mod-bump-to-v0.5.14.md)
