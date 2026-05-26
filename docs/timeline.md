@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-26** — Instruct bot to post inline review threads (v0.5.13) — close the conversation-resolution loop *(feat/inline-review-threads-v0.5.13)* — [decisions-branches/feat__inline-review-threads-v0.5.13.md](decisions-branches/feat__inline-review-threads-v0.5.13.md)
 - **2026-05-26** — Self-mod ceremony: bump this repo from @v0.5.10 (KNOWN-BROKEN) to @v0.5.12 composite *(ceremony/self-mod-bump-to-v0.5.12)* — [decisions-branches/ceremony__self-mod-bump-to-v0.5.12.md](decisions-branches/ceremony__self-mod-bump-to-v0.5.12.md)
 - **2026-05-26** — Stream BB.4: skill-first marketing copy refresh (README + npm + site hero) *(docs/skill-first-marketing-bb4)* — [decisions-branches/docs__skill-first-marketing-bb4.md](decisions-branches/docs__skill-first-marketing-bb4.md)
 - **2026-05-26** — Fix strict-mode-gate body-start matching bug (v0.5.12) *(fix/strict-mode-gate-preamble-v0.5.12)* — [decisions-branches/fix__strict-mode-gate-preamble-v0.5.12.md](decisions-branches/fix__strict-mode-gate-preamble-v0.5.12.md)
