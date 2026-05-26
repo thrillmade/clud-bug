@@ -2,5 +2,12 @@
   "version": 1,
   "installed": [],
   "lastUpdate": "2026-05-26T14:59:41.127Z",
-  "lastUpdateVersion": "0.5.10"
+  "lastUpdateVersion": "0.5.10",
+  "strictMode": true,
+  "strictSkills": [
+    "critical-issues-only",
+    "evidence-based-review",
+    "respect-existing-conventions",
+    "clud-bug-collaboration"
+  ]
 }
