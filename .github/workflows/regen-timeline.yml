@@ -1,4 +1,4 @@
-# logmind-template-version: v1
+# logmind-template-version: v2
 name: check derived docs
 
 # Derived-file architecture (v0.2+): docs/timeline.md is a derived
@@ -29,11 +29,11 @@ jobs:
     name: check-derived-docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -41,7 +41,7 @@ jobs:
         # Version pinned to the logmind that originally ran `logmind init`
         # in this repo, so CI behavior matches what the maintainer tested
         # locally. Bump after running `logmind init` against a new release.
-        run: pip install "logmind==0.2.1"
+        run: pip install "logmind==0.2.10"
 
       - name: Verify docs/timeline.md is current
         run: |

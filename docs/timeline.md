@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-26** — Propagate logmind v0.2.10 to this repo (1C, truly clean) *(chore/logmind-v0.2.10-propagation)* — [decisions-branches/chore__logmind-v0.2.10-propagation.md](decisions-branches/chore__logmind-v0.2.10-propagation.md)
 - **2026-05-26** — Revert strictSkills to empty array (was misconfigured for baselines, v2) *(chore/empty-strictskills-v2)* — [decisions-branches/chore__empty-strictskills-v2.md](decisions-branches/chore__empty-strictskills-v2.md)
 - **2026-05-26** — Skip Vercel preview deploys when no site/ files changed *(fix/vercel-skip-when-no-site-changes)* — [decisions-branches/fix__vercel-skip-when-no-site-changes.md](decisions-branches/fix__vercel-skip-when-no-site-changes.md)
 - **2026-05-26** — Self-mod ceremony: bump this repo to v9 templates + @v0.5.15 composite *(ceremony/self-mod-bump-to-v0.5.15)* — [decisions-branches/ceremony__self-mod-bump-to-v0.5.15.md](decisions-branches/ceremony__self-mod-bump-to-v0.5.15.md)
