@@ -1,4 +1,4 @@
-# logmind-template-version: v1
+# logmind-template-version: v2
 name: decision-log check
 
 # Fail PRs that introduce >20 lines of non-docs code changes without
@@ -17,7 +17,7 @@ jobs:
   check-decisions:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
