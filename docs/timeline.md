@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-26** — Self-mod ceremony: refresh this repo to v4 templates + composite @v0.5.10 *(feat/refresh-to-v4-templates-self-mod)* — [decisions-branches/feat__refresh-to-v4-templates-self-mod.md](decisions-branches/feat__refresh-to-v4-templates-self-mod.md)
 - **2026-05-18** — Stream BB.3: per-skill check-runs in composite action (v0.5.10) *(feat/per-skill-check-runs-v0.5.10)* — [decisions-branches/feat__per-skill-check-runs-v0.5.10.md](decisions-branches/feat__per-skill-check-runs-v0.5.10.md)
 - **2026-05-18** — Stream BB.1+BB.2: skill routing via review_mode + per-skill review output (v0.5.9) *(feat/skill-routing-v0.5.9)* — [decisions-branches/feat__skill-routing-v0.5.9.md](decisions-branches/feat__skill-routing-v0.5.9.md)
 - **2026-05-18** — Self-mod ceremony: render v2 templates into this repo own clud-bug-review.yml *(feat/render-v2-templates-self-mod)* — [decisions-branches/feat__render-v2-templates-self-mod.md](decisions-branches/feat__render-v2-templates-self-mod.md)
