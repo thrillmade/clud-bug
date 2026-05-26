@@ -183,9 +183,33 @@ runs:
           exit 0
         fi
 
-        # Fetch the latest review comment again (different step, no shared state).
-        LATEST=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100" \
-          --jq '[.[] | select(.user.login == env.BOT_LOGIN and (.body | startswith("## 🐛 Clud Bug review")))][0].body // ""')
+        # The classifier is sourced from this repo at the same ref the
+        # composite is pinned at (thrillmot/clud-bug@<ref>/lib/skills.js
+        # is the action's own checkout when consumed remotely via
+        # `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`).
+        SKILLS_LIB="${{ github.action_path }}/../../../lib/skills.js"
+        if [ ! -f "$SKILLS_LIB" ]; then
+          echo "::warning::Per-skill check-runs disabled — classifier at $SKILLS_LIB not found. (Composite action may be running outside its expected layout.)"
+          exit 0
+        fi
+
+        # Fetch comments + delegate body selection to Node via the same
+        # selectReviewBody helper the gate step uses for header selection.
+        # Pre-v0.5.12 this step had the same broken `.body | startswith(...)`
+        # jq filter as the gate, so per-skill check-runs were silently
+        # disabled on every install with strictSkills since BB.3 shipped
+        # in v0.5.10. Caught by both bots on PR #61.
+        COMMENTS_JSON=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100")
+        LATEST=$(SKILLS_LIB="$SKILLS_LIB" BOT_LOGIN="$BOT_LOGIN" COMMENTS_JSON="$COMMENTS_JSON" node -e "
+          import('file://' + process.env.SKILLS_LIB).then(({ selectReviewBody }) => {
+            const comments = JSON.parse(process.env.COMMENTS_JSON || '[]');
+            const body = selectReviewBody(comments, process.env.BOT_LOGIN);
+            if (body !== null) process.stdout.write(body);
+          }).catch(e => { console.error('body-selector failed:', e.message); process.exit(2); });
+        ") || {
+          echo "::error::Per-skill check-runs body-selector failed — see preceding error."
+          exit 1
+        }
 
         if [ -z "$LATEST" ]; then
           echo "::warning::No clud-bug review comment found yet — skipping per-skill check-runs."
@@ -198,16 +222,6 @@ runs:
         # the source of a "0 findings substring matches 10 findings" bug
         # caught on PR #57. See classifyPerSkillOutcome in lib/skills.js
         # for the contract.
-        #
-        # The classifier is sourced from this repo at the same ref the
-        # composite is pinned at (thrillmot/clud-bug@<ref>/lib/skills.js
-        # is the action's own checkout when consumed remotely via
-        # `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`).
-        SKILLS_LIB="${{ github.action_path }}/../../../lib/skills.js"
-        if [ ! -f "$SKILLS_LIB" ]; then
-          echo "::warning::Per-skill check-runs disabled — classifier at $SKILLS_LIB not found. (Composite action may be running outside its expected layout.)"
-          exit 0
-        fi
 
         # Pre-export the constants Node needs.
         export LATEST STRICT_SKILLS SKILLS_LIB

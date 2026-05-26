@@ -8,19 +8,25 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ### Fixed (correctness regression)
 
-- **Strict-mode gate now actually fires on critical findings.** The composite `strict-mode-gate` action's pre-v0.5.12 jq filter used `.body | startswith("## 🐛 Clud Bug review")` to find the bot's review comment. But `anthropics/claude-code-action` prepends a `**Claude finished @user's task in Nm Ns** —— [View job](...)` preamble to every bot comment, so the H2 sentinel never appears at body position 0. The filter matched **zero** comments in practice — silently disabling strict mode on every install with `strictMode: true` since v0.5.8 shipped the composite. Bot wrote `## 🐛 Clud Bug review — critical findings`, gate passed anyway.
+- **Strict-mode gate now actually fires on critical findings.** The composite `strict-mode-gate` action's pre-v0.5.12 jq filter used `.body | startswith("## 🐛 Clud Bug review")` to find the bot's review comment. But `anthropics/claude-code-action` prepends a `**Claude finished @user's task in Nm Ns**` preamble (followed by a "View job" link) to every bot comment, so the H2 sentinel never appears at body position 0. The filter matched **zero** comments in practice — silently disabling strict mode on every install with `strictMode: true` since v0.5.8 shipped the composite. Bot wrote `## 🐛 Clud Bug review — critical findings`, gate passed anyway.
 
   **Discovery:** this repo dogfooded BB.3 on PR #60 (the first PR after #59 opted in). clud-bug-review flagged 1 critical finding with the strict-mode header — and the check passed when it shouldn't have. Caught by reading the workflow logs after merge.
 
-  **Fix:** moved the header-selection logic from bash regex into `lib/skills.js` as `selectReviewHeader(comments, botLogin)` + `extractFirstReviewHeaderLine(body)` + `isCriticalReviewHeader(headerLine)`. The composite action now calls into Node (same pattern v0.5.10's `classifyPerSkillOutcome` established for BB.3). Header-extraction is a multi-line regex anchored on start-of-line: `/^## 🐛 Clud Bug review[^\n]*/m`. Preserves the original "don't trip on quoted sentinels in body text" safety property — a comment that mentions the sentinel in prose (inline-code, blockquote) won't match because it's not at start-of-line.
+- **Per-skill check-runs (BB.3) now actually emit.** The composite action's BB.3 step 2 contained the SAME broken jq filter as the gate step. Per-skill check-runs have been silently skipped on every install with `strictSkills` opt-in since v0.5.10 shipped BB.3 — every workflow run logged `##[warning]No clud-bug review comment found yet — skipping per-skill check-runs.` and exited 0 without calling the Checks API. Both bots on PR #61 caught this when only step 1 was initially fixed.
 
-- **11 new unit tests** in `test/skills.test.js` pin the contract: extraction past the claude-code-action preamble (regression guard), null on no-sentinel input, no-match on quoted-in-prose, first-of-multiple H2 picked, bot-login filter respected, configurable `bot-login` for the v0.6 App's `clud-bug[bot]` identity, end-to-end with `isCriticalReviewHeader`.
+- **Both fixes share new Node helpers** in `lib/skills.js`:
+  - `selectReviewHeader(comments, botLogin)` → first H2 header line (gate step)
+  - `selectReviewBody(comments, botLogin)` → full body for per-skill outcome parsing (BB.3 step)
+  - `extractFirstReviewHeaderLine(body)` + `isCriticalReviewHeader(headerLine)` → underlying primitives
+  Composite calls into Node via the same `SKILLS_LIB` pattern v0.5.10 established for `classifyPerSkillOutcome`. Header-extraction uses a multi-line regex anchored on start-of-line: `/^## 🐛 Clud Bug review[^\n]*/m`. Preserves the original "don't trip on quoted sentinels in body text" safety property — a comment that mentions the sentinel in prose (inline-code, blockquote) won't match because it's not at start-of-line.
+
+- **17 new unit tests** in `test/skills.test.js` pin both contracts: extraction past the claude-code-action preamble (regression guard for both helpers), null on no-sentinel input, no-match on quoted-in-prose, first-of-multiple H2 picked, bot-login filter respected, configurable `bot-login` for the v0.6 App's `clud-bug[bot]` identity, and end-to-end BB.3 flow (`selectReviewBody` → `extractPerSkillLine` → `classifyPerSkillOutcome`).
 
 ### Changed
 
 - **Composite action ref bumped `@v0.5.10` → `@v0.5.12`** in the 3 review workflow templates. Existing v5 installs auto-upgrade to v6 via v0.5.7's refresh-mode on the next `clud-bug update` and pick up the corrected gate.
 - **Template marker bumped `v5` → `v6`** in `workflow.yml.tmpl`, `workflow-ts.yml.tmpl`, `workflow-py.yml.tmpl`. `audit.yml.tmpl` (`v2`) and `self-update.yml.tmpl` (`v1`) unchanged — they don't carry the gate.
-- **`strict-mode-gate@v0.5.10` and `@v0.5.8` are now KNOWN-BROKEN.** Users on those refs should refresh via `npx clud-bug update` (or wait for Monday's self-update cron) to land on `@v0.5.12`. No data is at risk; the gate just hasn't been doing what its name promises.
+- **`strict-mode-gate@v0.5.10` and `@v0.5.8` are now KNOWN-BROKEN.** Users on those refs should refresh via `npx clud-bug update` (or wait for Monday's self-update cron) to land on `@v0.5.12`. No data is at risk; the gate + BB.3 per-skill check-runs just haven't been doing what their names promised since they shipped.
 
 ## [0.5.11] — 2026-05-26
 
