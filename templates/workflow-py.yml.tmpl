@@ -1,4 +1,4 @@
-# clud-bug-template-version: v8
+# clud-bug-template-version: v9
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -281,6 +281,6 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.13
+        uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.15
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
