@@ -1,19 +1,20 @@
-# logmind-template-version: v1
+# logmind-template-version: v2
 name: doc link integrity
 
 # Fail PRs that introduce broken or orphaned markdown links so agents stay
 # in context when they follow [link](path.md) references between docs.
 # Installed by `logmind init`.
 
+# Runs unconditionally on every PR / main push — no `paths:` filter.
+# Filtered runs interact badly with `required_status_checks` rules:
+# GitHub treats a filter-skipped check as "expected but missing" and
+# blocks the merge forever. Running unconditionally is cheap (~15s
+# end-to-end) and keeps the gate predictable.
+
 on:
   pull_request:
-    paths:
-      - "**/*.md"
-      - ".logmind/config.yml"
   push:
     branches: [main, master]
-    paths:
-      - "**/*.md"
 
 jobs:
   check-links:
@@ -29,7 +30,7 @@ jobs:
         # Version pinned to the logmind that originally ran `logmind init`
         # in this repo, so CI behavior matches what the maintainer tested
         # locally. Bump after running `logmind init` against a new release.
-        run: pip install "logmind==0.2.1"
+        run: pip install "logmind==0.2.4"
 
       - name: Check markdown link integrity
         run: logmind check-links
