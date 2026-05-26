@@ -6,6 +6,10 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [0.5.13] — 2026-05-26
 
+### Fixed (caught by PR #64 dogfood after the prompt change)
+
+- **`selectReviewHeader` / `selectReviewBody` now sort by `created_at` descending in Node** instead of relying on `gh api ?sort=created&direction=desc`. GitHub's REST issue-comments endpoint **ignores `direction=desc`** and returns ascending (oldest first) regardless. So the v0.5.12 helpers walked oldest-first and picked the OLDEST matching comment, not the newest — meaning every fix-push review on a strictMode-enabled repo had its gate verdict shadowed by the original round's "— critical findings" comment. Strict mode fired forever on critical-resolved PRs. Caught when PR #64's round-2 "— clean" review still saw the gate fail. 3 new regression tests in `test/skills.test.js` pin the explicit-sort contract.
+
 ### Fixed (silent no-op since launch)
 
 - **The bot now actually posts inline review threads.** Pre-v0.5.13 the workflow prompt told the bot to "post your review as a single PR comment" with a buried, weakly-phrased mention of the `mcp__github_inline_comment__create_inline_comment` MCP tool. Effect: every review across every install posted a top-level PR comment (not gateable) and **zero inline review threads** (the only thing GitHub's `required_review_thread_resolution` rule operates on). The reporulez `clud-bug-logmind` ruleset variant has the rule turned on, so the gate has been sitting idle waiting for the bot to actually produce threads — *the entire fix-and-resolve loop the README + status block were designed around has been a silent no-op since the bot shipped*. Caught when verifying PR #63's gate behavior end-to-end.

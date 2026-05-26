@@ -847,6 +847,64 @@ test('selectReviewBody + extractPerSkillLine: end-to-end BB.3 path works through
   assert.equal(extractPerSkillLine(body, 'brand-voice-review'), 'scanned 2 microcopy changes. 1 finding (below).');
 });
 
+// --- v0.5.13: API ordering regression ---
+// gh api .../issues/X/comments?sort=created&direction=desc IGNORES direction
+// and returns ascending (oldest first). Pre-v0.5.13 selectReviewHeader walked
+// the array in API order, picking the OLDEST matching comment. PR #64 caught
+// it: round 1 critical-findings comment shadowed round 2's clean comment,
+// so fix-push reviews stayed gated. v0.5.13 sorts newest-first explicitly.
+
+test('selectReviewHeader: REGRESSION — picks NEWEST comment even when input is oldest-first (gh api ordering quirk)', () => {
+  // Simulate gh api's actual return order: oldest comment first.
+  const apiOrder = [
+    {
+      user: { login: 'claude[bot]' },
+      created_at: '2026-05-26T17:11:30Z',
+      body: '**Claude finished**\n\n---\n## 🐛 Clud Bug review — critical findings\n\nRound 1 verdict.',
+    },
+    {
+      user: { login: 'claude[bot]' },
+      created_at: '2026-05-26T17:19:10Z',
+      body: '**Claude finished**\n\n---\n## 🐛 Clud Bug review — clean\n\nRound 2 verdict after fix-push.',
+    },
+  ];
+  // Must return the NEWER clean header, not the older critical-findings one.
+  assert.equal(
+    selectReviewHeader(apiOrder, 'claude[bot]'),
+    '## 🐛 Clud Bug review — clean',
+    'selectReviewHeader must sort by created_at desc internally — relying on gh api direction=desc fails',
+  );
+});
+
+test('selectReviewBody: REGRESSION — picks NEWEST comment even when input is oldest-first', () => {
+  const apiOrder = [
+    {
+      user: { login: 'claude[bot]' },
+      created_at: '2026-05-26T17:11:30Z',
+      body: '## 🐛 Clud Bug review — critical findings\n\nOLD body.',
+    },
+    {
+      user: { login: 'claude[bot]' },
+      created_at: '2026-05-26T17:19:10Z',
+      body: '## 🐛 Clud Bug review — clean\n\nNEW body after fix-push.',
+    },
+  ];
+  const body = selectReviewBody(apiOrder, 'claude[bot]');
+  assert.match(body, /NEW body after fix-push/, 'selectReviewBody must pick the newest matching comment');
+  assert.doesNotMatch(body, /OLD body/);
+});
+
+test('selectReviewHeader: handles missing created_at gracefully (treats as oldest)', () => {
+  // Defensive: if a caller passes comments without created_at, the sort
+  // should not crash. Missing timestamp = treat as oldest (gets sorted
+  // to the end, walked last). A single matching comment with no timestamp
+  // still returns its header.
+  const comments = [
+    { user: { login: 'claude[bot]' }, body: '## 🐛 Clud Bug review — clean' },
+  ];
+  assert.equal(selectReviewHeader(comments, 'claude[bot]'), '## 🐛 Clud Bug review — clean');
+});
+
 test('isCriticalReviewHeader: end-to-end with selectReviewHeader matches the v0.5.x gate contract', () => {
   // Synthesize the exact data flow the composite action sees: a list of
   // comments from gh api, filter via selectReviewHeader, then ask whether
