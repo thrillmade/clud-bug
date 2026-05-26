@@ -4,8 +4,25 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
-### Pending (separate PR)
-- Pinning `anthropics/claude-code-action@v1` via `{{CCA_VERSION}}` placeholder substitution. Requires routing `audit.yml.tmpl` + `self-update.yml.tmpl` through `renderFile` (currently raw `readFile`).
+## [0.5.11] — 2026-05-26
+
+### Added
+
+- **`anthropics/claude-code-action` is now pinned to a specific tag** in every shipped workflow. Templates use `@{{CCA_VERSION}}` instead of the floating `@v1` major. The pin lives in `lib/render.js`'s new `DEFAULTS` map (currently `v1.0.133` — the latest stable at release time). Bumping the pin requires a clud-bug release, which makes upstream action upgrades visible in the CHANGELOG and lets users with their own forks opt to a different version. Closes the Unreleased item that's been carried since v0.5.6.
+- **`audit.yml.tmpl` and `self-update.yml.tmpl` now flow through `renderFile`** (were raw `readFile` pre-v0.5.11). Required to make `{{CCA_VERSION}}` substitution land in audit alongside review. Self-update has no CCA reference today but is routed through `renderFile` for parity so future tokens propagate uniformly without another refactor.
+- **`DEFAULTS` exported from `lib/render.js`.** Single source of truth for template substitution defaults. The v0.6 App will reuse this map to render workflows in its own runtime, keeping the pin contract identical across CLI + App.
+
+### Changed
+
+- **Template markers bumped:**
+  - `workflow.yml.tmpl`, `workflow-ts.yml.tmpl`, `workflow-py.yml.tmpl`: `v4` → `v5`
+  - `audit.yml.tmpl`: `v1` → `v2` (first content change since markers were introduced in v0.5.6)
+  - `self-update.yml.tmpl`: stays `v1` (no content change; the `readFile` → `renderFile` switch is internal to clud-bug, byte-identical output today)
+- Existing v4/v1 installs auto-upgrade to v5/v2 via v0.5.7's refresh-mode on the next `clud-bug update`.
+
+### Internal
+
+- 4 new tests in `test/render.test.js` pin the DEFAULTS contract: CCA_VERSION format (`vMAJOR.MINOR.PATCH`), substitution from defaults when caller omits it, caller-override precedence, missing-var guard still fires for non-defaulted tokens.
 
 ## [0.5.10] — 2026-05-18
 
@@ -139,6 +156,7 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - **Bot-authored PRs are now handled gracefully.** PRs from `dependabot[bot]`, `renovate[bot]`, or forks (where GitHub deliberately doesn't pass repository secrets) used to fail loudly red — wrong signal. Now a guard step detects the case, posts a one-line advisory comment ("Clud Bug skipped — bot/fork PR cannot access secrets"), and exits 0. Check stays green; the skip is visible. Owner-authored PRs without the secret still fail loud.
 - **Site polish (carries over from the unreleased entry):** alive bug emoji (layered breathe + twitch + scuttle animations), Plate label gloss, thrillmot footer credit.
 
+[0.5.11]: https://github.com/thrillmot/clud-bug/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/thrillmot/clud-bug/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/thrillmot/clud-bug/compare/v0.5.8...v0.5.9
 [0.5.8]: https://github.com/thrillmot/clud-bug/compare/v0.5.7...v0.5.8

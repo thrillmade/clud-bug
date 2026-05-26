@@ -1,4 +1,4 @@
-# clud-bug-template-version: v4
+# clud-bug-template-version: v5
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -50,7 +50,7 @@ jobs:
           echo "::error::Set it: Settings → Secrets and variables → Actions → New repository secret."
           exit 1
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@{{CCA_VERSION}}
         if: steps.guard.outputs.skip != 'true'
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
