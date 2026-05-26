@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-26** — Self-mod ceremony: bump this repo to v8 templates + @v0.5.13 composite (unmask sort fix) *(ceremony/self-mod-bump-to-v0.5.14)* — [decisions-branches/ceremony__self-mod-bump-to-v0.5.14.md](decisions-branches/ceremony__self-mod-bump-to-v0.5.14.md)
 - **2026-05-26** — Bump composite pin v0.5.12 -> v0.5.13 in templates (v0.5.14 shipping-gap fix) *(fix/composite-pin-v0.5.14)* — [decisions-branches/fix__composite-pin-v0.5.14.md](decisions-branches/fix__composite-pin-v0.5.14.md)
 - **2026-05-26** — Instruct bot to post inline review threads (v0.5.13) — close the conversation-resolution loop *(feat/inline-review-threads-v0.5.13)* — [decisions-branches/feat__inline-review-threads-v0.5.13.md](decisions-branches/feat__inline-review-threads-v0.5.13.md)
 - **2026-05-26** — Self-mod ceremony: bump this repo from @v0.5.10 (KNOWN-BROKEN) to @v0.5.12 composite *(ceremony/self-mod-bump-to-v0.5.12)* — [decisions-branches/ceremony__self-mod-bump-to-v0.5.12.md](decisions-branches/ceremony__self-mod-bump-to-v0.5.12.md)
