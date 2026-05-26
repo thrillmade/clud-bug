@@ -1,4 +1,4 @@
-# clud-bug-template-version: v1
+# clud-bug-template-version: v2
 name: Clud Bug 🐛 Audit
 
 # A scheduled / on-demand walk through the whole habitat (or a recent slice).
@@ -89,7 +89,7 @@ jobs:
           git push -u origin "$BRANCH"
           echo "stub_written=true" >> "$GITHUB_OUTPUT"
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@{{CCA_VERSION}}
         if: steps.prep.outputs.stub_written == 'true'
         env:
           AUDIT_DATE: ${{ steps.prep.outputs.date }}

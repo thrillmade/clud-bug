@@ -1,4 +1,4 @@
-# clud-bug-template-version: v4
+# clud-bug-template-version: v5
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -75,7 +75,7 @@ jobs:
           echo "::error::Without it, Clud Bug review is a silent no-op."
           exit 1
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@{{CCA_VERSION}}
         # Skip the action when guard already posted the bot/fork advisory.
         if: steps.guard.outputs.skip != 'true'
         env:

@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { DEFAULTS } from '../lib/render.js';
 
 const CLI = join(dirname(dirname(fileURLToPath(import.meta.url))), 'bin', 'clud-bug.js');
 
@@ -56,6 +57,20 @@ test('init --offline --accept-all in a fresh repo writes workflow + manifest', a
     assert.equal(r.status, 0, `init failed: ${r.stderr}`);
     const wf = await readFile(join(dir, '.github/workflows/clud-bug-review.yml'), 'utf8');
     assert.match(wf, /allowedTools/);
+    // v0.5.11 regression guard: review workflow must carry the resolved
+    // CCA pin, not a literal placeholder. PR #60 found that audit + self-
+    // update slipped past for several releases via raw readFile — same
+    // guard belongs on the review-workflow init path so any future
+    // renderFile → readFile regression on bin/clud-bug.js fails loud.
+    const ccaPin = DEFAULTS.CCA_VERSION.replace(/\./g, '\\.');
+    assert.match(wf, new RegExp(`claude-code-action@${ccaPin}`));
+    assert.doesNotMatch(wf, /\{\{CCA_VERSION\}\}/);
+    // Same guard on the audit + self-update workflows the init writes.
+    const audit = await readFile(join(dir, '.github/workflows/clud-bug-audit.yml'), 'utf8');
+    assert.match(audit, new RegExp(`claude-code-action@${ccaPin}`));
+    assert.doesNotMatch(audit, /\{\{CCA_VERSION\}\}/);
+    const selfUpd = await readFile(join(dir, '.github/workflows/clud-bug-self-update.yml'), 'utf8');
+    assert.doesNotMatch(selfUpd, /\{\{[A-Z_]+\}\}/);
     const manifest = JSON.parse(await readFile(join(dir, '.claude/skills/.clud-bug.json'), 'utf8'));
     assert.equal(manifest.installed.length, 4, 'should install 4 baseline skills');
     assert.ok(manifest.installed.every(e => e.kind === 'baseline'));

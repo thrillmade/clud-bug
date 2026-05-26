@@ -183,7 +183,9 @@ async function runInit(args) {
 
   // Install the audit workflow alongside the per-PR review one.
   // Manual-trigger by default; users opt into the cron by uncommenting.
-  const auditTmpl = await readFile(join(TEMPLATES, 'audit.yml.tmpl'), 'utf8');
+  // Routed through renderFile so {{CCA_VERSION}} substitution pins
+  // claude-code-action consistently with the review workflow.
+  const auditTmpl = await renderFile(join(TEMPLATES, 'audit.yml.tmpl'), {});
   const auditPath = join(cwd, '.github', 'workflows', 'clud-bug-audit.yml');
   await writeFile(auditPath, auditTmpl);
   log(`    wrote ${rel(cwd, auditPath)}`);
@@ -191,7 +193,9 @@ async function runInit(args) {
   // Install the self-update workflow. Cron weekly Mondays 12:00 UTC; opens
   // a PR if a newer clud-bug version is published. Disable by deleting the
   // file or pinning via .claude/skills/.clud-bug.json.
-  const selfUpdateTmpl = await readFile(join(TEMPLATES, 'self-update.yml.tmpl'), 'utf8');
+  // Routed through renderFile for parity (no CCA ref today but future
+  // tokens should propagate uniformly).
+  const selfUpdateTmpl = await renderFile(join(TEMPLATES, 'self-update.yml.tmpl'), {});
   const selfUpdatePath = join(cwd, '.github', 'workflows', 'clud-bug-self-update.yml');
   await writeFile(selfUpdatePath, selfUpdateTmpl);
   log(`    wrote ${rel(cwd, selfUpdatePath)}`);
