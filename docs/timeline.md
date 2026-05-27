@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-27** — chore: post-migration cleanup — vercel.json + site URL refs + AGENTS.md v5-slim + dependabot.yml *(chore/vercel-ignore-and-site-refs)* — [decisions-branches/chore__vercel-ignore-and-site-refs.md](decisions-branches/chore__vercel-ignore-and-site-refs.md)
 - **2026-05-26** — chore: migrate to thrillmade org + update all GitHub-org refs *(chore/migrate-to-thrillmade)* — [decisions-branches/chore__migrate-to-thrillmade.md](decisions-branches/chore__migrate-to-thrillmade.md)
 - **2026-05-26** — Relax classifyPerSkillOutcome for natural bot phrasings (v0.5.16, 1F) *(feat/classifier-relax-v0.5.16)* — [decisions-branches/feat__classifier-relax-v0.5.16.md](decisions-branches/feat__classifier-relax-v0.5.16.md)
 - **2026-05-26** — Propagate logmind v0.2.10 to this repo (1C, truly clean) *(chore/logmind-v0.2.10-propagation)* — [decisions-branches/chore__logmind-v0.2.10-propagation.md](decisions-branches/chore__logmind-v0.2.10-propagation.md)

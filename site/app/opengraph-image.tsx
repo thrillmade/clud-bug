@@ -152,7 +152,7 @@ export default async function OG() {
           }}
         >
           <span>npx clud-bug init</span>
-          <span>github.com/thrillmot/clud-bug</span>
+          <span>github.com/thrillmade/clud-bug</span>
         </div>
 
         {/* Left margin: plate number + bug */}
