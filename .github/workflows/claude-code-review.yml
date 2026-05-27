@@ -10,6 +10,11 @@ on:
 
 jobs:
   claude-review:
+    # Dependabot PRs run in a separate secret scope and don't have access to
+    # ANTHROPIC_API_KEY (org Actions secret doesn't propagate to Dependabot
+    # context). A dep bump also gets no real value from a code review, so
+    # skip the job entirely rather than leaving a red guard failure.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
