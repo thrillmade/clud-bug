@@ -140,6 +140,68 @@ test('runUpdate: no-ops when files already match latest', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('runUpdate: excludedBaselines skips writing the listed slug', async () => {
+  // A consumer repo can opt out of any bundled baseline by listing its
+  // slug in `excludedBaselines`. Without this, every `clud-bug update`
+  // regenerates the baseline file from the bundled copy regardless of
+  // local manifest state — the original symptom this field exists to fix.
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+    '.github/workflows/clud-bug-review.yml': '# clud-bug-template-version: v0\n# stale\n',
+    '.claude/skills/.clud-bug.json': JSON.stringify({
+      version: 1,
+      installed: [{ slug: 'critical-issues-only', kind: 'baseline' }],
+      excludedBaselines: ['clud-bug-collaboration'],
+    }),
+  });
+  try {
+    await runUpdate({
+      cwd: dir, templatesDir: TEMPLATES, baselineDir: BASELINE, ourVersion: '0.6.0',
+      loadBaselineOpts: offlineLoadBaseline,
+    });
+    // Excluded baseline is NOT written.
+    await assert.rejects(
+      readFile(join(dir, '.claude/skills/clud-bug-collaboration/SKILL.md'), 'utf8'),
+      { code: 'ENOENT' },
+    );
+    // Non-excluded baseline is still written.
+    const kept = await readFile(join(dir, '.claude/skills/critical-issues-only/SKILL.md'), 'utf8');
+    assert.match(kept, /critical-issues-only/);
+    // Manifest's excludedBaselines survives the write (passthrough).
+    const manifest = JSON.parse(await readFile(join(dir, '.claude/skills/.clud-bug.json'), 'utf8'));
+    assert.deepEqual(manifest.excludedBaselines, ['clud-bug-collaboration']);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('runUpdate: excludedBaselines removes a pre-existing skill dir + reports in changed', async () => {
+  // Migration path: a repo that previously had the baseline installed,
+  // then added the slug to excludedBaselines, should have the dir cleaned
+  // up on the next update — not left behind for the user to rm by hand.
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+    '.github/workflows/clud-bug-review.yml': '# clud-bug-template-version: v0\n# stale\n',
+    '.claude/skills/.clud-bug.json': JSON.stringify({
+      version: 1,
+      installed: [],
+      excludedBaselines: ['clud-bug-collaboration'],
+    }),
+    // Pre-existing stale baseline dir that the exclusion should sweep.
+    '.claude/skills/clud-bug-collaboration/SKILL.md': '# stale content from a prior install\n',
+  });
+  try {
+    const r = await runUpdate({
+      cwd: dir, templatesDir: TEMPLATES, baselineDir: BASELINE, ourVersion: '0.6.0',
+      loadBaselineOpts: offlineLoadBaseline,
+    });
+    await assert.rejects(
+      readFile(join(dir, '.claude/skills/clud-bug-collaboration/SKILL.md'), 'utf8'),
+      { code: 'ENOENT' },
+    );
+    const removal = r.changed.find((c) => c.label === 'excluded baseline clud-bug-collaboration: removed');
+    assert.ok(removal, 'expected the removal to surface in changed');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('runUpdate: re-renders audit + self-update workflows when installed (stale marker)', async () => {
   const dir = await makeRepo({
     'package.json': JSON.stringify({ name: 'demo' }),
