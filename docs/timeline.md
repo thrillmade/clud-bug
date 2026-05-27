@@ -16,6 +16,7 @@ PR's CI run, so this file is always coherent with current `main`.
 ## 2026-05
 
 - **2026-05-27** — chore: bump logmind pin 0.3.1 → 0.3.3 *(chore/bump-logmind-pin-0.3.3)* — [decisions-branches/chore__bump-logmind-pin-0.3.3.md](decisions-branches/chore__bump-logmind-pin-0.3.3.md)
+- **2026-05-27** — chore: bump regen-timeline pin to 0.3.3 (missed in prior commit) + drop file-structure timestamp *(chore/bump-logmind-pin-0.3.3)* — [decisions-branches/chore__bump-logmind-pin-0.3.3.md](decisions-branches/chore__bump-logmind-pin-0.3.3.md)
 - **2026-05-27** — ceremony: bump deployed workflow @v0.5.16 → @v0.6.1 (follow-up to #85) *(ceremony/self-mod-v0.6.1)* — [decisions-branches/ceremony__self-mod-v0.6.1.md](decisions-branches/ceremony__self-mod-v0.6.1.md)
 - **2026-05-27** — fix(v0.6.1): pin deployed workflow at @v0.5.16 (latest existing tag), not @v0.6.0 *(ceremony/self-mod-v0.6.0)* — [decisions-branches/ceremony__self-mod-v0.6.0.md](decisions-branches/ceremony__self-mod-v0.6.0.md)
 - **2026-05-27** — fix(v0.6.1): unblock CI — pin deployed workflow at @v0.6.0 until v0.6.1 tag exists + regen timeline *(ceremony/self-mod-v0.6.0)* — [decisions-branches/ceremony__self-mod-v0.6.0.md](decisions-branches/ceremony__self-mod-v0.6.0.md)
