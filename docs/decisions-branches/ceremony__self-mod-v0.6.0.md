@@ -28,3 +28,13 @@
 - After this PR merges and v0.6.1 publishes to npm, a tiny follow-up self-mod PR can bump the deployed clud-bug-review.yml from @v0.6.0 → @v0.6.1. That ceremony will succeed because the tag exists. Comment added inline in the workflow file explaining the temporary pin.
 
 ---
+## 2026-05-27 06:32 - fix(v0.6.1): pin deployed workflow at @v0.5.16 (latest existing tag), not @v0.6.0
+
+**Reasoning:** clud-bug-review continued to fail with Unable to resolve action @v0.6.0 — git ls-remote confirms v0.6.0 tag was never created on origin. PR #83 merged but the npm-publish workflow only fires on a manual tag push, not on merge-to-main. So both v0.6.0 and v0.6.1 do not exist as git tags right now. Pinned the deployed workflow at @v0.5.16 (latest tag that exists) to get CI green. Templates stay at @v0.6.1 (correct lock-step contract for the npm package).
+
+**Alternatives considered:** Manually tag v0.6.0 first to make that ref resolvable — that would publish a buggy version to npm (v0.6.0 has the org-migration regression). Skip straight to v0.6.1., Pin deployed workflow at @v0.6.1 anyway and create the tag pre-merge — same chicken-and-egg, would need force-push the tag after PR rebases
+
+**Implications:**
+- After this PR merges, the human/agent needs to (1) git tag v0.6.1 <merge-commit>, (2) git push origin v0.6.1. That triggers npm-publish.yml automatically. THEN a small follow-up self-mod PR can bump the deployed workflow @v0.5.16 → @v0.6.1. Inline comment in clud-bug-review.yml documents the temporary pin and the follow-up step.
+
+---
