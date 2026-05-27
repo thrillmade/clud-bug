@@ -18,3 +18,13 @@
 - v0.6.1 is a patch release that completes the org migration end-to-end (the npm package no longer ships dead URLs to consumers). Composite pin lock-step bumped @v0.6.0 → @v0.6.1 across all 3 workflow templates + action.yml header per release-discipline contract. Same admin-bypass merge route as the original ceremony PR — both the v0.6.1 SHA fix AND the self-mod ceremony land together in PR #85.
 
 ---
+## 2026-05-27 06:28 - fix(v0.6.1): unblock CI — pin deployed workflow at @v0.6.0 until v0.6.1 tag exists + regen timeline
+
+**Reasoning:** clud-bug-review failed on rebased commits with "Unable to resolve action thrillmade/clud-bug@v0.6.1" — chicken-and-egg: the deployed .github/workflows/clud-bug-review.yml was bumped to @v0.6.1 by node bin/clud-bug.js update, but that tag does not exist yet (it gets created on PR merge via npm-publish). Reverted just the deployed workflow line back to @v0.6.0; templates stay at @v0.6.1 (release-discipline.test.js only enforces templates, not the deployed file). Also regenerated docs/timeline.md to include the v0.6.1 decision (check-derived-docs caught the staleness).
+
+**Alternatives considered:** Cut v0.6.1 npm release in a separate PR FIRST (just lib/skills.js + package.json + templates + CHANGELOG), then do the ceremony in a follow-up — splits one logical change into two admin-bypass PRs, more ceremony for no gain, Leave clud-bug-review.yml at @v0.6.1 and accept the broken CI — defeats the entire purpose of the workflow, would block future ceremony PRs in the same way
+
+**Implications:**
+- After this PR merges and v0.6.1 publishes to npm, a tiny follow-up self-mod PR can bump the deployed clud-bug-review.yml from @v0.6.0 → @v0.6.1. That ceremony will succeed because the tag exists. Comment added inline in the workflow file explaining the temporary pin.
+
+---
