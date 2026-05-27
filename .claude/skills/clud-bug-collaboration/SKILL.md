@@ -120,5 +120,5 @@ skills are left untouched.
 ## Where to find more
 
 - Site: https://cludbug.dev
-- Repo: https://github.com/thrillmot/clud-bug
-- Skill catalog: https://github.com/thrillmot/agent-skills
+- Repo: https://github.com/thrillmade/clud-bug
+- Skill catalog: https://github.com/thrillmade/agent-skills

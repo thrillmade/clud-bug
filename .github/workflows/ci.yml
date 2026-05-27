@@ -45,7 +45,7 @@ jobs:
         # Scoped to clud-bug-owned workflows only. Logmind-installed workflows
         # (check-decisions, check-doc-links, logmind-aggregate) are managed
         # upstream by the logmind tool — file shellcheck issues against
-        # thrillmot/logmind, not here.
+        # thrillmade/logmind, not here.
         run: |
           for wf in .github/workflows/ci.yml \
                     .github/workflows/clud-bug-review.yml \

@@ -3,7 +3,7 @@
 # Replaces the ~24 lines of inline shell that v0.5.x rendered into every
 # workflow template. Templates now reference it via:
 #
-#   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.16
+#   - uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.5.16
 #     if: success()
 #     with:
 #       github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -93,9 +93,9 @@ runs:
         #      test/skills.test.js, no bash-vs-JS drift.
         #
         # The classifier is sourced from this repo at the same ref the
-        # composite is pinned at (thrillmot/clud-bug@<ref>/lib/skills.js
+        # composite is pinned at (thrillmade/clud-bug@<ref>/lib/skills.js
         # is the action's own checkout when consumed remotely via
-        # `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`).
+        # `uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@vX`).
         SKILLS_LIB="${{ github.action_path }}/../../../lib/skills.js"
         if [ ! -f "$SKILLS_LIB" ]; then
           echo "::error title=Clud Bug 🐛::Strict-mode gate classifier not found at $SKILLS_LIB."
@@ -184,9 +184,9 @@ runs:
         fi
 
         # The classifier is sourced from this repo at the same ref the
-        # composite is pinned at (thrillmot/clud-bug@<ref>/lib/skills.js
+        # composite is pinned at (thrillmade/clud-bug@<ref>/lib/skills.js
         # is the action's own checkout when consumed remotely via
-        # `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`).
+        # `uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@vX`).
         SKILLS_LIB="${{ github.action_path }}/../../../lib/skills.js"
         if [ ! -f "$SKILLS_LIB" ]; then
           echo "::warning::Per-skill check-runs disabled — classifier at $SKILLS_LIB not found. (Composite action may be running outside its expected layout.)"

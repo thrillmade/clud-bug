@@ -202,7 +202,7 @@ clud-bug uses [`anthropics/claude-code-action`](https://github.com/anthropics/cl
 When you push a PR that touches `.github/workflows/clud-bug-review.yml` (or any other clud-bug workflow):
 
 - The `clud-bug-review` check fails with `App token exchange failed: 401 Unauthorized — Workflow validation failed. The workflow file must exist and have identical content to the version on the repository's default branch.`
-- You'll get a GitHub email titled something like **"[thrillmot/your-repo] Run failed: Clud Bug 🐛 Crawls Your Code — `<branch-name>`"** — same wording for every workflow failure, so it doesn't visually distinguish "this is the expected self-mod guard" from "real failure."
+- You'll get a GitHub email titled something like **"[thrillmade/your-repo] Run failed: Clud Bug 🐛 Crawls Your Code — `<branch-name>`"** — same wording for every workflow failure, so it doesn't visually distinguish "this is the expected self-mod guard" from "real failure."
 
 ### How to merge
 
@@ -261,7 +261,7 @@ If you don't want to use the CLI, you can install a generic workflow by hand:
 ```bash
 mkdir -p .github/workflows
 curl -o .github/workflows/clud-bug-review.yml \
-  https://raw.githubusercontent.com/thrillmot/clud-bug/main/templates/workflow.yml.tmpl
+  https://raw.githubusercontent.com/thrillmade/clud-bug/main/templates/workflow.yml.tmpl
 # Edit {{PROJECT_DESCRIPTION}} and {{LANGUAGE_HINTS}} placeholders by hand.
 ```
 

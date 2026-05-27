@@ -282,6 +282,6 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.15
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.5.15
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

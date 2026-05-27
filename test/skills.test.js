@@ -159,7 +159,7 @@ test('loadBaseline: prefers remote (agent-skills) when fetch succeeds', async ()
     assert.equal(out[0].content, 'REMOTE CONTENT');
     assert.equal(out[0]._source, 'agent-skills');
     // Pinned to a SHA, not main — re-couples trust to clud-bug releases.
-    assert.match(fetchedUrl, /thrillmot\/agent-skills\/[0-9a-f]{40}\/skills\/critical-issues-only\/SKILL\.md/);
+    assert.match(fetchedUrl, /thrillmade\/agent-skills\/[0-9a-f]{40}\/skills\/critical-issues-only\/SKILL\.md/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
