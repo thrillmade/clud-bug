@@ -4,6 +4,21 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-27
+
+### Added
+
+- **`excludedBaselines: string[]` field in `.clud-bug.json`.** Lets a consumer repo opt out of any bundled baseline skill. Names listed there are (a) skipped when `runUpdate` iterates the bundled baseline dir, and (b) actively cleaned up: if `.claude/skills/<slug>/` exists, it's `rm -rf`'d in the same pass and surfaced in the `changed` list as `excluded baseline <name>: removed`. Idempotent — re-runs are no-ops once the dir is gone. The field passes through `readManifest` / `writeManifest` unchanged (existing `...data` / `...manifest` spreads carry it).
+- **Tests** (`test/update.test.js`, +2): one for the skip-on-write path, one for the migration cleanup path (pre-existing dir gets removed + reported in `changed`).
+
+### Why a minor bump (0.5.x → 0.6.0)
+
+New manifest field is additive but represents the first opt-out surface for bundled baselines — a deliberate API addition, not a bug fix. Existing manifests without the field behave identically to v0.5.x (the loop falls through to the existing write path). Test count: 167.
+
+### Motivation
+
+Pre-v0.6.0, the baseline-write loop in `lib/update.js` iterated the bundled baseline dir on every `clud-bug update` and unconditionally wrote each SKILL.md into `.claude/skills/<slug>/`. A consumer repo could `rm -rf` a baseline dir or remove its manifest entry, but the next update silently regenerated the dir from the bundled copy — making per-repo opt-out impossible. Surfaced concretely in `thrillmade/agent-skills`, which doesn't need `clud-bug-collaboration` because the repo *is* the skill catalog and the skill's "how to coexist with the clud-bug bot" guidance doesn't apply when there's no upstream-bot relationship.
+
 ## [0.5.16] — 2026-05-26
 
 ### Improved (UX)
