@@ -4,7 +4,7 @@ name: npm publish
 # same OIDC trusted-publisher integration — no NPM_TOKEN secret stored
 # anywhere. ONE entry needed at:
 #   npmjs.com/package/clud-bug → Settings → Publishing access
-#   → Trusted Publisher: thrillmot/clud-bug, workflow: npm-publish.yml,
+#   → Trusted Publisher: thrillmade/clud-bug, workflow: npm-publish.yml,
 #     environment: blank.
 #
 # Modes

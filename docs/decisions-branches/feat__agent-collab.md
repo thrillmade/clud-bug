@@ -7,7 +7,7 @@
 **Implications:**
 - Block embeds the version + strict-mode state, so clud-bug update rewrites it; tested for idempotency in test/agents-md.test.js.
 - AGENTS.md is the only file we'll create-if-missing (canonical cross-tool home). Tool-specific files (CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .clinerules, .continuerules, .cursor/rules/*.md) we only touch when present.
-- New baseline skill clud-bug-collaboration ships in templates/skills/baseline/ for now; canonical home moves to thrillmot/agent-skills/skills/clud-bug-collaboration/SKILL.md once user uploads it and we bump the SHA pin.
+- New baseline skill clud-bug-collaboration ships in templates/skills/baseline/ for now; canonical home moves to thrillmade/agent-skills/skills/clud-bug-collaboration/SKILL.md once user uploads it and we bump the SHA pin.
 
 ---
 ## 2026-05-15 12:05 - Align AGENTS.md strict-mode render with workflow gate predicate

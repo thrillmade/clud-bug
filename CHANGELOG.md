@@ -152,7 +152,7 @@ Repos already running with `required_review_thread_resolution: true` (any instal
 
 ### Added — Stream BB.1 + BB.2 (skill routing + per-skill review output)
 
-- **`review_mode` frontmatter field on skills.** Every SKILL.md can declare `review_mode: shared` or `review_mode: dedicated` (default: `shared` when omitted). The four shipped baselines (`critical-issues-only`, `evidence-based-review`, `respect-existing-conventions`, `clud-bug-collaboration`) now declare `review_mode: shared`. Domain skills published in [thrillmot/agent-skills](https://github.com/thrillmot/agent-skills) (`brand-voice-review`, `api-contract-enforcement`, `pii-and-compliance`, `test-discipline`) declare `review_mode: dedicated`.
+- **`review_mode` frontmatter field on skills.** Every SKILL.md can declare `review_mode: shared` or `review_mode: dedicated` (default: `shared` when omitted). The four shipped baselines (`critical-issues-only`, `evidence-based-review`, `respect-existing-conventions`, `clud-bug-collaboration`) now declare `review_mode: shared`. Domain skills published in [thrillmade/agent-skills](https://github.com/thrillmade/agent-skills) (`brand-voice-review`, `api-contract-enforcement`, `pii-and-compliance`, `test-discipline`) declare `review_mode: dedicated`.
 - **`readReviewMode(content)` + `partitionByReviewMode(skills)` in `lib/skills.js`** — parsing + bucketing helpers. Single source of truth that the upcoming v0.6 GitHub App will reuse to route literal parallel Claude calls.
 - **Per-skill review output structure.** The workflow prompt now requires:
   - A `### Per-skill scan` block under the status line — one line per loaded skill, even silent ones. Forces the bot to acknowledge each skill explicitly (anti-dilution for shared skills, visibility for dedicated ones).
@@ -170,7 +170,7 @@ v0.5.9 ships the user-visible BB.1+BB.2 behavior via prompt restructuring inside
 ## [0.5.8] — 2026-05-18
 
 ### Added
-- **Composite strict-mode-gate action.** The ~24 lines of inline shell that v0.5.x rendered into every workflow template now live in `.github/actions/strict-mode-gate/action.yml`. Templates reference it via `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@v0.5.8`. The contract is unchanged (read base ref's `.clud-bug.json`; if `strictMode: true`, fail the check when the latest review's first line starts with `## 🐛 Clud Bug review — critical findings`). Same identifier, same exit code, same comment-grep — just factored out so a single edit ships across all 3 templates + the upcoming v0.6 GitHub App runtime. Adds a `bot-login` input (defaults to `claude[bot]`) so the same gate can serve the v0.6 App which will post as `clud-bug[bot]`.
+- **Composite strict-mode-gate action.** The ~24 lines of inline shell that v0.5.x rendered into every workflow template now live in `.github/actions/strict-mode-gate/action.yml`. Templates reference it via `uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.5.8`. The contract is unchanged (read base ref's `.clud-bug.json`; if `strictMode: true`, fail the check when the latest review's first line starts with `## 🐛 Clud Bug review — critical findings`). Same identifier, same exit code, same comment-grep — just factored out so a single edit ships across all 3 templates + the upcoming v0.6 GitHub App runtime. Adds a `bot-login` input (defaults to `claude[bot]`) so the same gate can serve the v0.6 App which will post as `clud-bug[bot]`.
 
 ### Changed
 - **Template marker bumped `v1` → `v2`** in `workflow.yml.tmpl`, `workflow-ts.yml.tmpl`, `workflow-py.yml.tmpl`. Existing v1 installs will be refreshed to v2 on the next `clud-bug update` (using v0.5.7's refresh-mode), and the rendered workflows will pick up the composite-action reference automatically. `audit.yml.tmpl` and `self-update.yml.tmpl` are unchanged (still v1) — they don't carry the gate.
@@ -217,23 +217,23 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 ## [0.5.2] — 2026-05-15
 
 ### Changed
-- **Bumped baseline-skills SHA pin to [`a4455977`](https://github.com/thrillmot/agent-skills/commit/a44559770686e6c51d08ba5bb842d78f85876fb2)** so all four baseline skills (`critical-issues-only`, `evidence-based-review`, `respect-existing-conventions`, `clud-bug-collaboration`) now resolve from `thrillmot/agent-skills` instead of silently falling back to bundled copies. Prior pin pointed at a tree where only `skills/logmind/SKILL.md` existed; every install was fallback-only. Fresh installs will now log `baseline kit: 4 specimens (from thrillmot/agent-skills)` instead of `(bundled fallback)`. Bundled copies still ship as the offline fallback.
+- **Bumped baseline-skills SHA pin to [`a4455977`](https://github.com/thrillmade/agent-skills/commit/a44559770686e6c51d08ba5bb842d78f85876fb2)** so all four baseline skills (`critical-issues-only`, `evidence-based-review`, `respect-existing-conventions`, `clud-bug-collaboration`) now resolve from `thrillmade/agent-skills` instead of silently falling back to bundled copies. Prior pin pointed at a tree where only `skills/logmind/SKILL.md` existed; every install was fallback-only. Fresh installs will now log `baseline kit: 4 specimens (from thrillmade/agent-skills)` instead of `(bundled fallback)`. Bundled copies still ship as the offline fallback.
 
 ## [0.5.1] — 2026-05-15
 
 ### Added
 - **`clud-bug init` now briefs other agents.** A self-contained `<!-- clud-bug-start -->` block (mirroring the well-established logmind pattern) is added to `AGENTS.md` (created if missing — it's the canonical cross-tool home) and idempotently appended to `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, and any `.md` files under `.cursor/rules/` — but only where those files already exist (no proliferating stubs the user didn't ask for). The block documents how to coexist with the bot's review threads, where the skills live, the strict-mode toggle, and the workflow-self-mod gotcha. Re-runs replace the prior block in place; running with a new clud-bug version updates it.
-- **New baseline skill `clud-bug-collaboration`.** Higher-fidelity guidance for Claude Code agents working in a clud-bug-installed repo: when to defer to bot thread resolution, how to read the `clud-bug-review` check status, why `claude-code-action` rejects PRs that modify its own workflow, how to disable strict mode safely (read from base ref so a PR can't disable on itself). Ships in the baseline kit alongside the existing three; canonical home will be `thrillmot/agent-skills/skills/clud-bug-collaboration/SKILL.md` on the next agent-skills SHA bump.
+- **New baseline skill `clud-bug-collaboration`.** Higher-fidelity guidance for Claude Code agents working in a clud-bug-installed repo: when to defer to bot thread resolution, how to read the `clud-bug-review` check status, why `claude-code-action` rejects PRs that modify its own workflow, how to disable strict mode safely (read from base ref so a PR can't disable on itself). Ships in the baseline kit alongside the existing three; canonical home will be `thrillmade/agent-skills/skills/clud-bug-collaboration/SKILL.md` on the next agent-skills SHA bump.
 - `clud-bug update` also refreshes the AGENTS.md / CLAUDE.md block so the embedded version + strict-mode line stay current after subsequent updates.
 
 ## [0.5.0] — 2026-05-15
 
 ### Changed
-- **Baseline skills now sourced from [thrillmot/agent-skills](https://github.com/thrillmot/agent-skills) at install time, pinned to a specific commit SHA.** `clud-bug init` fetches `https://raw.githubusercontent.com/thrillmot/agent-skills/<SHA>/skills/<name>/SKILL.md` for each baseline (`critical-issues-only`, `evidence-based-review`, `respect-existing-conventions`). The SHA is pinned in `lib/skills.js` (currently `977e439…`) — bumping it requires a clud-bug release, so a compromised commit on agent-skills can't silently land in users' Claude review skills mid-cycle.
+- **Baseline skills now sourced from [thrillmade/agent-skills](https://github.com/thrillmade/agent-skills) at install time, pinned to a specific commit SHA.** `clud-bug init` fetches `https://raw.githubusercontent.com/thrillmade/agent-skills/<SHA>/skills/<name>/SKILL.md` for each baseline (`critical-issues-only`, `evidence-based-review`, `respect-existing-conventions`). The SHA is pinned in `lib/skills.js` (currently `977e439…`) — bumping it requires a clud-bug release, so a compromised commit on agent-skills can't silently land in users' Claude review skills mid-cycle.
 - Fetched skills are cached at `~/.cache/clud-bug/skills/` for 24h. Cache keys include the upstream base URL, so switching bases (via `CLUD_BUG_AGENT_SKILLS_BASE` env override) doesn't poison the cache across forks.
 - Network failures, 404s, empty bodies, and 5s timeouts fall back to the bundled copy shipped in the npm package — works fully offline.
 - Baseline fetches now run in parallel (`Promise.all`), so a fully unreachable upstream caps at one timeout total instead of three (was ~15s, now ~5s).
-- Init log shows the source: `baseline kit: 3 specimens (from thrillmot/agent-skills)` vs `(bundled fallback)` vs a mixed-count form.
+- Init log shows the source: `baseline kit: 3 specimens (from thrillmade/agent-skills)` vs `(bundled fallback)` vs a mixed-count form.
 - Override the upstream URL via `CLUD_BUG_AGENT_SKILLS_BASE` env var (test seam + fork support).
 
 ## [0.4.1] — 2026-05-15
@@ -251,25 +251,25 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - **Bot-authored PRs are now handled gracefully.** PRs from `dependabot[bot]`, `renovate[bot]`, or forks (where GitHub deliberately doesn't pass repository secrets) used to fail loudly red — wrong signal. Now a guard step detects the case, posts a one-line advisory comment ("Clud Bug skipped — bot/fork PR cannot access secrets"), and exits 0. Check stays green; the skip is visible. Owner-authored PRs without the secret still fail loud.
 - **Site polish (carries over from the unreleased entry):** alive bug emoji (layered breathe + twitch + scuttle animations), Plate label gloss, thrillmot footer credit.
 
-[0.5.16]: https://github.com/thrillmot/clud-bug/compare/v0.5.15...v0.5.16
-[0.5.15]: https://github.com/thrillmot/clud-bug/compare/v0.5.14...v0.5.15
-[0.5.14]: https://github.com/thrillmot/clud-bug/compare/v0.5.13...v0.5.14
-[0.5.13]: https://github.com/thrillmot/clud-bug/compare/v0.5.12...v0.5.13
-[0.5.12]: https://github.com/thrillmot/clud-bug/compare/v0.5.11...v0.5.12
-[0.5.11]: https://github.com/thrillmot/clud-bug/compare/v0.5.10...v0.5.11
-[0.5.10]: https://github.com/thrillmot/clud-bug/compare/v0.5.9...v0.5.10
-[0.5.9]: https://github.com/thrillmot/clud-bug/compare/v0.5.8...v0.5.9
-[0.5.8]: https://github.com/thrillmot/clud-bug/compare/v0.5.7...v0.5.8
-[0.5.7]: https://github.com/thrillmot/clud-bug/compare/v0.5.6...v0.5.7
-[0.5.6]: https://github.com/thrillmot/clud-bug/compare/v0.5.5...v0.5.6
-[0.5.5]: https://github.com/thrillmot/clud-bug/compare/v0.5.4...v0.5.5
-[0.5.4]: https://github.com/thrillmot/clud-bug/compare/v0.5.3...v0.5.4
-[0.5.3]: https://github.com/thrillmot/clud-bug/compare/v0.5.2...v0.5.3
-[0.5.2]: https://github.com/thrillmot/clud-bug/compare/v0.5.1...v0.5.2
-[0.5.1]: https://github.com/thrillmot/clud-bug/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/thrillmot/clud-bug/compare/v0.4.1...v0.5.0
-[0.4.1]: https://github.com/thrillmot/clud-bug/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/thrillmot/clud-bug/compare/v0.3.4...v0.4.0
+[0.5.16]: https://github.com/thrillmade/clud-bug/compare/v0.5.15...v0.5.16
+[0.5.15]: https://github.com/thrillmade/clud-bug/compare/v0.5.14...v0.5.15
+[0.5.14]: https://github.com/thrillmade/clud-bug/compare/v0.5.13...v0.5.14
+[0.5.13]: https://github.com/thrillmade/clud-bug/compare/v0.5.12...v0.5.13
+[0.5.12]: https://github.com/thrillmade/clud-bug/compare/v0.5.11...v0.5.12
+[0.5.11]: https://github.com/thrillmade/clud-bug/compare/v0.5.10...v0.5.11
+[0.5.10]: https://github.com/thrillmade/clud-bug/compare/v0.5.9...v0.5.10
+[0.5.9]: https://github.com/thrillmade/clud-bug/compare/v0.5.8...v0.5.9
+[0.5.8]: https://github.com/thrillmade/clud-bug/compare/v0.5.7...v0.5.8
+[0.5.7]: https://github.com/thrillmade/clud-bug/compare/v0.5.6...v0.5.7
+[0.5.6]: https://github.com/thrillmade/clud-bug/compare/v0.5.5...v0.5.6
+[0.5.5]: https://github.com/thrillmade/clud-bug/compare/v0.5.4...v0.5.5
+[0.5.4]: https://github.com/thrillmade/clud-bug/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/thrillmade/clud-bug/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/thrillmade/clud-bug/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/thrillmade/clud-bug/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/thrillmade/clud-bug/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/thrillmade/clud-bug/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/thrillmade/clud-bug/compare/v0.3.4...v0.4.0
 
 ## [0.3.4] — 2026-05-15
 
@@ -308,11 +308,11 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - **Paragraph indent inconsistency on cludbug.dev.** Removed the `text-indent: 1.4em` rule on `.section-prose p + p`.
 - **Bug-pin scuttle animation** snap removed by replacing the 45/47%/90% keyframes with a symmetric 35→65% scuttle.
 
-[0.3.4]: https://github.com/thrillmot/clud-bug/compare/v0.3.3...v0.3.4
-[0.3.3]: https://github.com/thrillmot/clud-bug/compare/v0.3.2...v0.3.3
-[0.3.2]: https://github.com/thrillmot/clud-bug/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/thrillmot/clud-bug/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/thrillmot/clud-bug/compare/v0.2.2...v0.3.0
+[0.3.4]: https://github.com/thrillmade/clud-bug/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/thrillmade/clud-bug/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/thrillmade/clud-bug/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/thrillmade/clud-bug/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/thrillmade/clud-bug/compare/v0.2.2...v0.3.0
 
 ## [0.2.2] — 2026-05-15
 
@@ -349,7 +349,7 @@ Installs predating PR #52 have markerless workflows. The first `clud-bug update`
 - Three baseline skills shipped in the package: `critical-issues-only`, `evidence-based-review`, `respect-existing-conventions`.
 - 28 unit tests, repo-level CI (test + actionlint).
 
-[0.2.2]: https://github.com/thrillmot/clud-bug/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/thrillmot/clud-bug/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/thrillmot/clud-bug/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/thrillmot/clud-bug/releases/tag/v0.1.0
+[0.2.2]: https://github.com/thrillmade/clud-bug/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/thrillmade/clud-bug/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/thrillmade/clud-bug/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/thrillmade/clud-bug/releases/tag/v0.1.0

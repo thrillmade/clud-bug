@@ -10,9 +10,9 @@
 - Git history will serve as an audit trail for all decisions
 
 ---
-## 2026-05-15 11:34 - v0.5.0: baseline skills sourced from thrillmot/agent-skills, SHA-pinned (PR 25)
+## 2026-05-15 11:34 - v0.5.0: baseline skills sourced from thrillmade/agent-skills, SHA-pinned (PR 25)
 
-**Reasoning:** Skills were bundled in clud-bug only; not shareable. Moved to canonical home at thrillmot/agent-skills (skills.sh layout: skills/<name>/SKILL.md). Pinned to commit SHA in lib/skills.js (currently 977e439…) — re-couples trust to clud-bug releases so a malicious commit on agent-skills@main can't silently land in users' Claude review steering prompts mid-cycle.
+**Reasoning:** Skills were bundled in clud-bug only; not shareable. Moved to canonical home at thrillmade/agent-skills (skills.sh layout: skills/<name>/SKILL.md). Pinned to commit SHA in lib/skills.js (currently 977e439…) — re-couples trust to clud-bug releases so a malicious commit on agent-skills@main can't silently land in users' Claude review steering prompts mid-cycle.
 
 **Alternatives considered:** Stay bundled-only; fetch from main (rejected: supply-chain exposure); ship checksum lock file
 

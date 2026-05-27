@@ -118,7 +118,7 @@ async function runInit(args) {
   const fromAgentSkills = baseline.filter((s) => s._source === 'agent-skills').length;
   const sourceLabel = baseline.length === 0
     ? ''
-    : fromAgentSkills === baseline.length ? ' (from thrillmot/agent-skills)'
+    : fromAgentSkills === baseline.length ? ' (from thrillmade/agent-skills)'
     : fromAgentSkills === 0               ? ' (bundled fallback)'
                                           : ` (${fromAgentSkills} from agent-skills, ${baseline.length - fromAgentSkills} bundled)`;
   log(`    baseline kit:     ${baseline.length} specimens${sourceLabel}`);

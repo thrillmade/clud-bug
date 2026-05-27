@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-26** — chore: migrate to thrillmade org + update all GitHub-org refs *(chore/migrate-to-thrillmade)* — [decisions-branches/chore__migrate-to-thrillmade.md](decisions-branches/chore__migrate-to-thrillmade.md)
 - **2026-05-26** — Relax classifyPerSkillOutcome for natural bot phrasings (v0.5.16, 1F) *(feat/classifier-relax-v0.5.16)* — [decisions-branches/feat__classifier-relax-v0.5.16.md](decisions-branches/feat__classifier-relax-v0.5.16.md)
 - **2026-05-26** — Propagate logmind v0.2.10 to this repo (1C, truly clean) *(chore/logmind-v0.2.10-propagation)* — [decisions-branches/chore__logmind-v0.2.10-propagation.md](decisions-branches/chore__logmind-v0.2.10-propagation.md)
 - **2026-05-26** — Revert strictSkills to empty array (was misconfigured for baselines, v2) *(chore/empty-strictskills-v2)* — [decisions-branches/chore__empty-strictskills-v2.md](decisions-branches/chore__empty-strictskills-v2.md)
@@ -52,7 +53,7 @@ PR's CI run, so this file is always coherent with current `main`.
 - **2026-05-15** — Adopt LOGMIND_BOT_PAT in logmind-aggregate workflow (v0.1.4 template) *(feat/logmind-0.1.4)* — [decisions-branches/feat__logmind-0.1.4.md](decisions-branches/feat__logmind-0.1.4.md)
 - **2026-05-15** — Align AGENTS.md strict-mode render with workflow gate predicate *(feat/agent-collab)* — [decisions-branches/feat__agent-collab.md](decisions-branches/feat__agent-collab.md)
 - **2026-05-15** — Brief other agents in AGENTS.md/CLAUDE.md via a clud-bug block, mirror logmind's pattern *(feat/agent-collab)* — [decisions-branches/feat__agent-collab.md](decisions-branches/feat__agent-collab.md)
-- **2026-05-15** — v0.5.0: baseline skills sourced from thrillmot/agent-skills, SHA-pinned (PR 25) *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)
+- **2026-05-15** — v0.5.0: baseline skills sourced from thrillmade/agent-skills, SHA-pinned (PR 25) *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)
 - **2026-05-15** — Strict mode default for new installs (v0.4.0) gated on lastUpdate, not strictMode-undefined *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)
 - **2026-05-15** — Site responsive: stack plate as horizontal masthead at ≤600px instead of left-margin column *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

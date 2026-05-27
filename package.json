@@ -3,13 +3,13 @@
   "version": "0.5.16",
   "description": "Skill-driven Claude PR review. Ship a brand-voice skill, get brand reviews. Each finding cites the skill that motivated it. CLI installs the workflow + a baseline kit; add more from skills.sh.",
   "homepage": "https://cludbug.dev",
-  "bugs": "https://github.com/thrillmot/clud-bug/issues",
+  "bugs": "https://github.com/thrillmade/clud-bug/issues",
   "type": "module",
   "license": "MIT",
   "author": "thrillmot",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thrillmot/clud-bug.git"
+    "url": "git+https://github.com/thrillmade/clud-bug.git"
   },
   "keywords": [
     "claude",

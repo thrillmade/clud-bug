@@ -13,7 +13,7 @@ const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 // `github.action_path` resolves to the composite's OWN checkout at the
 // pinned tag — NOT the consumer's repo, NOT the latest from main.
 //
-// So a workflow with `uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX`
+// So a workflow with `uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@vX`
 // loads `lib/skills.js` from the `vX` git tag. If we ship a fix to
 // `selectReviewHeader` / `selectReviewBody` / `extractFirstReviewHeaderLine` /
 // `isCriticalReviewHeader` / `extractPerSkillLine` / `classifyPerSkillOutcome`
@@ -65,7 +65,7 @@ test('release discipline: composite pin in templates matches package.json versio
 
 test('release discipline: action.yml header docstring example matches package.json version', async () => {
   // The composite action's header has a usage-example comment block:
-  //   #   - uses: thrillmot/clud-bug/.github/actions/strict-mode-gate@vX.Y.Z
+  //   #   - uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@vX.Y.Z
   // Readers copy-paste this when wiring the composite into their own
   // workflows. If the example drifts behind the actual shipped pin,
   // anyone following the docs lands on a stale (potentially broken)
