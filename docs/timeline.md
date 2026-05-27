@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-27** — fix(baseline-review): skip claude-code-review job for Dependabot PRs *(fix/baseline-review-skip-dependabot)* — [decisions-branches/fix__baseline-review-skip-dependabot.md](decisions-branches/fix__baseline-review-skip-dependabot.md)
 - **2026-05-27** — Add excludedBaselines manifest field — per-repo opt-out of bundled baselines *(feat/excluded-baselines)* — [decisions-branches/feat__excluded-baselines.md](decisions-branches/feat__excluded-baselines.md)
 - **2026-05-27** — chore: post-migration cleanup — vercel.json + site URL refs + AGENTS.md v5-slim + dependabot.yml *(chore/vercel-ignore-and-site-refs)* — [decisions-branches/chore__vercel-ignore-and-site-refs.md](decisions-branches/chore__vercel-ignore-and-site-refs.md)
 - **2026-05-26** — chore: migrate to thrillmade org + update all GitHub-org refs *(chore/migrate-to-thrillmade)* — [decisions-branches/chore__migrate-to-thrillmade.md](decisions-branches/chore__migrate-to-thrillmade.md)
