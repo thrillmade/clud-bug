@@ -15,6 +15,10 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-27** — fix(v0.6.1): pin deployed workflow at @v0.5.16 (latest existing tag), not @v0.6.0 *(ceremony/self-mod-v0.6.0)* — [decisions-branches/ceremony__self-mod-v0.6.0.md](decisions-branches/ceremony__self-mod-v0.6.0.md)
+- **2026-05-27** — fix(v0.6.1): unblock CI — pin deployed workflow at @v0.6.0 until v0.6.1 tag exists + regen timeline *(ceremony/self-mod-v0.6.0)* — [decisions-branches/ceremony__self-mod-v0.6.0.md](decisions-branches/ceremony__self-mod-v0.6.0.md)
+- **2026-05-27** — fix(v0.6.1): bump BASELINE_SKILLS_REF SHA to post-org-migration commit + re-run self-mod *(ceremony/self-mod-v0.6.0)* — [decisions-branches/ceremony__self-mod-v0.6.0.md](decisions-branches/ceremony__self-mod-v0.6.0.md)
+- **2026-05-27** — ceremony: self-mod this repo to @v0.6.0 (clud-bug update) *(ceremony/self-mod-v0.6.0)* — [decisions-branches/ceremony__self-mod-v0.6.0.md](decisions-branches/ceremony__self-mod-v0.6.0.md)
 - **2026-05-27** — fix(baseline-review): skip claude-code-review job for Dependabot PRs *(fix/baseline-review-skip-dependabot)* — [decisions-branches/fix__baseline-review-skip-dependabot.md](decisions-branches/fix__baseline-review-skip-dependabot.md)
 - **2026-05-27** — Add excludedBaselines manifest field — per-repo opt-out of bundled baselines *(feat/excluded-baselines)* — [decisions-branches/feat__excluded-baselines.md](decisions-branches/feat__excluded-baselines.md)
 - **2026-05-27** — chore: post-migration cleanup — vercel.json + site URL refs + AGENTS.md v5-slim + dependabot.yml *(chore/vercel-ignore-and-site-refs)* — [decisions-branches/chore__vercel-ignore-and-site-refs.md](decisions-branches/chore__vercel-ignore-and-site-refs.md)

@@ -105,5 +105,5 @@ Anthropic's `claude-code-action` refuses to run on PRs that modify its own
 workflow file. Use `clud-bug edit-workflow` to bundle workflow tweaks into
 their own isolated PR — see [README](https://github.com/thrillmade/clud-bug#when-you-edit-the-workflow).
 
-_Installed at clud-bug v0.5.15._
+_Installed at clud-bug v0.6.1._
 <!-- clud-bug-end -->

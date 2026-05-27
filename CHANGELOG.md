@@ -4,6 +4,12 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-05-27
+
+### Fixed
+
+- **`clud-bug-collaboration` baseline regression on `clud-bug update`.** v0.6.0's `BASELINE_SKILLS_REF` pinned `thrillmade/agent-skills` at SHA `a445597…` — a commit from BEFORE the agent-skills org migration whose `clud-bug-collaboration/SKILL.md` still contained pre-migration `thrillmot/clud-bug` and `thrillmot/agent-skills` URLs (lines 123–124). `loadBaseline` prefers the remote at the pinned SHA over the bundled local copy, so every `clud-bug update` against v0.6.0 wrote the dead-URL version onto disk. Bumped the SHA to `436963e…` (`thrillmade/agent-skills@main` at the time of this release), which has the canonical `thrillmade/` URLs throughout. Bundled local `templates/skills/baseline/clud-bug-collaboration.md` was already correct; only the remote pin was stale.
+
 ## [0.6.0] — 2026-05-27
 
 ### Added

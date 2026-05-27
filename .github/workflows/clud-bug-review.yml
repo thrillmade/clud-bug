@@ -1,4 +1,4 @@
-# clud-bug-template-version: v9
+# clud-bug-template-version: v10
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -280,8 +280,13 @@ jobs:
             comment to exist for every review pass.
 
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
+      # NOTE: pinned at @v0.5.16 (latest existing tag) while this PR is open.
+      # v0.6.0 was never tagged (PR #83 merged without a manual tag push, so
+      # npm-publish never fired), and v0.6.1 doesn't exist until this PR
+      # merges + a tag is pushed. Follow-up self-mod PR will bump to @v0.6.1
+      # once the tag is in place.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.5.15
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.5.16
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
