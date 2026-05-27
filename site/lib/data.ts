@@ -2,7 +2,7 @@
 // Cached + revalidated hourly so the page stays fully static between rebuilds.
 
 const REVALIDATE_SECONDS = 3600;
-const REPO = 'thrillmot/clud-bug';
+const REPO = 'thrillmade/clud-bug';
 
 export type LatestReview = {
   prNumber: number;

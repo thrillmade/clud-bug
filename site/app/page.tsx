@@ -33,7 +33,7 @@ export default async function Home() {
           </p>
           <pre className="install-box appear-3">npx clud-bug init</pre>
           <div className="actions appear-4">
-            <a href="https://github.com/thrillmot/clud-bug">View on GitHub</a>
+            <a href="https://github.com/thrillmade/clud-bug">View on GitHub</a>
             <span className="sep">·</span>
             <a href="#observations">Observations</a>
             <span className="sep">·</span>
@@ -204,13 +204,13 @@ export default async function Home() {
 
       <footer className="colophon">
         <span>
-          Open source. <a href="https://github.com/thrillmot/clud-bug/blob/main/LICENSE">MIT</a>.
+          Open source. <a href="https://github.com/thrillmade/clud-bug/blob/main/LICENSE">MIT</a>.
         </span>
         <span className="credit">
           a <a href="https://thrillmot.com" rel="noopener">thrillmot</a> project
         </span>
         <span>
-          <a href="https://github.com/thrillmot/clud-bug">github.com/thrillmot/clud-bug</a>
+          <a href="https://github.com/thrillmade/clud-bug">github.com/thrillmade/clud-bug</a>
         </span>
       </footer>
     </main>
