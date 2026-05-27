@@ -72,55 +72,6 @@ When you write a custom skill, follow the SKILL.md frontmatter format
 Generic advice gets ignored; rules with examples and quoted-line evidence
 move the bot's behavior.
 
-### Example: a good custom skill
-
-Don't write generic prose like "be careful with database code." That's
-not actionable. Instead, anchor to specific files + behaviors:
-
-````markdown
----
-name: db-query-review
-description: How to review changes under lib/db/. Always flag missing parameterization, N+1 query patterns, and missing transaction boundaries on multi-statement writes.
----
-
-# Reviewing lib/db/ changes
-
-When the diff touches `lib/db/queries.ts` or any file under `lib/db/`,
-apply these rules:
-
-## Always flag
-
-1. **SQL string interpolation** — anything that builds a query via `+`,
-   template literals, or `string.format` rather than parameterized
-   queries. Example to flag:
-
-   ```ts
-   // BAD — flag this
-   db.query(`SELECT * FROM users WHERE id = ${userId}`)
-   // GOOD — uses parameterization
-   db.query('SELECT * FROM users WHERE id = ?', [userId])
-   ```
-
-2. **N+1 patterns** — flag any `await` inside a `for`/`map` loop that
-   calls `db.query` or `db.queryOne`. The fix is usually a single
-   `WHERE id IN (...)` query or a join.
-
-3. **Multi-statement writes without `db.transaction`** — if a diff
-   adds two or more `db.query` calls that all write, demand a
-   transaction wrapper. Quote the lines.
-
-## Style of finding
-
-Cite the specific line. "This is a SQL injection risk" alone isn't
-enough — quote the unsafe interpolation directly and propose the
-parameterized alternative.
-````
-
-That's what "evidence-anchored" looks like: specific file paths, runnable
-code examples for both bad and good, and explicit instructions on what
-to quote in the finding. The bot loads this and uses it as concrete
-review criteria, not vague guidance.
-
 ## When you edit `.github/workflows/clud-bug-*.yml`
 
 `anthropics/claude-code-action` **refuses to run on PRs that modify its
