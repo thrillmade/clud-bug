@@ -2,7 +2,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
@@ -18,6 +18,7 @@ import { runUpdate } from '../lib/update.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from '../lib/edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from '../lib/agents-md.js';
 import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from '../lib/branch-protection.js';
+import { computeReviewCost, costPerLOC, cacheHitRate, extractTokensFromLog, rollup, formatRollup } from '../lib/usage.js';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(PKG_ROOT, 'templates');
@@ -28,6 +29,8 @@ function parseArgs(argv) {
     _: [], offline: false, acceptAll: false, commit: false, help: false, version: false,
     since: null, changedIn: null, scopes: [], out: null,
     setProtection: true, quiet: false,
+    // 0.0.M.1 (v0.6.13): `clud-bug usage` flags.
+    repo: null, pr: null, limit: null, json: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -42,6 +45,10 @@ function parseArgs(argv) {
     else if (a === '--scope') args.scopes.push(argv[++i]);
     else if (a === '--out') args.out = argv[++i];
     else if (a === '--no-set-protection') args.setProtection = false;
+    else if (a === '--repo') args.repo = argv[++i];
+    else if (a === '--pr') args.pr = Number(argv[++i]);
+    else if (a === '--limit') args.limit = Number(argv[++i]);
+    else if (a === '--json') args.json = true;
     else args._.push(a);
   }
   return args;
@@ -64,6 +71,11 @@ Commands:
                         templates. Custom and skills.sh-installed specimens left alone.
   edit-workflow         Helper for editing .github/workflows/clud-bug-*.yml in an isolated
                         PR (the action refuses to review PRs that modify its own workflow).
+  usage                 Read recent clud-bug-review run JSON + normalize cost per LOC.
+                        Internal Q7-clud-bug enforcement dashboard. Reports cache hit
+                        rate, 30-day rolling \$/LOC trend, per-repo/per-model
+                        distributions, and outliers (> 2x org median).
+                        Use --pr / --repo / --since / --limit / --json to filter.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -78,6 +90,12 @@ Options:
                         required_conversation_resolution on the default
                         branch (init only). Use for repos that manage
                         branch protection via ruleset or org policy.
+  --repo <owner/name>   Restrict \`usage\` to a single repo. Default: all repos
+                        with clud-bug-review.yml in the gh user's auth scope.
+  --pr <N>              Restrict \`usage\` to a single PR.
+  --limit <N>           Max reviews to fetch (default 50; the API caps).
+  --json                Emit JSON instead of human-readable output.
+                        Compatible with --quiet for pipeline consumption.
   --since <date>        Audit only files changed in commits after <date> (git date string).
   --changed-in <dur>    Audit only files changed in the past <dur>: 7d, 2w, 1mo, 1y. (audit only)
   --scope <glob>        Limit audit to files matching <glob>; repeatable. (audit only)
@@ -107,6 +125,7 @@ async function main() {
     case 'audit':   return runAudit(args);
     case 'update':  return runUpdateCmd(args);
     case 'edit-workflow': return runEditWorkflow(args);
+    case 'usage':   return runUsage(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
@@ -705,6 +724,187 @@ async function runAudit(args) {
   log('Stub is empty findings — populated by the GitHub Action.');
   log('Run locally without the workflow if you want — Clud Bug review needs the action runner + ANTHROPIC_API_KEY.');
   ok(`audit: ${files.length} file${files.length === 1 ? '' : 's'} surveyed; stub at ${rel(cwd, outPath)}`);
+}
+
+// 0.0.M.1 (v0.6.13): Q7-clud-bug $/LOC dashboard.
+//
+// Reads recent clud-bug-review run JSON via `gh run list` + per-job logs
+// (which contain the SDK result messages with token counts + model),
+// joins to `gh pr view --json additions,deletions` for the LOC denominator,
+// and reports the rollup. Internal-only — not consumer-facing.
+//
+// Default scope: 30 days, all repos with clud-bug-review.yml in the gh
+// user's auth scope. --repo / --pr / --since / --limit narrow.
+async function runUsage(args) {
+  const limit = args.limit ?? 50;
+  const since = args.since ?? '30d';
+
+  // Determine target repos. If --repo specified, just that one. Otherwise
+  // discover repos via the local gh user's auth scope (the org's repos we
+  // own clud-bug-review on).
+  const repos = args.repo
+    ? [args.repo]
+    : await discoverConsumingRepos();
+
+  if (repos.length === 0) {
+    process.stderr.write(
+      'clud-bug usage: no repos with clud-bug-review.yml found in your gh scope.\n' +
+      'Pass --repo <owner/name> to point at a specific repo.\n'
+    );
+    process.exit(2);
+  }
+
+  // Per-repo: list recent clud-bug-review runs + extract the per-run job
+  // logs + per-PR LOC counts. Filter to PR runs (drop schedule/dispatch).
+  const reviews = [];
+  for (const repo of repos) {
+    const runs = await listRecentRuns(repo, limit, since, args.pr);
+    if (process.env.CLUD_BUG_DEBUG) process.stderr.write(`DBG: ${repo} runs=${runs.length}\n`);
+    for (const run of runs) {
+      const review = await fetchReviewRecord(repo, run);
+      if (process.env.CLUD_BUG_DEBUG) process.stderr.write(`DBG:   ${run.databaseId} ${run.conclusion} → ${review ? 'OK' : 'NULL'}\n`);
+      if (review) reviews.push(review);
+    }
+  }
+
+  if (reviews.length === 0) {
+    process.stderr.write(
+      `clud-bug usage: no clud-bug-review runs found in scope.\n` +
+      `  scope: ${repos.length} repo${repos.length === 1 ? '' : 's'}, last ${since}, limit ${limit}.\n`
+    );
+    process.exit(2);
+  }
+
+  const summary = rollup(reviews);
+  process.stdout.write(formatRollup(summary, { json: args.json }));
+  if (!args.json) {
+    ok(`usage: ${reviews.length} review${reviews.length === 1 ? '' : 's'} across ${repos.length} repo${repos.length === 1 ? '' : 's'}`);
+  }
+}
+
+// `gh repo list` won't filter by workflow file content, so we iterate
+// repos the user has access to and probe for clud-bug-review.yml. We
+// limit to 100 to avoid pagination explosions.
+async function discoverConsumingRepos() {
+  const list = await ghJson(['repo', 'list', '--limit', '100', '--json', 'nameWithOwner']);
+  if (!Array.isArray(list)) return [];
+  const owners = list.map((e) => e.nameWithOwner);
+  const found = [];
+  for (const ownerRepo of owners) {
+    const probe = await gh(['api', `repos/${ownerRepo}/contents/.github/workflows/clud-bug-review.yml`, '-q', '.size']);
+    if (probe.code === 0 && probe.stdout.trim().length > 0) {
+      found.push(ownerRepo);
+    }
+  }
+  return found;
+}
+
+// List recent clud-bug-review.yml runs in a repo. Filters to PR events
+// (drops schedule, workflow_dispatch — those have no PR LOC denominator).
+async function listRecentRuns(repo, limit, since, prFilter) {
+  const sinceDate = since.match(/^\d+[dwmy]$/) ? dateAgo(since) : null;
+  const args = [
+    'run', 'list', '-R', repo,
+    '--workflow', 'clud-bug-review.yml',
+    '--limit', String(limit),
+    '--json', 'databaseId,headSha,createdAt,event,status,conclusion',
+  ];
+  if (sinceDate) args.push('--created', `>=${sinceDate}`);
+  const runs = await ghJson(args);
+  if (!Array.isArray(runs)) return [];
+  return runs
+    .filter((r) => r.event === 'pull_request' && r.conclusion === 'success')
+    .map((r) => ({ ...r, repo }))
+    // If --pr was passed, only keep runs whose headSha matches that PR.
+    // We resolve the filter after we get the PR number from the job logs.
+    .filter((_) => true)
+    .slice(0, limit);
+}
+
+async function fetchReviewRecord(repo, run) {
+  // Find the clud-bug-review JOB id within the run.
+  const jobs = await ghJson(['api', `repos/${repo}/actions/runs/${run.databaseId}/jobs`, '-q', '.jobs']);
+  if (!Array.isArray(jobs)) return null;
+  const job = jobs.find((j) => j.name === 'clud-bug-review');
+  if (!job) return null;
+
+  // Fetch the job's log dump. May be large.
+  const logs = await gh(['api', `repos/${repo}/actions/jobs/${job.id}/logs`]);
+  if (logs.code !== 0) return null;
+
+  // Extract tokens + model from the SDK result-message JSON in the log.
+  const extracted = extractTokensFromLog(logs.stdout);
+  if (!extracted.ok) return null;
+
+  // Resolve the PR number from the run's pull_requests array or by SHA.
+  const prNumber = await resolvePrNumber(repo, run);
+  if (!prNumber) return null;
+
+  // Pull LOC denominator from the PR.
+  const prMeta = await ghJson(['pr', 'view', String(prNumber), '-R', repo, '--json', 'additions,deletions,number']);
+  if (!prMeta || typeof prMeta.additions !== 'number') return null;
+
+  const tokens = extracted.tokens;
+  const model = extracted.model;
+  const costInfo = computeReviewCost(tokens, model);
+  return {
+    repo,
+    pr: prNumber,
+    createdAt: run.createdAt,
+    model: costInfo.model,
+    tokens,
+    additions: prMeta.additions,
+    deletions: prMeta.deletions,
+    cost: costInfo.total,
+    costPerLOC: costPerLOC(costInfo.total, prMeta.additions, prMeta.deletions),
+    cacheRate: cacheHitRate(tokens),
+  };
+}
+
+async function resolvePrNumber(repo, run) {
+  // gh's run JSON sometimes carries a `pull_requests` array; if not (or
+  // if it's empty because the PR has been merged), look up via the
+  // commits/{sha}/pulls endpoint, which includes merged/closed PRs.
+  const detail = await ghJson(['api', `repos/${repo}/actions/runs/${run.databaseId}`, '-q', '.pull_requests']);
+  if (Array.isArray(detail) && detail[0]?.number) return detail[0].number;
+  // commits/{sha}/pulls returns PRs that contain the commit — works for
+  // open AND merged/closed PRs. The default `gh pr list -S <sha>` does
+  // not search closed PRs and silently returns empty for the merged
+  // case, which made every $/LOC lookup fail on historical PRs.
+  const pulls = await ghJson(['api', `repos/${repo}/commits/${run.headSha}/pulls`, '-q', '[.[].number]']);
+  if (Array.isArray(pulls) && pulls.length > 0) return pulls[0];
+  return null;
+}
+
+function dateAgo(spec) {
+  // spec like "30d", "2w", "1m", "1y" → ISO date N units ago.
+  const m = spec.match(/^(\d+)([dwmy])$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const unit = m[2];
+  const day = 24 * 60 * 60 * 1000;
+  const ms = n * (unit === 'd' ? day : unit === 'w' ? 7 * day : unit === 'm' ? 30 * day : 365 * day);
+  return new Date(Date.now() - ms).toISOString().slice(0, 10);
+}
+
+// gh helpers (reuse pattern from lib/branch-protection.js so callers can
+// stub `gh` in tests if they want — but for now spawn directly).
+function gh(args) {
+  return new Promise((resolve) => {
+    const child = spawn('gh', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('error', () => resolve({ code: 1, stdout: '', stderr: 'gh not on PATH' }));
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+async function ghJson(args) {
+  const { code, stdout } = await gh(args);
+  if (code !== 0) return null;
+  try { return JSON.parse(stdout); } catch { return null; }
 }
 
 function rel(from, to) {

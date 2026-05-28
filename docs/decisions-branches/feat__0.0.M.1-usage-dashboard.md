@@ -1,0 +1,8 @@
+## 2026-05-28 16:28 - v0.6.13: clud-bug usage $/LOC dashboard (Phase 0.5 / 0.0.M.1)
+
+**Reasoning:** First Phase 0.5 PR per plan sequencing — ship measurement before more shipping. New clud-bug usage [--pr N] [--repo X] [--since DATE] [--limit N] [--json] subcommand reads recent clud-bug-review run JSON via gh, joins to gh pr view --json additions,deletions for LOC denominator, computes $/LOC. New lib/usage.js: pricing table (Sonnet 4.6 $3/$0.30/MTok; Haiku 4.5 $0.80/$0.08/MTok; Opus 4.7 $15/$1.50/MTok), per-review cost compute, cache hit rate, log parser (sums tokens across multi-turn result messages), rollup with 30-day rolling trend + outlier detection (>2x median). New test/usage.test.js: 24 fixture-driven tests for the pure-compute paths. Two bug fixes during smoke-test: (1) gh run list --created syntax (separate args not joined); (2) gh pr list -S sha doesn't find merged/closed PRs — switched to repos/{owner}/{repo}/commits/{sha}/pulls API which includes merged history. Smoke-tested on logmind data: 4 reviews $37.88 across 1,348 LOC (median $0.0256/LOC, 94% cache hit, all on Opus pre-pin) — validates the v0.6.11 Sonnet pin's expected ~80% savings will be visible in next-cycle data. Q7-clud-bug enforcement: rolling 30-day $/LOC must trend down or hit floor; outliers (>2x median) flagged in dashboard for investigation.
+
+**Implications:**
+- Some run logs don't emit token data (clud-bug repo's own runs returned ~164KB logs vs logmind's ~400KB — claude-code-action's show_full_output behavior may differ by run state). Dashboard gracefully skips those runs via fetchReviewRecord returning null. Follow-up: investigate why some runs are truncated; not blocking ship.
+
+---
