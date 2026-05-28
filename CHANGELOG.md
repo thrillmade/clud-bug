@@ -4,6 +4,42 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.11] — 2026-05-28
+
+### Changed — pin clud-bug-review to Claude Sonnet 4.6 (Phase 0.A.8)
+
+> Reuses the slot that v0.6.9 was originally reserved for in the plan.
+
+clud-bug-review was running on **`claude-opus-4-7`** (Opus 4.7) —
+confirmed via log audit on logmind PR #72's run. Per Anthropic
+[cost docs](https://code.claude.com/docs/en/costs):
+
+> "Sonnet handles most coding tasks well and costs less than Opus.
+> Reserve Opus for complex architectural decisions."
+
+PR review fits Sonnet's profile, not Opus's. Pricing delta:
+
+| Model | Input | Cached read |
+|---|---|---|
+| Opus 4.7 | $15/MTok | $1.50/MTok |
+| **Sonnet 4.6** | **$3/MTok** | **$0.30/MTok** |
+
+**~80% cost reduction** on every review, on top of the caching wins
+from v0.6.3. A 50,000-token review (typical for a medium PR) drops
+from $0.75 → $0.15 — and that's the uncached-input case. Cached
+reviews drop ~$0.075 → ~$0.015.
+
+### How
+
+Added `--model claude-sonnet-4-6` to `claude_args` in all 3 workflow
+templates. Consuming repos pick up the pin on next composite-pin
+update (Dependabot or `clud-bug update`). Per-repo override remains
+available by editing the rendered workflow.
+
+### Net diff
+
+3 templates × 1 line each + composite-pin bump v0.6.10 → v0.6.11.
+
 ## [0.6.10] — 2026-05-28
 
 ### Added — incremental-diff review on fix-push (Phase 0.A.10 — HIGH-VALUE)
