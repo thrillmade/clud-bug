@@ -30,6 +30,38 @@ test('renderBlock: strictMode false renders advisory text', () => {
   assert.match(block, /Strict mode is \*\*off\*\*/);
 });
 
+// --- 0.A.5 (v0.6.6): block trim — full rules move to clud-bug-collaboration skill ---
+
+test('renderBlock v2: trimmed to a pointer + strict-mode toggle (≤600 chars)', () => {
+  // The full collaboration rules (fix-push, comment format, workflow-edit
+  // constraint, skill structure) moved to the bundled clud-bug-collaboration
+  // skill in agent-skills. AGENTS.md becomes a minimal pointer so every
+  // agent session in every consuming repo reads fewer bytes at session boot.
+  const block = renderBlock({ version: '0.6.6', strictMode: true });
+  // 800 char cap — generous ceiling vs the v1 ~2100-char block. v2 should
+  // come in well under (~720) but the precise number depends on the
+  // strict-mode text; future small edits shouldn't ratchet the threshold.
+  assert.ok(block.length <= 800, `block too long: ${block.length} chars`);
+  // Must point at the bundled skill explicitly so agents know where the
+  // detail moved.
+  assert.match(block, /clud-bug-collaboration/);
+  assert.match(block, /\.claude\/skills\/clud-bug-collaboration\/SKILL\.md/);
+  // Block-version annotation MUST advance with content trim so consumers
+  // can detect the schema change in their checked-in AGENTS.md.
+  assert.match(block, /clud-bug-block-version: v2/);
+  // Strict-mode toggle stays in the block (it's repo-specific and varies
+  // per consumer — can't move it to a canonical skill).
+  assert.match(block, /Strict mode is \*\*on\*\*/);
+});
+
+test('renderBlock v2: dropped sections do NOT appear anywhere in the block', () => {
+  const block = renderBlock({ version: '0.6.6', strictMode: true });
+  // These sections moved to the skill — should be GONE from AGENTS.md block.
+  assert.doesNotMatch(block, /When you push fixes addressing prior/);
+  assert.doesNotMatch(block, /Editing the workflow/);
+  assert.doesNotMatch(block, /Where the skills live/);
+});
+
 test('upsertBlock: appends when no prior block', () => {
   const before = '# AGENTS.md\n\nSome content.\n';
   const block = renderBlock({ strictMode: true });

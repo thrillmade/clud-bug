@@ -4,6 +4,48 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-05-27
+
+### Changed — `AGENTS.md` clud-bug block trimmed from ~44 lines to ~10
+
+The full collaboration rules (fix-push flow, skill structure, comment
+format, workflow-edit constraint, where-skills-live) moved out of the
+injected `AGENTS.md` block and into the bundled `clud-bug-collaboration`
+skill in `agent-skills`. That skill is auto-installed by `clud-bug
+init`/`update` and auto-loaded by `clud-bug-review`, so the information
+is fully preserved — it just lives in the right container now.
+
+What stays in the AGENTS.md block (repo-specific, can't move):
+- Pointer to the bundled skill.
+- Strict-mode toggle line (varies per consuming repo).
+- `_Installed at clud-bug vX.Y.Z._` footer.
+
+What moved to the skill (canonical, same content across all consuming repos):
+- Fix-push flow rules.
+- Strict-mode mechanics (base-ref read, can't disable on own PR).
+- Skill discovery + structure.
+- Workflow-edit constraint + `clud-bug edit-workflow` mechanism.
+
+### Why this compounds
+
+Every agent session in every consuming repo reads `AGENTS.md` at boot.
+Trimming the block from ~2,100 chars to ~720 chars means each session
+reads ~1,400 fewer chars from this file alone. Across 7+ consuming
+repos × many sessions/day, this is a meaningful recurring saving.
+
+### Block-version bump
+
+`<!-- clud-bug-block-version: -->` advances from `v1` to `v2` so existing
+consumers can detect the schema change in their checked-in `AGENTS.md`.
+The next `clud-bug update` rewrites the block to v2 idempotently.
+
+### Tests
+
+- `test/agents-md.test.js` (+2): assert block ≤800 chars, contains the
+  `clud-bug-collaboration` skill link, advances to `clud-bug-block-version:
+  v2`, and the dropped sections (fix-push flow, workflow-edit, skill
+  discovery) are not present in the new block.
+
 ## [0.6.5] — 2026-05-27
 
 ### Changed — write-time comment compression: stats header + severity prefix + collapsible reasoning
