@@ -6,3 +6,8 @@
 - After v0.6.12 ships: (1) npx clud-bug@latest update in each consuming repo locally re-renders the fixed workflow. (2) Next Monday's scheduled cron will open a self-update PR carrying the fixed template forward. workflow_dispatch will work again only AFTER one of those two paths lands the fixed file.
 
 ---
+## 2026-05-28 12:50 - PR #102: regen docs/file-structure.md to fix doc-index drift caught by clud-bug review
+
+**Reasoning:** 🟡 finding: docs/file-structure.md index didn't include feat__0.A.11-fix-self-update-yaml-literal.md entry. Cosmetic but the in-tree directory listing would be wrong after merge. Fix: ran 'logmind file-structure --write' to regenerate the index. No code change.
+
+---
