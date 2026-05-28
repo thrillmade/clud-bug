@@ -4,6 +4,65 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.10] — 2026-05-28
+
+### Added — incremental-diff review on fix-push (Phase 0.A.10 — HIGH-VALUE)
+
+> v0.6.9 intentionally skipped — reserved for the 0.A.8 model-pin
+> spike. v0.6.10 ships the HIGHEST-VALUE Phase A follow-up per plan.
+
+clud-bug now fetches only the **delta since its prior review** on
+fix-pushes, instead of re-ingesting the full PR diff every time. State
+lives in the prior summary comment as an HTML marker:
+
+```html
+<!-- last-reviewed-sha: <sha> -->
+```
+
+### How it works
+
+On every review pass, the prompt instructs Claude to:
+
+1. **Detect prior state** — grep prior `claude[bot]` comment bodies
+   for `last-reviewed-sha: <sha>`.
+2. **Verify ancestry** — `git merge-base --is-ancestor <prior_sha> $HEAD_SHA`.
+   Force-push or rebase invalidates ancestry → fall back to full diff.
+3. **Branch the fetch**:
+   - Marker present AND ancestor intact → `git diff <prior_sha>..$HEAD_SHA | head -c "$MAX_DIFF_BYTES"`.
+   - Missing OR not an ancestor → `gh pr diff "$PR_NUMBER" | head -c "$MAX_DIFF_BYTES"` (current behavior).
+4. **Emit the marker** at the end of every summary comment so the next
+   pass can do the same handshake.
+
+### Estimated savings
+
+A 4-push PR (initial 10 KB diff + 3 fix-pushes of 1 KB each) currently
+ingests ~40 KB across 4 reviews. With delta-only: ~13 KB. **~67%
+reduction on the diff section across the PR's lifetime.** Larger churny
+PRs save proportionally more.
+
+### Fallback discipline
+
+- **First review** has no marker → full diff (unchanged behavior).
+- **Force-push / rebase** breaks ancestry → full diff (correct).
+- **Span check**: if a delta-review surfaces a finding that might
+  affect unchanged code outside the delta, Claude is instructed to do
+  a one-time full `gh pr diff` to verify before flagging.
+
+### Workflow template changes
+
+- Added `HEAD_SHA: ${{ github.event.pull_request.head.sha }}` to env
+  block in all 3 templates.
+- Added `Bash(git diff:*)` and `Bash(git merge-base:*)` to allowedTools
+  in all 3 templates.
+- Composite-pin bumped `v0.6.8 → v0.6.10` (skipping v0.6.9).
+
+### Tests
+
+- `test/prompts.test.js`: prompt contains incremental-diff detection
+  instructions; prompt instructs Claude to emit the `last-reviewed-sha`
+  marker; all 3 rendered workflow templates declare `HEAD_SHA` env var,
+  the new git allowedTools, and pin the composite at `v0.6.10`.
+
 ## [0.6.8] — 2026-05-28
 
 ### Added — `--max-turns 15` + `MAX_THINKING_TOKENS=8000` in workflow templates (Phase 0.A.7)

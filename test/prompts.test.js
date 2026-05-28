@@ -183,7 +183,16 @@ test('all 3 rendered workflow templates pass --max-turns 15 via claude_args', as
   }
 });
 
-test('all 3 rendered workflow templates pin strict-mode-gate at v0.6.8', async () => {
+test('all 3 rendered workflow templates pin strict-mode-gate at the current package.json version', async () => {
+  // Reads package.json so the test never drifts past a version bump
+  // (release-discipline.test.js also asserts the same lock-step).
+  const pkg = JSON.parse(
+    await (await import('node:fs/promises')).readFile(
+      join(TEMPLATES, '..', 'package.json'),
+      'utf8',
+    ),
+  );
+  const expected = new RegExp(`strict-mode-gate@v${pkg.version.replace(/\./g, '\\.')}`);
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
     const out = await renderFile(join(TEMPLATES, tmpl), {
@@ -191,8 +200,87 @@ test('all 3 rendered workflow templates pin strict-mode-gate at v0.6.8', async (
     });
     assert.match(
       out,
-      /strict-mode-gate@v0\.6\.8/,
-      `${tmpl} composite-pin out of sync with package.json (v0.6.8)`,
+      expected,
+      `${tmpl} composite-pin out of sync with package.json (${pkg.version})`,
+    );
+  }
+});
+
+// --- 0.A.10 (v0.6.10): incremental-diff review on fix-push ---
+// Prompt teaches Claude to read the `<!-- last-reviewed-sha: <sha> -->`
+// marker in prior summary comments, verify ancestry via `git merge-base
+// --is-ancestor`, and branch between `git diff <sha>..HEAD` (delta) and
+// `gh pr diff` (full). The prompt also instructs Claude to emit the
+// marker on every new summary comment so the handshake compounds.
+
+test('reviewPrompt teaches Claude the incremental-diff handshake (read marker, check ancestor, branch)', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // Marker shape Claude must parse (with the escaped HTML-comment syntax).
+  assert.match(
+    out,
+    /last-reviewed-sha: <sha>/,
+    'prompt must describe the `last-reviewed-sha: <sha>` marker shape',
+  );
+  // Ancestor check is the rebase/force-push fallback gate.
+  assert.match(
+    out,
+    /git merge-base --is-ancestor/,
+    'prompt must describe the `git merge-base --is-ancestor` ancestry check',
+  );
+  // Delta fetch when marker + ancestor both hold.
+  assert.match(
+    out,
+    /git diff <prior_sha>\.\.\$HEAD_SHA/,
+    'prompt must describe the `git diff <prior_sha>..$HEAD_SHA` delta fetch',
+  );
+  // Fallback to gh pr diff named explicitly.
+  assert.match(
+    out,
+    /gh pr diff "\$PR_NUMBER" \| head -c "\$MAX_DIFF_BYTES"/,
+    'prompt must keep the full-diff fallback for first-review / non-ancestor cases',
+  );
+});
+
+test('reviewPrompt instructs Claude to emit the SHA marker on every summary comment', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // Marker template (literal $HEAD_SHA shown in instructions; Claude
+  // substitutes the actual value when posting).
+  assert.match(
+    out,
+    /<!-- last-reviewed-sha: \$HEAD_SHA -->/,
+    'prompt must instruct Claude to append the `<!-- last-reviewed-sha: $HEAD_SHA -->` marker',
+  );
+});
+
+test('all 3 rendered workflow templates expose HEAD_SHA env var (v0.6.10+)', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(
+      out,
+      /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
+      `${tmpl} missing HEAD_SHA env var (v0.6.10)`,
+    );
+  }
+});
+
+test('all 3 rendered workflow templates allow git diff + git merge-base (v0.6.10+)', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(
+      out,
+      /Bash\(git diff:\*\)/,
+      `${tmpl} missing Bash(git diff:*) in allowedTools (v0.6.10)`,
+    );
+    assert.match(
+      out,
+      /Bash\(git merge-base:\*\)/,
+      `${tmpl} missing Bash(git merge-base:*) in allowedTools (v0.6.10)`,
     );
   }
 });
