@@ -424,6 +424,7 @@ async function runList(_args) {
   const total = groups.baseline.length + groups.remote.length + groups.custom.length;
   if (total === 0) {
     log('Empty collection. Run `clud-bug init` to open field season.');
+    ok('list: 0 skills installed (run `clud-bug init` first)');
     return;
   }
   log(`🐛 ${total} specimen${total === 1 ? '' : 's'} pinned in .claude/skills/`);
@@ -444,6 +445,7 @@ async function runList(_args) {
       log(`  • ${s.slug}${s.description ? `  — ${s.description}` : ''}`);
     }
   }
+  ok(`list: ${total} skills (baseline=${groups.baseline.length}, remote=${groups.remote.length}, custom=${groups.custom.length})`);
 }
 
 async function runAdd(args) {
@@ -691,6 +693,7 @@ async function runAudit(args) {
 
   if (files.length === 0) {
     log('  Nothing in scope. Try widening --scope or --changed-in.');
+    ok(`audit: 0 files in scope`);
     return;
   }
 
@@ -701,6 +704,7 @@ async function runAudit(args) {
   log('');
   log('Stub is empty findings — populated by the GitHub Action.');
   log('Run locally without the workflow if you want — Clud Bug review needs the action runner + ANTHROPIC_API_KEY.');
+  ok(`audit: ${files.length} file${files.length === 1 ? '' : 's'} surveyed; stub at ${rel(cwd, outPath)}`);
 }
 
 function rel(from, to) {
