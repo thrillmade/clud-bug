@@ -48,6 +48,109 @@ test('unknown command exits 2 with help', () => {
   assert.match(r.stderr, /Unknown command/);
 });
 
+// --- 0.A.6 (v0.6.7): --quiet / CLUD_BUG_QUIET token-frugal mode ---
+// Default is unchanged (full progress chatter). When --quiet or
+// CLUD_BUG_QUIET=1 is set, the CLI suppresses progress lines and emits
+// exactly one final "ok <key-value>" summary per command. Errors +
+// warnings still print on stderr.
+
+test('--help advertises --quiet / CLUD_BUG_QUIET', () => {
+  const r = run(process.cwd(), ['--help']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /--quiet,-q/);
+  assert.match(r.stdout, /CLUD_BUG_QUIET=1/);
+});
+
+test('refresh in an empty repo: --quiet emits exactly one "ok refreshed: ..." line', async () => {
+  const dir = await makeRepo({});
+  try {
+    const r = run(dir, ['refresh', '--quiet']);
+    // Empty repo → "no clud-bug install" early-return path. Should still
+    // emit the ok summary on stdout (positive confirmation for agents).
+    const stdoutLines = r.stdout.split('\n').filter(Boolean);
+    const okLines = stdoutLines.filter(l => l.startsWith('ok '));
+    assert.equal(okLines.length, 1, `expected 1 ok line, got ${okLines.length}: ${stdoutLines.join(' | ')}`);
+    assert.match(okLines[0], /^ok refreshed: 0 skills installed/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('refresh in an empty repo: CLUD_BUG_QUIET=1 env var has the same effect', async () => {
+  const dir = await makeRepo({});
+  try {
+    const r = run(dir, ['refresh'], { env: { CLUD_BUG_QUIET: '1' } });
+    const stdoutLines = r.stdout.split('\n').filter(Boolean);
+    const okLines = stdoutLines.filter(l => l.startsWith('ok '));
+    assert.equal(okLines.length, 1);
+    // Total stdout should be ONLY the ok line (no progress chatter).
+    assert.equal(stdoutLines.length, 1, `unexpected non-ok stdout: ${stdoutLines.join(' | ')}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('refresh in an empty repo: default mode (no --quiet) emits BOTH progress and ok', async () => {
+  const dir = await makeRepo({});
+  try {
+    const r = run(dir, ['refresh']);
+    const stdoutLines = r.stdout.split('\n').filter(Boolean);
+    // Progress chatter present.
+    assert.ok(stdoutLines.some(l => /No clud-bug-managed specimens/.test(l)));
+    // ok line also present (always emitted regardless of quiet state).
+    assert.ok(stdoutLines.some(l => l.startsWith('ok refreshed')));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('update in an empty repo: --quiet emits exactly one "ok updated: ..." line', async () => {
+  const dir = await makeRepo({});
+  try {
+    const r = run(dir, ['update', '--quiet']);
+    const stdoutLines = r.stdout.split('\n').filter(Boolean);
+    const okLines = stdoutLines.filter(l => l.startsWith('ok '));
+    assert.equal(okLines.length, 1);
+    assert.match(okLines[0], /^ok updated:/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('list in an empty repo: --quiet emits exactly one "ok list: ..." line (post-clud-bug-review #98)', async () => {
+  // Caught by clud-bug-review on PR #98: runList had no ok() call, so
+  // --quiet produced ZERO stdout on the empty-collection path. Same
+  // shape as the refresh/update empty-repo cases.
+  const dir = await makeRepo({});
+  try {
+    const r = run(dir, ['list', '--quiet']);
+    const stdoutLines = r.stdout.split('\n').filter(Boolean);
+    const okLines = stdoutLines.filter(l => l.startsWith('ok '));
+    assert.equal(okLines.length, 1, `expected 1 ok line, got: ${stdoutLines.join(' | ')}`);
+    assert.match(okLines[0], /^ok list: 0 skills installed/);
+    // Total stdout should be ONLY the ok line in quiet mode.
+    assert.equal(stdoutLines.length, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('audit in an empty repo: --quiet emits exactly one "ok audit: ..." line (post-clud-bug-review #98)', async () => {
+  // Caught by clud-bug-review on PR #98. Symmetric with the list fix.
+  const dir = await makeRepo({});
+  try {
+    // Need a git repo for the audit file-set computation.
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+    const r = run(dir, ['audit', '--quiet']);
+    const stdoutLines = r.stdout.split('\n').filter(Boolean);
+    const okLines = stdoutLines.filter(l => l.startsWith('ok '));
+    assert.equal(okLines.length, 1, `expected 1 ok line, got: ${stdoutLines.join(' | ')}`);
+    assert.match(okLines[0], /^ok audit:/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('init --offline --accept-all in a fresh repo writes workflow + manifest', async () => {
   const dir = await makeRepo({
     'package.json': JSON.stringify({ name: 'demo', dependencies: { next: '^15' }}),

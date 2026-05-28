@@ -27,7 +27,7 @@ function parseArgs(argv) {
   const args = {
     _: [], offline: false, acceptAll: false, commit: false, help: false, version: false,
     since: null, changedIn: null, scopes: [], out: null,
-    setProtection: true,
+    setProtection: true, quiet: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -36,6 +36,7 @@ function parseArgs(argv) {
     else if (a === '--commit') args.commit = true;
     else if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--version' || a === '-v') args.version = true;
+    else if (a === '--quiet' || a === '-q') args.quiet = true;
     else if (a === '--since') args.since = argv[++i];
     else if (a === '--changed-in') args.changedIn = argv[++i];
     else if (a === '--scope') args.scopes.push(argv[++i]);
@@ -68,6 +69,11 @@ Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
   --accept-all,-y       Accept the recommended specimens without prompting.
   --commit              git add + commit the generated kit when done (init only).
+  --quiet,-q            Token-frugal mode for agent invocations. Suppresses
+                        progress chatter; emits exactly one final
+                        \`ok <key-value>\` summary line per command. Errors
+                        and warnings still print. Also honored via the
+                        CLUD_BUG_QUIET=1 env var.
   --no-set-protection   Skip the prompt that offers to enable
                         required_conversation_resolution on the default
                         branch (init only). Use for repos that manage
@@ -89,6 +95,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(HELP); return; }
   if (args.version) { process.stdout.write((await readPkgVersion()) + '\n'); return; }
+  if (args.quiet) setQuiet(true);
 
   const cmd = args._[0];
   switch (cmd) {
@@ -275,6 +282,10 @@ async function runInit(args) {
   log('Strict mode is ON by default (clud-bug-review fails the check on critical findings).');
   log('  • Add `clud-bug-review` to your branch protection required checks for full enforcement.');
   log('  • Opt out by setting "strictMode": false in .claude/skills/.clud-bug.json.');
+
+  // Final agent-friendly summary line (always emitted, even with --quiet).
+  const version = await readPkgVersion();
+  ok(`initialized: .claude/skills/ ${chosen.length} specimens, workflow @v${version}`);
 }
 
 async function promptForSkills(recommended) {
@@ -413,6 +424,7 @@ async function runList(_args) {
   const total = groups.baseline.length + groups.remote.length + groups.custom.length;
   if (total === 0) {
     log('Empty collection. Run `clud-bug init` to open field season.');
+    ok('list: 0 skills installed (run `clud-bug init` first)');
     return;
   }
   log(`🐛 ${total} specimen${total === 1 ? '' : 's'} pinned in .claude/skills/`);
@@ -433,6 +445,7 @@ async function runList(_args) {
       log(`  • ${s.slug}${s.description ? `  — ${s.description}` : ''}`);
     }
   }
+  ok(`list: ${total} skills (baseline=${groups.baseline.length}, remote=${groups.remote.length}, custom=${groups.custom.length})`);
 }
 
 async function runAdd(args) {
@@ -457,6 +470,7 @@ async function runAdd(args) {
   await writeManifest(skillsDir, manifest);
   log(`  ✓ pinned ${entry.slug} → .claude/skills/${entry.slug}/SKILL.md`);
   log('  Commit + push to apply on the next PR.');
+  ok(`added: .claude/skills/${entry.slug}/SKILL.md`);
 }
 
 async function runRemove(args) {
@@ -468,6 +482,7 @@ async function runRemove(args) {
   const skillsDir = join(process.cwd(), '.claude', 'skills');
   const entry = await removeSkill(skillsDir, slug);
   log(`  ✓ unpinned ${entry.slug}${entry.kind === 'baseline' ? ' (baseline — returns on next init)' : ''}`);
+  ok(`removed: ${entry.slug}${entry.kind === 'baseline' ? ' (baseline)' : ''}`);
 }
 
 async function runRefresh(args) {
@@ -476,6 +491,7 @@ async function runRefresh(args) {
   const manifest = await readManifest(skillsDir);
   if (manifest.installed.length === 0) {
     log('No clud-bug-managed specimens found. Run `clud-bug init` first.');
+    ok('refreshed: 0 skills installed (run `clud-bug init` first)');
     return;
   }
 
@@ -520,6 +536,7 @@ async function runRefresh(args) {
   if (diff.add.length === 0 && diff.remove.length === 0) {
     log('');
     log('Collection in sync with skills.sh — nothing to update.');
+    ok(`refreshed: ${diff.unchanged.length} skills in sync, 0 changes`);
     return;
   }
 
@@ -541,6 +558,7 @@ async function runRefresh(args) {
   if (diff.add.length) await writeSkills(skillsDir, diff.add, client);
   for (const entry of diff.remove) await removeSkill(skillsDir, entry.slug);
   log('  ✓ collection updated. Commit + push to apply on the next PR.');
+  ok(`refreshed: +${diff.add.length} -${diff.remove.length} (${diff.unchanged.length} unchanged)`);
 }
 
 async function runEditWorkflow(_args) {
@@ -557,6 +575,7 @@ async function runEditWorkflow(_args) {
 
   if (pending.files.length === 0) {
     log('Nothing to commit. Edit your .github/workflows/clud-bug-*.yml file(s) first, then re-run.');
+    ok('branch: (none — no pending workflow edits)');
     return;
   }
   if (!pending.allWorkflow) {
@@ -596,6 +615,7 @@ async function runEditWorkflow(_args) {
   log('');
   log('Done. Open the PR:');
   log(`  gh pr create --title "Edit clud-bug workflow" --body "Workflow tweak. The clud-bug-review check on this PR will fail with a 401 (Anthropic's self-protection against PRs that modify the reviewer's own workflow); merge once and subsequent PRs work normally."`);
+  ok(`branch: ${branch} (${pending.files.length} file${pending.files.length === 1 ? '' : 's'})`);
 }
 
 async function runUpdateCmd(_args) {
@@ -612,6 +632,7 @@ async function runUpdateCmd(_args) {
 
   if (result.missing === 'init') {
     log('  No clud-bug installation detected. Run `clud-bug init` first.');
+    ok('updated: 0 changes (no clud-bug install detected)');
     return;
   }
 
@@ -619,6 +640,7 @@ async function runUpdateCmd(_args) {
 
   if (result.changed.length === 0 && skipped.length === 0) {
     log('  Already current. Nothing to update.');
+    ok(`updated: @v${ourVersion}, 0 changes`);
     return;
   }
 
@@ -639,6 +661,7 @@ async function runUpdateCmd(_args) {
   }
   log('');
   log('Commit + push to apply the refreshed kit on the next PR.');
+  ok(`updated: @v${ourVersion}, ${result.changed.length} changed, ${result.unchanged.length} unchanged${skipped.length ? `, ${skipped.length} skipped` : ''}`);
 }
 
 async function runAudit(args) {
@@ -670,6 +693,7 @@ async function runAudit(args) {
 
   if (files.length === 0) {
     log('  Nothing in scope. Try widening --scope or --changed-in.');
+    ok(`audit: 0 files in scope`);
     return;
   }
 
@@ -680,12 +704,25 @@ async function runAudit(args) {
   log('');
   log('Stub is empty findings — populated by the GitHub Action.');
   log('Run locally without the workflow if you want — Clud Bug review needs the action runner + ANTHROPIC_API_KEY.');
+  ok(`audit: ${files.length} file${files.length === 1 ? '' : 's'} surveyed; stub at ${rel(cwd, outPath)}`);
 }
 
 function rel(from, to) {
   return to.startsWith(from + '/') ? to.slice(from.length + 1) : to;
 }
-function log(msg) { process.stdout.write(msg + '\n'); }
+
+// Quiet-mode mechanism (v0.6.7+):
+// - Default: log() emits progress to stdout (today's behavior).
+// - When CLUD_BUG_QUIET=1 OR --quiet/-q is passed: log() is suppressed.
+//   ok() ALWAYS emits its single-line summary so agents get positive
+//   confirmation with a chainable key-value (commit SHA, file count,
+//   branch name) regardless of quiet state.
+// - warn() / die() emit unconditionally — quiet must not silence real
+//   problems.
+let QUIET = process.env.CLUD_BUG_QUIET === '1';
+function setQuiet(flag) { QUIET = !!flag; }
+function log(msg) { if (!QUIET) process.stdout.write(msg + '\n'); }
+function ok(msg) { process.stdout.write('ok ' + msg + '\n'); }
 function warn(msg) { process.stderr.write(`  ! ${msg}\n`); }
 
 main().catch(err => {

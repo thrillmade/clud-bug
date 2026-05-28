@@ -4,6 +4,53 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.7] — 2026-05-27
+
+### Added — `--quiet/-q` flag + `CLUD_BUG_QUIET=1` env var for agent-friendly CLI output
+
+When an agent (Claude Code session, CI script, downstream tool) runs
+`clud-bug init` / `update` / `add` / etc., the verbose progress output
+(~5–50 lines per command) lands in the agent's context. v0.6.7 adds an
+opt-in "quiet" mode borrowed from RTK's pattern — suppresses progress
+chatter, emits exactly one final `ok <key-value>` summary line per
+command. Errors and warnings still print on stderr.
+
+| Command | Quiet output |
+|---|---|
+| `init` | `ok initialized: .claude/skills/ N specimens, workflow @vX.Y.Z` |
+| `update` | `ok updated: @vX.Y.Z, N changed, M unchanged` |
+| `add <slug>` | `ok added: .claude/skills/<slug>/SKILL.md` |
+| `remove <slug>` | `ok removed: <slug>` |
+| `refresh` | `ok refreshed: +N -M (K unchanged)` |
+| `edit-workflow` | `ok branch: <name> (N file)` |
+
+### Activation
+
+Either pass `--quiet` / `-q` on the command line, or export
+`CLUD_BUG_QUIET=1` in the environment. For agent invocations, the
+env-var route is recommended (set once at session start; no flag per
+invocation).
+
+### Behavior
+
+- The final `ok` line **always** prints (even without quiet mode) so
+  agents that parse stdout always get a positive confirmation with a
+  chainable key-value (commit SHA / file count / branch name).
+- `log()` (progress chatter) is suppressed only in quiet mode.
+- `warn()` (stderr warnings) and errors print regardless — quiet
+  must not silence real problems.
+
+### `AGENTS.md` block update
+
+The v0.6.6-trimmed block now mentions `CLUD_BUG_QUIET=1` so agents
+discover the env var when they read AGENTS.md at session boot.
+
+### Tests
+
+- `test/cli.test.js` (+5 new): help advertises the flag, `--quiet`
+  emits exactly one `ok` line on refresh / update / empty-repo paths,
+  default mode still emits progress chatter + the ok line.
+
 ## [0.6.6] — 2026-05-27
 
 ### Changed — `AGENTS.md` clud-bug block trimmed from ~44 lines to ~10

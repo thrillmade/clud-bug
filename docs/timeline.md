@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-27** — Add --quiet / CLUD_BUG_QUIET=1 mode to clud-bug CLI with RTK-style single-line ok output *(feat/0.A.6-ok-cli-output)* — [decisions-branches/feat__0.A.6-ok-cli-output.md](decisions-branches/feat__0.A.6-ok-cli-output.md)
 - **2026-05-27** — Trim clud-bug's injected AGENTS.md block; move detail to bundled clud-bug-collaboration skill *(feat/0.A.5-agents-md-trim)* — [decisions-branches/feat__0.A.5-agents-md-trim.md](decisions-branches/feat__0.A.5-agents-md-trim.md)
 - **2026-05-27** — Add stats header + severity-prefix + collapsible-reasoning comment format *(feat/0.A.4-comment-compression)* — [decisions-branches/feat__0.A.4-comment-compression.md](decisions-branches/feat__0.A.4-comment-compression.md)
 - **2026-05-27** — Add per-section byte budgets to clud-bug's review prompt + workflow env vars *(feat/0.A.3-prompt-budgets)* — [decisions-branches/feat__0.A.3-prompt-budgets.md](decisions-branches/feat__0.A.3-prompt-budgets.md)

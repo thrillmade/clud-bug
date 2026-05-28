@@ -38,10 +38,11 @@ test('renderBlock v2: trimmed to a pointer + strict-mode toggle (≤600 chars)',
   // skill in agent-skills. AGENTS.md becomes a minimal pointer so every
   // agent session in every consuming repo reads fewer bytes at session boot.
   const block = renderBlock({ version: '0.6.6', strictMode: true });
-  // 800 char cap — generous ceiling vs the v1 ~2100-char block. v2 should
-  // come in well under (~720) but the precise number depends on the
-  // strict-mode text; future small edits shouldn't ratchet the threshold.
-  assert.ok(block.length <= 800, `block too long: ${block.length} chars`);
+  // 1000 char cap — generous ceiling vs the v1 ~2100-char block. v0.6.7's
+  // block adds a CLUD_BUG_QUIET hint that brings it to ~900 chars; the
+  // ceiling absorbs future small additions without ratcheting back up
+  // toward v1's verbosity. Still a ~55%+ reduction from v1.
+  assert.ok(block.length <= 1000, `block too long: ${block.length} chars`);
   // Must point at the bundled skill explicitly so agents know where the
   // detail moved.
   assert.match(block, /clud-bug-collaboration/);
