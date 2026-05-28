@@ -4,6 +4,32 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-05-27
+
+### Changed — write-time comment compression: stats header + severity prefix + collapsible reasoning
+
+The comments clud-bug *writes* get ingested by every subsequent re-review of
+the same PR (via the FIX-PUSH FLOW's `gh api ... comments` fetch). Compressing
+at write time means every future re-read in every consuming repo costs less.
+
+- **Stats header** (`Found: N 🔴 / N 🟡 / N 🟣`) leads every review comment immediately under `**This round:**`. Three severity tiers: 🔴 important (bugs/security/perf), 🟡 nit (suggestions), 🟣 pre-existing (issues that pre-date this PR). On the zero-findings case the header IS the entire substantive payload — agents re-ingesting the comment can short-circuit without parsing the body.
+- **Per-finding format**: each finding starts with a severity emoji + one-line claim + `file:line`. Long-form reasoning wraps in `<details><summary>Reasoning</summary>...</details>`. Humans see full detail via GitHub's native render; agent re-reads skip the collapsed section.
+- **NEW `extractStatsHeader(comment)` export** in `lib/skills.js`: parses the stats line into `{important, nit, preExisting}` or returns `null`. Strict on severity emoji (drift catches loudly), permissive on whitespace.
+- **Tests** (`test/prompts.test.js` +2, `test/skills.test.js` +5): assert the prompt instructions are present + the parser handles canonical / whitespace-variant / multi-digit / missing / non-string inputs.
+
+### Compounds effect
+
+Combined with v0.6.3 (caching the stable prefix) and v0.6.4 (capping the
+variable suffix), v0.6.5 compresses the third surface: the comments
+clud-bug writes that future re-reviews must ingest. Every byte trimmed
+here is paid back on every future re-review for the lifetime of the PR.
+
+### Anthropic Code Review parity
+
+The three-tier severity system is the same scheme Anthropic's own Code
+Review uses (🔴 Important / 🟡 Nit / 🟣 Pre-existing). Matching this on
+opt-in keeps users who switch between products consistent.
+
 ## [0.6.4] — 2026-05-27
 
 ### Changed — per-section budgets cap the variable suffix (caching covered the stable prefix)

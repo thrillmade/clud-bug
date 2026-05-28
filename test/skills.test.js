@@ -11,6 +11,7 @@ import {
   extractPerSkillLine, classifyPerSkillOutcome,
   selectReviewHeader, extractFirstReviewHeaderLine, isCriticalReviewHeader,
   selectReviewBody,
+  extractStatsHeader,
   _internal,
 } from '../lib/skills.js';
 
@@ -977,4 +978,38 @@ test('isCriticalReviewHeader: end-to-end with selectReviewHeader matches the v0.
   assert.equal(isCriticalReviewHeader(selectReviewHeader(failingComments, 'claude[bot]')), true);
   assert.equal(isCriticalReviewHeader(selectReviewHeader(passingComments, 'claude[bot]')), false);
   assert.equal(isCriticalReviewHeader(selectReviewHeader(noReviewYet, 'claude[bot]')), false);
+});
+
+// --- 0.A.4 (v0.6.5): extractStatsHeader for the "Found: N🔴 / N🟡 / N🟣" line ---
+// The stats header lets agents ingesting a prior clud-bug comment on
+// re-review skip the rest of the body on the zero-findings case.
+// extractStatsHeader parses the structured counts; the parser is
+// permissive on whitespace and strict on the severity emoji (drift
+// catches loudly).
+
+test('extractStatsHeader: parses the canonical "Found: N🔴 / N🟡 / N🟣" line', () => {
+  const comment = '## 🐛 Clud Bug review\n\n**This round:** 0 critical · 0 minor · 0 resolved from prior · 0 still open\n\nFound: 2 🔴 / 5 🟡 / 1 🟣\n\n### Per-skill scan\n';
+  assert.deepEqual(extractStatsHeader(comment), { important: 2, nit: 5, preExisting: 1 });
+});
+
+test('extractStatsHeader: returns null when no header present', () => {
+  const comment = '## 🐛 Clud Bug review\n\nThis round: 0 critical · 0 minor\n';
+  assert.equal(extractStatsHeader(comment), null);
+});
+
+test('extractStatsHeader: handles extra whitespace around slashes + counts', () => {
+  const comment = 'Found:  0 🔴  /  0 🟡  /  0 🟣 ';
+  assert.deepEqual(extractStatsHeader(comment), { important: 0, nit: 0, preExisting: 0 });
+});
+
+test('extractStatsHeader: multi-digit counts parse correctly', () => {
+  const comment = 'Found: 12 🔴 / 100 🟡 / 3 🟣';
+  assert.deepEqual(extractStatsHeader(comment), { important: 12, nit: 100, preExisting: 3 });
+});
+
+test('extractStatsHeader: handles empty / non-string inputs without throwing', () => {
+  assert.equal(extractStatsHeader(''), null);
+  assert.equal(extractStatsHeader(null), null);
+  assert.equal(extractStatsHeader(undefined), null);
+  assert.equal(extractStatsHeader(42), null);
 });

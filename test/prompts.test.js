@@ -115,6 +115,28 @@ test('rendered workflow.yml.tmpl sets the three budget env vars', async () => {
   assert.match(out, /Bash\(head:\*\)/);
 });
 
+// --- 0.A.4 (v0.6.5): stats header + severity-prefix comment format ---
+// Write-time compression: future re-reviews ingest prior clud-bug comments;
+// compact format = cheaper ingest. The prompt instructs Claude to lead with
+// "Found: N 🔴 / N 🟡 / N 🟣" and to use severity-emoji-prefix + collapsible
+// <details> reasoning for each finding.
+
+test('reviewPrompt instructs Claude to emit "Found: N 🔴 / N 🟡 / N 🟣" stats header', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  assert.match(out, /Found: N 🔴 \/ N 🟡 \/ N 🟣/u);
+  // The three severity tiers must be named: important, nit, pre-existing.
+  assert.match(out, /🔴 important/u);
+  assert.match(out, /🟡 nit/u);
+  assert.match(out, /🟣 pre-existing/u);
+});
+
+test('reviewPrompt instructs Claude to use severity-prefix + <details> per finding', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // Per-finding format prompt language.
+  assert.match(out, /🔴 \[skill-name\]: One-line claim/u);
+  assert.match(out, /<details><summary>Reasoning<\/summary>/);
+});
+
 test('rendered workflow-ts and workflow-py templates also set budget env vars', async () => {
   for (const tmpl of ['workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const out = await renderFile(join(TEMPLATES, tmpl), {
