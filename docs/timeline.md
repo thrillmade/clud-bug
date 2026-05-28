@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-28** — PR #100 fix: anchor prior-summary detection to ## 🐛 Clud Bug review header (not LAST claude[bot] body) *(feat/0.A.10-incremental-diff-review)* — [decisions-branches/feat__0.A.10-incremental-diff-review.md](decisions-branches/feat__0.A.10-incremental-diff-review.md)
 - **2026-05-28** — v0.6.10: incremental-diff review on fix-push (Phase 0.A.10 — HIGH-VALUE) *(feat/0.A.10-incremental-diff-review)* — [decisions-branches/feat__0.A.10-incremental-diff-review.md](decisions-branches/feat__0.A.10-incremental-diff-review.md)
 - **2026-05-28** — v0.6.8: --max-turns 15 + MAX_THINKING_TOKENS=8000 in workflow templates (Phase 0.A.7) *(feat/0.A.7-max-turns-thinking-tokens)* — [decisions-branches/feat__0.A.7-max-turns-thinking-tokens.md](decisions-branches/feat__0.A.7-max-turns-thinking-tokens.md)
 - **2026-05-27** — Add --quiet / CLUD_BUG_QUIET=1 mode to clud-bug CLI with RTK-style single-line ok output *(feat/0.A.6-ok-cli-output)* — [decisions-branches/feat__0.A.6-ok-cli-output.md](decisions-branches/feat__0.A.6-ok-cli-output.md)

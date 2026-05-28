@@ -241,6 +241,51 @@ test('reviewPrompt teaches Claude the incremental-diff handshake (read marker, c
   );
 });
 
+test('reviewPrompt teaches Claude to identify the PRIOR SUMMARY (not the in-progress comment)', () => {
+  // Regression for the v0.6.10 bug PR #100 caught at lib/prompts.js:74-77:
+  // anthropics/claude-code-action posts a `[claude]: Claude Code is
+  // working…` progress comment BEFORE the SDK runs. The "LAST claude[bot]
+  // body" wording landed on that comment, found no marker, and fell
+  // through to full-diff on every fix-push — handshake never fired.
+  // Fix: prompt must anchor selection to the `## 🐛 Clud Bug review`
+  // header (same anchor the strict-mode gate uses), NOT to "latest by
+  // claude[bot]".
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // Header-anchored selection — the unambiguous source-of-truth identifier
+  // for a prior summary comment.
+  assert.match(
+    out,
+    /## 🐛 Clud Bug review/u,
+    'prompt must anchor prior-summary detection to the H2 header line, not "last claude[bot] comment"',
+  );
+  // Explicit warning about the progress comment so future edits to this
+  // section don't silently regress back to the buggy wording.
+  assert.match(
+    out,
+    /Claude Code is working/,
+    'prompt must explicitly warn Claude that the progress comment is NOT the prior summary',
+  );
+});
+
+test('reviewPrompt: detection walks claude[bot] comments newest-first (not arbitrary order)', () => {
+  // GitHub's REST /issues/:number/comments endpoint ignores
+  // direction=desc per `lib/skills.js:512-514` notes, so the prompt
+  // must pass the sort + direction params AND tell Claude to walk
+  // newest-first explicitly — otherwise selection is non-deterministic
+  // across multiple summary comments on the same PR.
+  const out = reviewPrompt({ projectDescription: 'p' });
+  assert.match(
+    out,
+    /sort=created&direction=desc/,
+    'prompt must request newest-first ordering via gh api query params',
+  );
+  assert.match(
+    out,
+    /newest-first/,
+    'prompt must explicitly tell Claude to walk newest-first when selecting the prior summary',
+  );
+});
+
 test('reviewPrompt instructs Claude to emit the SHA marker on every summary comment', () => {
   const out = reviewPrompt({ projectDescription: 'p' });
   // Marker template (literal $HEAD_SHA shown in instructions; Claude
