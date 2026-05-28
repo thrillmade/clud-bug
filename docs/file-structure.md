@@ -51,6 +51,7 @@ clud-bug
 │   │   ├── ci__npm-publish-trusted.md
 │   │   ├── ci__unify-publish-and-promote.md
 │   │   ├── docs__skill-first-marketing-bb4.md
+│   │   ├── feat__0.A.1-extract-prompts.md
 │   │   ├── feat__agent-collab.md
 │   │   ├── feat__agent-skills-sha-bump.md
 │   │   ├── feat__cca-version-pinning.md
@@ -91,6 +92,7 @@ clud-bug
 │   ├── branch-protection.js
 │   ├── detect.js
 │   ├── edit-workflow.js
+│   ├── prompts.js
 │   ├── render.js
 │   ├── skills.js
 │   └── update.js
@@ -133,6 +135,7 @@ clud-bug
 │   ├── cli.test.js
 │   ├── detect.test.js
 │   ├── edit-workflow.test.js
+│   ├── prompts.test.js
 │   ├── release-discipline.test.js
 │   ├── render.test.js
 │   ├── skills.test.js
