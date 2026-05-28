@@ -60,6 +60,8 @@ jobs:
           MAX_DIFF_BYTES: '80000'
           MAX_COMMENT_BYTES: '20000'
           MAX_SKILL_BYTES: '4000'
+          # Thinking-budget cap (v0.6.8) — see workflow.yml.tmpl for design notes.
+          MAX_THINKING_TOKENS: '8000'
           # Stable prefix → CLI auto-cached system layer (10% cost on hits).
           # See workflow.yml.tmpl for design notes.
           APPEND_SYSTEM_PROMPT: |
@@ -69,6 +71,7 @@ jobs:
           track_progress: true
           show_full_output: true
           claude_args: |
+            --max-turns 15
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api graphql:*),Bash(gh api repos/:*),Bash(git show:*),Bash(cat .claude/skills/.clud-bug.json),Bash(cat .claude/skills/*/SKILL.md),Bash(head:*)"
           prompt: |
             Review this pull request following the discipline in your
@@ -79,6 +82,6 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.7
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

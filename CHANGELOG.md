@@ -4,6 +4,41 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-05-28
+
+### Added — `--max-turns 15` + `MAX_THINKING_TOKENS=8000` in workflow templates (Phase 0.A.7)
+
+Two Anthropic-recommended cost-control knobs from
+[code.claude.com/docs/en/costs](https://code.claude.com/docs/en/costs),
+applied to all 3 workflow templates (`workflow.yml.tmpl`,
+`workflow-py.yml.tmpl`, `workflow-ts.yml.tmpl`):
+
+- **`--max-turns 15`** via `claude_args` — caps the agentic loop. PR
+  review fits comfortably in 5–10 turns; 15 is a safe ceiling that
+  blocks runaway turn-storms (e.g., a confused review chasing a phantom
+  finding for 50 turns and burning API budget).
+- **`MAX_THINKING_TOKENS=8000`** env var — caps the extended-thinking
+  budget per turn. Anthropic docs: "For simpler tasks where deep
+  reasoning isn't needed, you can reduce costs by lowering
+  `MAX_THINKING_TOKENS=8000`." Default budget runs tens of thousands;
+  PR review needs some reasoning but not unbounded.
+
+### Why these are the right defaults
+
+- Both are **opt-out**, not opt-in — consuming repos can override via
+  workflow-level env or by editing the rendered workflow. Defaults are
+  conservative for the 95% case.
+- `--max-turns 15` is a runaway-protection ceiling, not a performance
+  cap. A well-behaved review finishes in 5–10 turns; the 15-turn
+  ceiling just prevents pathological loops.
+- `MAX_THINKING_TOKENS=8000` matches the Anthropic-published guidance
+  for review-shaped (rather than architecture/exploration-shaped) tasks.
+
+### Net diff
+
+3 templates × ~3 lines each (env var + claude_args flag + comment). Plus
+composite-pin bump v0.6.7 → v0.6.8 across the same 3 files.
+
 ## [0.6.7] — 2026-05-27
 
 ### Added — `--quiet/-q` flag + `CLUD_BUG_QUIET=1` env var for agent-friendly CLI output

@@ -90,6 +90,13 @@ jobs:
           MAX_DIFF_BYTES: '80000'
           MAX_COMMENT_BYTES: '20000'
           MAX_SKILL_BYTES: '4000'
+          # MAX_THINKING_TOKENS caps Claude Code's extended-thinking budget per
+          # turn. Anthropic docs (v0.6.8): "For simpler tasks where deep reasoning
+          # isn't needed, you can reduce costs by lowering MAX_THINKING_TOKENS=8000."
+          # PR review needs some reasoning but not unbounded; default budget is
+          # tens of thousands of tokens. 8000 is the Anthropic-recommended cap
+          # for review-shaped tasks.
+          MAX_THINKING_TOKENS: '8000'
           # APPEND_SYSTEM_PROMPT lands inside the Claude Code CLI's auto-cached
           # system layer (system prompt, tools, conversation history). Anthropic
           # bills cached input tokens at 10% of standard input — within a 5-min
@@ -108,6 +115,7 @@ jobs:
           # measure caching effectiveness post-rollout (per v0.6.3 plan).
           show_full_output: true
           claude_args: |
+            --max-turns 15
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api graphql:*),Bash(gh api repos/:*),Bash(git show:*),Bash(cat .claude/skills/.clud-bug.json),Bash(cat .claude/skills/*/SKILL.md),Bash(head:*)"
           prompt: |
             Review this pull request following the discipline in your
@@ -130,6 +138,6 @@ jobs:
       # Letting the action's own failure fail the check is louder and right.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.7
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
