@@ -90,46 +90,70 @@ test('templateLanguage maps template filename to reviewPrompt language', () => {
   assert.equal(templateLanguage('whatever-else.yml.tmpl'), 'generic');
 });
 
-test('rendered workflow.yml.tmpl contains the prompt body indented under prompt: |', async () => {
-  // The renderFile pipeline must (a) substitute REVIEW_PROMPT and
-  // (b) preserve YAML indentation for the multi-line value via
-  // render.js's indent-aware logic.
+test('rendered workflow.yml.tmpl puts review prompt in APPEND_SYSTEM_PROMPT env var (0.A.2 caching path)', async () => {
+  // v0.A.2: review prompt moved from user-message `prompt:` to
+  // `APPEND_SYSTEM_PROMPT` env var so Claude Code CLI's auto-cache
+  // covers it. The user-message `prompt:` becomes a minimal directive.
   const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
     REVIEW_PROMPT: reviewPrompt({
       projectDescription: 'TEST DESCRIPTION',
       language: 'generic',
     }),
   });
-  // Project description appears at the right indent under prompt: |
-  assert.match(out, /          prompt: \|\n            TEST DESCRIPTION\n/);
-  // Mid-prompt content is also at 12-space indent (continuation lines
-  // get the placeholder's leading whitespace from render.js). Sub-block
-  // markdown headers like "### Per-skill scan" sit at 14 spaces because
-  // the original prompt's sub-block had 2 extra leading spaces.
+  // Project description appears at the right indent under APPEND_SYSTEM_PROMPT: |
+  assert.match(out, /          APPEND_SYSTEM_PROMPT: \|\n            TEST DESCRIPTION\n/);
+  // Mid-prompt content at 12-space indent (env-var YAML block scalar).
+  // Sub-block markdown headers like "### Per-skill scan" sit at 14 spaces
+  // (original prompt's sub-block had 2 extra leading spaces).
   assert.match(out, /\n            Review this pull request for critical issues only/);
   assert.match(out, /\n {14}### Per-skill scan\n/);
+  // show_full_output: true is the measurement gate — exposes cache_*_input_tokens.
+  assert.match(out, /\n          show_full_output: true\n/);
+  // User-message prompt is now minimal — no longer the full 215-line block.
+  assert.match(out, /          prompt: \|\n            Review this pull request following the discipline/);
 });
 
-test('rendered workflow-ts.yml.tmpl contains TypeScript bullets', async () => {
+test('rendered workflow-ts.yml.tmpl contains TypeScript bullets in APPEND_SYSTEM_PROMPT', async () => {
   const out = await renderFile(join(TEMPLATES, 'workflow-ts.yml.tmpl'), {
     REVIEW_PROMPT: reviewPrompt({
       projectDescription: 'TS PROJECT',
       language: 'ts',
     }),
   });
+  // TS-specific bullet must appear under APPEND_SYSTEM_PROMPT, not prompt:
+  assert.match(out, /APPEND_SYSTEM_PROMPT: \|/);
   assert.match(out, /\n            - TypeScript type safety issues/);
+  assert.match(out, /\n          show_full_output: true\n/);
 });
 
-test('rendered workflow-py.yml.tmpl contains Python bullets (no generic test-coverage)', async () => {
+test('rendered workflow-py.yml.tmpl contains Python bullets (no generic test-coverage) in APPEND_SYSTEM_PROMPT', async () => {
   const out = await renderFile(join(TEMPLATES, 'workflow-py.yml.tmpl'), {
     REVIEW_PROMPT: reviewPrompt({
       projectDescription: 'PY PROJECT',
       language: 'py',
     }),
   });
+  assert.match(out, /APPEND_SYSTEM_PROMPT: \|/);
   assert.match(out, /\n            - Incorrect exception handling/);
   // Python variant should NOT include the generic "Broken or missing test coverage" line.
   assert.doesNotMatch(out, /\n            - Broken or missing test coverage/);
+});
+
+test('APPEND_SYSTEM_PROMPT content is byte-stable across reviews of different PRs (cache prerequisite)', async () => {
+  // Caching only works if the cached prefix is BYTE-IDENTICAL across runs.
+  // Two synthetic reviews of the same repo (same projectDescription, same
+  // language) must produce byte-identical APPEND_SYSTEM_PROMPT sections.
+  // Any per-PR data (numbers, timestamps, SHAs) leaking into the prefix
+  // would invalidate the cache.
+  const out1 = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'X', language: 'generic' }),
+  });
+  const out2 = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'X', language: 'generic' }),
+  });
+  // Extract just the APPEND_SYSTEM_PROMPT block from each rendered template.
+  const extractAppend = (s) => s.match(/APPEND_SYSTEM_PROMPT: \|\n([\s\S]*?)\n        with:/m)[1];
+  assert.equal(extractAppend(out1), extractAppend(out2));
 });
 
 // --- Indent-aware render.js behavior (added in v0.6.2 alongside prompts.js) ---
