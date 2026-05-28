@@ -150,6 +150,53 @@ test('rendered workflow-ts and workflow-py templates also set budget env vars', 
   }
 });
 
+// --- 0.A.7 (v0.6.8): --max-turns + MAX_THINKING_TOKENS cost-control knobs ---
+// Anthropic-recommended knobs from code.claude.com/docs/en/costs applied to
+// all 3 workflow templates. --max-turns caps the agentic loop (runaway
+// protection); MAX_THINKING_TOKENS caps the extended-thinking budget per turn.
+
+test('all 3 rendered workflow templates set MAX_THINKING_TOKENS=8000', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(
+      out,
+      /MAX_THINKING_TOKENS: '8000'/,
+      `${tmpl} missing MAX_THINKING_TOKENS=8000 (v0.6.8)`,
+    );
+  }
+});
+
+test('all 3 rendered workflow templates pass --max-turns 15 via claude_args', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(
+      out,
+      /--max-turns 15/,
+      `${tmpl} missing --max-turns 15 in claude_args (v0.6.8)`,
+    );
+  }
+});
+
+test('all 3 rendered workflow templates pin strict-mode-gate at v0.6.8', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(
+      out,
+      /strict-mode-gate@v0\.6\.8/,
+      `${tmpl} composite-pin out of sync with package.json (v0.6.8)`,
+    );
+  }
+});
+
 test('templateLanguage maps template filename to reviewPrompt language', () => {
   assert.equal(templateLanguage('workflow-ts.yml.tmpl'), 'ts');
   assert.equal(templateLanguage('workflow-py.yml.tmpl'), 'py');
