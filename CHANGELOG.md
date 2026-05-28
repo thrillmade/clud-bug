@@ -4,6 +4,13 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.12] — 2026-05-28
+
+### Changed
+
+- **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@d00f182`. `BASELINE_SKILLS_REF` in `lib/skills.js` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+
+
 ## [0.6.11] — 2026-05-28
 
 ### Changed — pin clud-bug-review to Claude Sonnet 4.6 (Phase 0.A.8)
