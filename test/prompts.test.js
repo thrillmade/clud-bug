@@ -330,6 +330,26 @@ test('all 3 rendered workflow templates allow git diff + git merge-base (v0.6.10
   }
 });
 
+// --- 0.A.8 (v0.6.11): pin model to Sonnet 4.6 ---
+// Phase 0.A.8 spike confirmed claude-code-action's default lands on Opus 4.7
+// (~5x Sonnet's input cost). PR review fits Sonnet's profile per Anthropic
+// docs. Pin the model explicitly so we don't drift back to Opus on a future
+// claude-code-action default change.
+
+test('all 3 rendered workflow templates pin claude_args --model claude-sonnet-4-6 (v0.6.11+)', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(
+      out,
+      /--model claude-sonnet-4-6/,
+      `${tmpl} missing --model claude-sonnet-4-6 in claude_args (v0.6.11 — Phase 0.A.8 model pin)`,
+    );
+  }
+});
+
 test('templateLanguage maps template filename to reviewPrompt language', () => {
   assert.equal(templateLanguage('workflow-ts.yml.tmpl'), 'ts');
   assert.equal(templateLanguage('workflow-py.yml.tmpl'), 'py');
