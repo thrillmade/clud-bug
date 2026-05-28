@@ -4,6 +4,34 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-05-27
+
+### Changed — Anthropic prompt caching via `APPEND_SYSTEM_PROMPT` env var
+
+Route the 215-line review prompt into the Claude Code CLI's auto-cached
+system layer instead of the un-cached user-message body. Anthropic bills
+cached input tokens at **10% of standard input** (5-min TTL). Within a
+5-min window, the second+ PR review in any consuming repo hits cache.
+
+- **Templates updated** (workflow{,-ts,-py}.yml.tmpl): the prompt content (still produced by `reviewPrompt(...)`) moves from `with.prompt:` to `env.APPEND_SYSTEM_PROMPT`. The action's `src/entrypoints/run.ts` reads `process.env.APPEND_SYSTEM_PROMPT` and passes it to the SDK's `systemPrompt.append`, landing it inside the CLI's auto-cached system layer.
+- **User-message `prompt:`** is now a minimal directive ("Review this pull request following the discipline in your system prompt..."), not the full instruction block. The action wraps it with PR context (diff, comments) automatically.
+- **`show_full_output: true`** added to expose `cache_read_input_tokens` / `cache_creation_input_tokens` in the run's result JSON for measurement.
+- **Test (`test/prompts.test.js`, +1)**: assert `APPEND_SYSTEM_PROMPT` block is byte-identical across two synthetic reviews of the same repo (cache prerequisite — any per-PR data leaking into the prefix would invalidate the cache).
+
+### Critical pitfall avoided
+
+Per Anthropic docs, cached content must be byte-stable across requests
+(no PR numbers, timestamps, or SHAs in the prefix) and the prefix must
+clear ~1024 tokens. Our prompt is ~3,500 tokens of pure rules content
+— no dynamic data, well over the threshold.
+
+### Verification post-rollout
+
+After this lands and propagates, consuming repos' clud-bug reviews
+should show non-zero `cache_read_input_tokens` on the 2nd+ review in
+any 5-min window (visible via `gh run view --log` on a workflow run
+when `show_full_output: true` is set).
+
 ## [0.6.2] — 2026-05-27
 
 ### Changed — extract review prompt to `lib/prompts.js` (refactor only, behavior preserved)

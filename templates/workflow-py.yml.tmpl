@@ -54,17 +54,25 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Stable prefix → CLI auto-cached system layer (10% cost on hits).
+          # See workflow.yml.tmpl for design notes.
+          APPEND_SYSTEM_PROMPT: |
+            {{REVIEW_PROMPT}}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           track_progress: true
+          show_full_output: true
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api graphql:*),Bash(gh api repos/:*),Bash(git show:*),Bash(cat .claude/skills/.clud-bug.json),Bash(cat .claude/skills/*/SKILL.md)"
           prompt: |
-            {{REVIEW_PROMPT}}
+            Review this pull request following the discipline in your
+            system prompt — every rule about skill routing, comment
+            format, the strict-mode header, the two-surface review
+            shape, and the FIX-PUSH FLOW applies.
 
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.2
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
