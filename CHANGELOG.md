@@ -9,18 +9,22 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 ### Changed — `AGENTS.md` clud-bug block trimmed from ~44 lines to ~10
 
 The full collaboration rules (fix-push flow, skill structure, comment
-format, workflow-edit constraint, where-skills-live) moved out of the
-injected `AGENTS.md` block and into the bundled `clud-bug-collaboration`
-skill in `agent-skills`. That skill is auto-installed by `clud-bug
-init`/`update` and auto-loaded by `clud-bug-review`, so the information
-is fully preserved — it just lives in the right container now.
+format, workflow-edit constraint, where-skills-live) already live in the
+bundled `clud-bug-collaboration` skill — both the canonical version in
+`thrillmade/agent-skills` AND the local copy at
+`templates/skills/baseline/clud-bug-collaboration.md`. This PR
+**removes the duplicate copy** from the injected `AGENTS.md` block (and
+points at the skill instead), since the skill is already auto-installed
+by `clud-bug init`/`update` and auto-loaded by `clud-bug-review`. **No
+content is lost — duplication is.**
 
-What stays in the AGENTS.md block (repo-specific, can't move):
+What stays in the AGENTS.md block (repo-specific, can't dedupe):
 - Pointer to the bundled skill.
 - Strict-mode toggle line (varies per consuming repo).
 - `_Installed at clud-bug vX.Y.Z._` footer.
 
-What moved to the skill (canonical, same content across all consuming repos):
+What was duplicated in AGENTS.md and removed from the block (still lives
+in the skill, unchanged):
 - Fix-push flow rules.
 - Strict-mode mechanics (base-ref read, can't disable on own PR).
 - Skill discovery + structure.
