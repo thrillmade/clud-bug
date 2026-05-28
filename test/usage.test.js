@@ -107,11 +107,16 @@ test('cacheHitRate: zero tokens → 0', () => {
 
 // --- extractTokensFromLog ---
 
-test('extractTokensFromLog: parses a single result-message JSON', () => {
+test('extractTokensFromLog: parses tokens from the result-event usage block', () => {
   const log = `
-    2026-05-28T15:44:31Z [info] Running...
-    {"type": "result", "model": "claude-sonnet-4-6", "input_tokens": 1234, "output_tokens": 567, "cache_read_input_tokens": 8000, "cache_creation_input_tokens": 1000}
-    2026-05-28T15:44:35Z [info] Done.
+    "type": "result",
+    "usage": {
+      "input_tokens": 1234,
+      "output_tokens": 567,
+      "cache_read_input_tokens": 8000,
+      "cache_creation_input_tokens": 1000
+    }
+    "model": "claude-sonnet-4-6"
   `;
   const result = extractTokensFromLog(log);
   assert.equal(result.ok, true);
@@ -124,16 +129,65 @@ test('extractTokensFromLog: parses a single result-message JSON', () => {
   });
 });
 
-test('extractTokensFromLog: sums tokens across multiple result messages (multi-turn review)', () => {
+test('extractTokensFromLog: PR #104 regression — does NOT double-count assistant turns', () => {
+  // The SDK emits a "type": "assistant" event per turn AND a final
+  // "type": "result" event with CUMULATIVE usage. A naive regex
+  // summing every "input_tokens" occurrence in the log would
+  // double-count (or more). Real log shape:
   const log = `
-    {"message": {"model": "claude-sonnet-4-6", "input_tokens": 100, "output_tokens": 50, "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 0}}
-    {"message": {"model": "claude-sonnet-4-6", "input_tokens": 200, "output_tokens": 75, "cache_read_input_tokens": 2000, "cache_creation_input_tokens": 0}}
+    "type": "assistant", "message": { "usage": { "input_tokens": 10 } }
+    "type": "assistant", "message": { "usage": { "input_tokens": 20 } }
+    "type": "result",
+    "usage": {
+      "input_tokens": 35,
+      "output_tokens": 7000,
+      "cache_read_input_tokens": 1000000,
+      "cache_creation_input_tokens": 60000
+    }
   `;
   const result = extractTokensFromLog(log);
-  assert.equal(result.ok, true);
-  assert.equal(result.tokens.input_tokens, 300);          // 100 + 200
-  assert.equal(result.tokens.output_tokens, 125);         // 50 + 75
-  assert.equal(result.tokens.cache_read_input_tokens, 3000);
+  // The billed value is the result-event's 35, NOT 10 + 20 + 35 = 65.
+  assert.equal(result.tokens.input_tokens, 35,
+    'must use result-event cumulative usage, not sum of per-turn assistants');
+  assert.equal(result.tokens.cache_read_input_tokens, 1000000);
+});
+
+test('extractTokensFromLog: ignores iterations array within usage (real SDK shape)', () => {
+  // The result-event's usage block contains an `iterations` array of
+  // per-message breakdowns. Their per-iteration fields must NOT pollute
+  // the top-level usage extraction. Matches the structure seen in
+  // logmind PR #72 logs.
+  const log = `
+    "type": "result",
+    "usage": {
+      "input_tokens": 35,
+      "output_tokens": 7000,
+      "cache_read_input_tokens": 1000000,
+      "cache_creation_input_tokens": 60000,
+      "iterations": [
+        {
+          "input_tokens": 999,
+          "cache_read_input_tokens": 99999,
+          "cache_creation_input_tokens": 1410
+        }
+      ]
+    }
+  `;
+  const result = extractTokensFromLog(log);
+  assert.equal(result.tokens.input_tokens, 35,
+    'must skip the iterations[].input_tokens (999); use top-level usage only');
+  assert.equal(result.tokens.cache_read_input_tokens, 1000000);
+});
+
+test('extractTokensFromLog: no result event → ok:false (partial / errored job)', () => {
+  // Job hit a spend cap or API error before emitting a result event.
+  // Returning ok:false makes the dashboard skip the run rather than
+  // trust partial per-turn usage data.
+  const log = `
+    "type": "assistant", "message": { "usage": { "input_tokens": 100 } }
+    [error] API Error: 400 spend cap exceeded
+  `;
+  assert.equal(extractTokensFromLog(log).ok, false);
 });
 
 test('extractTokensFromLog: empty log returns ok:false', () => {

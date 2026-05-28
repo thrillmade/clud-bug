@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-28** — PR #104 fix: extract tokens from result-event usage block only (regex was triple-counting) *(feat/0.0.M.1-usage-dashboard)* — [decisions-branches/feat__0.0.M.1-usage-dashboard.md](decisions-branches/feat__0.0.M.1-usage-dashboard.md)
 - **2026-05-28** — PR #104 review fixes: --pr filter, failure-run inclusion, unknownModel surfaced, slopePct distinguished *(feat/0.0.M.1-usage-dashboard)* — [decisions-branches/feat__0.0.M.1-usage-dashboard.md](decisions-branches/feat__0.0.M.1-usage-dashboard.md)
 - **2026-05-28** — v0.6.13: clud-bug usage $/LOC dashboard (Phase 0.5 / 0.0.M.1) *(feat/0.0.M.1-usage-dashboard)* — [decisions-branches/feat__0.0.M.1-usage-dashboard.md](decisions-branches/feat__0.0.M.1-usage-dashboard.md)
 - **2026-05-28** — PR #102: regen docs/file-structure.md to fix doc-index drift caught by clud-bug review *(feat/0.A.11-fix-self-update-yaml-literal)* — [decisions-branches/feat__0.A.11-fix-self-update-yaml-literal.md](decisions-branches/feat__0.A.11-fix-self-update-yaml-literal.md)
