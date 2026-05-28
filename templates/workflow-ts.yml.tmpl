@@ -6,7 +6,40 @@ on:
     types: [opened, synchronize]
 
 jobs:
+  # Pre-flight (v0.6.14 / 0.0.W) — see workflow.yml.tmpl for design notes.
+  paths-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      is_workflow_only: ${{ steps.classify.outputs.is_workflow_only }}
+    steps:
+      - name: Classify PR diff
+        id: classify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          CHANGED=$(gh pr diff "$PR_NUMBER" -R "$REPO" --name-only)
+          if [ -z "$CHANGED" ]; then echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          IS_WORKFLOW_ONLY=true
+          while IFS= read -r f; do
+            case "$f" in
+              .github/workflows/clud-bug-*.yml) ;;
+              .github/actions/strict-mode-gate/*) ;;
+              *) IS_WORKFLOW_ONLY=false; break ;;
+            esac
+          done <<< "$CHANGED"
+          echo "is_workflow_only=$IS_WORKFLOW_ONLY" >> "$GITHUB_OUTPUT"
+          if [ "$IS_WORKFLOW_ONLY" = "true" ]; then
+            echo "::notice title=Clud Bug 🐛::Skipping LLM review — workflow-only PR."
+          fi
+
   clud-bug-review:
+    needs: paths-check
+    if: needs.paths-check.outputs.is_workflow_only != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,6 +118,6 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.13
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.14
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
