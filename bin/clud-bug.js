@@ -756,6 +756,9 @@ async function runUsage(args) {
 
   // Per-repo: list recent clud-bug-review runs + extract the per-run job
   // logs + per-PR LOC counts. Filter to PR runs (drop schedule/dispatch).
+  // PR #104 fix: --pr filter must be applied AFTER resolvePrNumber
+  // (we don't have the PR # until then). prFilter on listRecentRuns was
+  // promised but never applied — bug caught by clud-bug self-review.
   const reviews = [];
   for (const repo of repos) {
     const runs = await listRecentRuns(repo, limit, since, args.pr);
@@ -763,7 +766,10 @@ async function runUsage(args) {
     for (const run of runs) {
       const review = await fetchReviewRecord(repo, run);
       if (process.env.CLUD_BUG_DEBUG) process.stderr.write(`DBG:   ${run.databaseId} ${run.conclusion} → ${review ? 'OK' : 'NULL'}\n`);
-      if (review) reviews.push(review);
+      if (!review) continue;
+      // --pr filter: drop reviews whose PR doesn't match.
+      if (args.pr != null && review.pr !== args.pr) continue;
+      reviews.push(review);
     }
   }
 
@@ -801,6 +807,16 @@ async function discoverConsumingRepos() {
 
 // List recent clud-bug-review.yml runs in a repo. Filters to PR events
 // (drops schedule, workflow_dispatch — those have no PR LOC denominator).
+//
+// IMPORTANT (Q7 measurement integrity, fixed during PR #104 review):
+// We INCLUDE conclusion === 'failure' runs because Anthropic bills for
+// tokens regardless of GitHub workflow conclusion. A run that hit the
+// spend cap, errored mid-action, or failed strict-mode still incurred
+// real API cost — silently excluding it would underreport spend and
+// fool the Q7-clud-bug "gradient must point down" gate.
+// extractTokensFromLog() returns ok:false on logs without usable token
+// totals, which gracefully skips the cancelled/errored-too-early case
+// without losing accountability for the partially-billed runs.
 async function listRecentRuns(repo, limit, since, prFilter) {
   const sinceDate = since.match(/^\d+[dwmy]$/) ? dateAgo(since) : null;
   const args = [
@@ -813,11 +829,8 @@ async function listRecentRuns(repo, limit, since, prFilter) {
   const runs = await ghJson(args);
   if (!Array.isArray(runs)) return [];
   return runs
-    .filter((r) => r.event === 'pull_request' && r.conclusion === 'success')
+    .filter((r) => r.event === 'pull_request' && (r.conclusion === 'success' || r.conclusion === 'failure'))
     .map((r) => ({ ...r, repo }))
-    // If --pr was passed, only keep runs whose headSha matches that PR.
-    // We resolve the filter after we get the PR number from the job logs.
-    .filter((_) => true)
     .slice(0, limit);
 }
 
@@ -851,7 +864,9 @@ async function fetchReviewRecord(repo, run) {
     repo,
     pr: prNumber,
     createdAt: run.createdAt,
-    model: costInfo.model,
+    model: costInfo.model,                  // normalized (PRICING key)
+    modelObserved: model,                   // raw value from log (may be versioned)
+    unknownModel: costInfo.unknownModel,    // PR #104 fix: surface for dashboard warn
     tokens,
     additions: prMeta.additions,
     deletions: prMeta.deletions,

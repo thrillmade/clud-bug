@@ -6,3 +6,8 @@
 - Some run logs don't emit token data (clud-bug repo's own runs returned ~164KB logs vs logmind's ~400KB — claude-code-action's show_full_output behavior may differ by run state). Dashboard gracefully skips those runs via fetchReviewRecord returning null. Follow-up: investigate why some runs are truncated; not blocking ship.
 
 ---
+## 2026-05-28 17:08 - PR #104 review fixes: --pr filter, failure-run inclusion, unknownModel surfaced, slopePct distinguished
+
+**Reasoning:** clud-bug self-review on PR #104 caught 4 measurement-integrity bugs. (1) --pr flag was parsed but never applied — silent no-op. Fix: filter reviews where review.pr !== args.pr in runUsage after PR resolution. (2) Failed runs (conclusion === failure) were silently dropped, but Anthropic bills tokens regardless of workflow conclusion — silently underreports spend. Fix: include success || failure; extractTokensFromLog gracefully handles logs without tokens. (3) unknownModel flag was set in computeReviewCost but never consumed. Future model variant (e.g. claude-opus-4-7-20251218) would be billed at Sonnet rates (~5× undercount) AND bucketed under Sonnet in per-model table. Fix: surface modelObserved + unknownModel through fetchReviewRecord, expose via rollup.unknownModelReviews, render loud warning in formatRollup. (4) slopePct === 0 conflated 'no prior window' with 'exactly flat trend' — masked the dangerous flat-expensive case. Fix: computeTrend returns null for slopePct + previous when prior bucket is empty; formatRollup distinguishes. +5 regression tests. 240 pass.
+
+---

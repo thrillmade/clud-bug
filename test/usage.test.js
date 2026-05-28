@@ -211,6 +211,94 @@ test('rollup: 30-day vs prior 30-day trend slope (negative = good, monotonically
   assert.ok(result.trend30d.slopePct < -40);
 });
 
+// PR #104 fix: computeTrend distinguishes "no prior window" (previous=null)
+// from "exactly flat trend" (previous>0, slopePct=0). The original code
+// reported slopePct=0 for both, masking the dangerous flat-expensive case.
+
+test('rollup: no prior window → slopePct null, previous null (not 0)', () => {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const recent = new Date(now - 10 * day).toISOString();
+  // Only recent reviews; previous bucket (30–60d ago) is empty.
+  const reviews = [
+    fixture('repo/a', 1, { createdAt: recent, costPerLOC: 0.0010 }),
+    fixture('repo/a', 2, { createdAt: recent, costPerLOC: 0.0011 }),
+  ];
+  const result = rollup(reviews);
+  assert.equal(result.trend30d.previous, null,
+    'previous=null marks "no prior window" so the renderer can distinguish from a real flat trend');
+  assert.equal(result.trend30d.slopePct, null,
+    'slopePct=null when there is no prior window — DO NOT collapse to 0');
+});
+
+test('rollup: real flat trend → slopePct 0, previous > 0 (NOT null)', () => {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const recent = new Date(now - 10 * day).toISOString();
+  const older = new Date(now - 45 * day).toISOString();
+  const reviews = [
+    fixture('repo/a', 1, { createdAt: recent, costPerLOC: 0.0020 }),
+    fixture('repo/a', 2, { createdAt: older,  costPerLOC: 0.0020 }),  // same as current → flat
+  ];
+  const result = rollup(reviews);
+  assert.equal(result.trend30d.slopePct, 0,
+    'real flat trend → slopePct=0 (so the gradient gate fires on actual stagnation)');
+  assert.ok(result.trend30d.previous > 0,
+    'previous>0 (NOT null) — there IS a prior window with data');
+});
+
+test('formatRollup: distinguishes "no prior window" from real flat trend', () => {
+  const noPrior = rollup([fixture('r/a', 1, { costPerLOC: 0.001 })]);
+  const noPriorOut = formatRollup(noPrior);
+  assert.match(noPriorOut, /\(no prior window\)/);
+
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const flat = rollup([
+    fixture('r/a', 1, { createdAt: new Date(now - 10 * day).toISOString(), costPerLOC: 0.001 }),
+    fixture('r/a', 2, { createdAt: new Date(now - 45 * day).toISOString(), costPerLOC: 0.001 }),
+  ]);
+  const flatOut = formatRollup(flat);
+  assert.doesNotMatch(flatOut, /\(no prior window\)/,
+    'a real flat trend must NOT render as "no prior window" — masks the Q7 stagnation signal');
+  assert.match(flatOut, /→ 0% MoM/);
+});
+
+// PR #104 fix: rollup must surface reviews whose model wasn't in PRICING.
+// The compute fallback applied Sonnet rates (under-counting Opus by ~5×).
+
+test('rollup: surfaces unknownModelReviews so the dashboard can warn', () => {
+  const reviews = [
+    {
+      ...fixture('r/a', 1, { costPerLOC: 0.001 }),
+      unknownModel: false,
+      modelObserved: 'claude-sonnet-4-6',
+    },
+    {
+      ...fixture('r/a', 2, { costPerLOC: 0.002 }),
+      unknownModel: true,                            // future model variant
+      modelObserved: 'claude-opus-4-7-20251218',
+    },
+  ];
+  const result = rollup(reviews);
+  assert.equal(result.unknownModelReviews.length, 1);
+  assert.equal(result.unknownModelReviews[0].modelObserved, 'claude-opus-4-7-20251218');
+});
+
+test('formatRollup: loud warning when unknownModelReviews exists', () => {
+  const reviews = [
+    {
+      ...fixture('r/a', 1, { costPerLOC: 0.001 }),
+      unknownModel: true,
+      modelObserved: 'claude-opus-4-7-20251218',
+    },
+  ];
+  const result = rollup(reviews);
+  const out = formatRollup(result);
+  assert.match(out, /not in PRICING/);
+  assert.match(out, /claude-opus-4-7-20251218/);
+});
+
 // --- formatRollup ---
 
 test('formatRollup: human-readable summary contains ok line + per-repo + median', () => {
