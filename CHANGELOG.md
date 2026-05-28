@@ -4,6 +4,48 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.12] — 2026-05-28
+
+### Fixed — `clud-bug-self-update.yml` YAML literal-block bug breaking `workflow_dispatch`
+
+`templates/self-update.yml.tmpl` had a blank line embedded inside a
+multi-line `--body "..."` argument to `gh pr create`, nested inside a
+`run: |` block. GitHub Actions' YAML parser ended the block scalar at
+the blank line and rejected the next non-blank line as an unexpected
+top-level value:
+
+```
+HTTP 422: failed to parse workflow: (Line: 90, Col: 1): Unexpected
+value 'Review the diff. To stay on this version permanently, ...'
+```
+
+Consequence: **`workflow_dispatch` failed on every consuming repo** —
+the scheduled weekly run still worked (no parse needed at trigger
+time), but on-demand triggers were blocked. Discovered while trying
+to manually propagate v0.6.11 (Sonnet pin) to consuming repos. Pin
+drift across the org: agent-skills @v0.5.16, reporulez @v0.5.15,
+rezgen @v0.5.16, logmind @v0.6.7 — all weeks behind.
+
+Fix: construct the body via `printf` outside the YAML literal block,
+then pass via shell variable. Removes the YAML-fragile blank line
+entirely.
+
+### Net diff
+
+- `templates/self-update.yml.tmpl` — 4 lines replaced with 7 (printf
+  build + 3-line comment explaining why).
+- Composite-pin bumped v0.6.11 → v0.6.12.
+
+### Note on propagation after this ships
+
+Consuming repos installed before v0.6.12 still carry the broken
+`clud-bug-self-update.yml`. Two ways to recover:
+1. **Locally**: `npx clud-bug@latest update` in the repo (this
+   re-renders the workflow from the fixed template).
+2. **Wait for scheduled run**: next Monday 12:00 UTC the cron
+   trigger fires and opens a self-update PR — which would install
+   the v0.6.12 template, fixing the bug going forward.
+
 ## [0.6.11] — 2026-05-28
 
 ### Changed — pin clud-bug-review to Claude Sonnet 4.6 (Phase 0.A.8)

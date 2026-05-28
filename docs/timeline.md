@@ -15,6 +15,8 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-28** — PR #102: regen docs/file-structure.md to fix doc-index drift caught by clud-bug review *(feat/0.A.11-fix-self-update-yaml-literal)* — [decisions-branches/feat__0.A.11-fix-self-update-yaml-literal.md](decisions-branches/feat__0.A.11-fix-self-update-yaml-literal.md)
+- **2026-05-28** — v0.6.12: fix self-update.yml.tmpl YAML literal-block bug — unblocks workflow_dispatch propagation *(feat/0.A.11-fix-self-update-yaml-literal)* — [decisions-branches/feat__0.A.11-fix-self-update-yaml-literal.md](decisions-branches/feat__0.A.11-fix-self-update-yaml-literal.md)
 - **2026-05-28** — v0.6.11: pin clud-bug-review to Sonnet 4.6 — ~80% cost reduction vs Opus 4.7 (Phase 0.A.8) *(feat/0.A.8-pin-sonnet-model)* — [decisions-branches/feat__0.A.8-pin-sonnet-model.md](decisions-branches/feat__0.A.8-pin-sonnet-model.md)
 - **2026-05-28** — PR #100 fix: anchor prior-summary detection to ## 🐛 Clud Bug review header (not LAST claude[bot] body) *(feat/0.A.10-incremental-diff-review)* — [decisions-branches/feat__0.A.10-incremental-diff-review.md](decisions-branches/feat__0.A.10-incremental-diff-review.md)
 - **2026-05-28** — v0.6.10: incremental-diff review on fix-push (Phase 0.A.10 — HIGH-VALUE) *(feat/0.A.10-incremental-diff-review)* — [decisions-branches/feat__0.A.10-incremental-diff-review.md](decisions-branches/feat__0.A.10-incremental-diff-review.md)
