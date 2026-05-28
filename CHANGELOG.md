@@ -4,6 +4,30 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-05-27
+
+### Changed — extract review prompt to `lib/prompts.js` (refactor only, behavior preserved)
+
+The 215-line review prompt previously lived inline in
+`templates/workflow{,-ts,-py}.yml.tmpl` (×3 copies, with language-specific
+bullets diverging per file). v0.6.2 moves it to a single source-of-truth
+function `reviewPrompt({projectDescription, language})` in `lib/prompts.js`.
+
+- **NEW `lib/prompts.js`** — `reviewPrompt(...)` accepts `language: 'generic' | 'ts' | 'py'` and emits the appropriate bullets in the "Focus on:" list. All three language variants produce identical content elsewhere; only the bullets diverge per language (matching pre-extraction template behavior).
+- **NEW `templateLanguage(tmplName)`** export in `lib/render.js` — maps a `pickTemplate()` result to the language key `reviewPrompt` expects, so callers don't repeat the switch.
+- **Indent-aware multi-line substitution** in `lib/render.js`. When a `{{TOKEN}}` placeholder's value contains newlines, continuation lines inherit the placeholder's leading whitespace so YAML/Markdown indent context is preserved. Blank lines stay blank (no trailing whitespace).
+- **Templates updated** to use `{{REVIEW_PROMPT}}` instead of the old `{{PROJECT_DESCRIPTION}}` + `{{LANGUAGE_HINTS}}` tokens. `templates/workflow.yml.tmpl` drops from 322 → 108 lines; `workflow-ts.yml.tmpl` from 287 → 70; `workflow-py.yml.tmpl` from 286 → 69.
+- **Callers updated** (`bin/clud-bug.js`, `lib/update.js`) to compute the prompt via `reviewPrompt(...)` and pass `REVIEW_PROMPT` to `renderFile`.
+- **Tests** (`test/prompts.test.js`, +13) cover: required args, language variants, structural markers, rendered template output, `templateLanguage` mapping, indent-aware render.
+- **Cosmetic cleanup**: the old `{{LANGUAGE_HINTS}}: ''` substitution left a `            ` (12-space blank) line in the rendered prompt. Post-extraction this line is a plain blank, matching cleaner conventions and avoiding trailing whitespace in shipped workflow files. Semantically identical; YAML treats both as blank lines in the `prompt: |` block.
+
+### Why this matters (downstream)
+
+This refactor is the prerequisite for v0.6.3 (Anthropic prompt caching
+via `appendSystemPrompt`) and v0.6.4 (per-section prompt budgets) — both
+need a programmable prompt structure to split the stable prefix from the
+variable suffix.
+
 ## [0.6.1] — 2026-05-27
 
 ### Fixed
