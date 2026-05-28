@@ -4,6 +4,57 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.13] — 2026-05-28
+
+### Added — `clud-bug usage` $/LOC dashboard (Phase 0.5 / 0.0.M.1)
+
+Internal Q7-clud-bug enforcement dashboard. New subcommand reads recent
+clud-bug-review run JSON and normalizes cost by lines-of-code reviewed.
+
+```
+$ clud-bug usage --since 30d
+ok: 47 reviews, 30-day $/LOC trend: ↓ -38% MoM
+  per-repo $/LOC (most → least expensive):
+    thrillmade/logmind     $0.0021/LOC  · 18 reviews · 89% cached
+    thrillmade/reporulez   $0.0017/LOC  · 12 reviews · 73% cached
+    …
+  org median $/LOC: $0.0015 · 3-month low: $0.0011 (Sonnet pin landed)
+  outliers (>2× median):
+    thrillmade/logmind#73 ($0.0086/LOC — low cache hit)
+```
+
+### Why $/LOC, not $/PR
+
+PRs vary wildly in size. A per-PR cost cap is silly — a 5-line typo fix
+and a 500-line refactor get reviewed for very different amounts. **Cost
+per line of code reviewed** is repo-agnostic, comparable across time,
+and the right normalized metric for Q7-clud-bug enforcement.
+
+### How
+
+- New `lib/usage.js`: pricing table (Sonnet 4.6, Haiku 4.5, Opus 4.7);
+  per-review cost compute; cache hit rate; log parser; rollup with
+  30-day rolling trend + outlier detection.
+- New `usage` subcommand: orchestrates `gh run list` + `gh api .../jobs/<id>/logs`
+  + `gh pr view --json additions,deletions`, joins, computes, prints.
+- New CLI flags: `--repo <owner/name>`, `--pr <N>`, `--limit <N>`, `--json`.
+  `--since <30d>` already existed; reused.
+- `test/usage.test.js`: 24 fixture-driven tests for the pure-compute paths.
+
+### Q7-clud-bug enforcement
+
+The rolling 30-day $/LOC trend must monotonically decline (or stay at a
+structural floor). If it stops trending down, the next Phase 0.5 PR
+targets the biggest contributor. **No fixed cap** — the gradient must
+always point down until we hit the floor.
+
+### Net diff
+
+- `lib/usage.js` NEW (+260 lines)
+- `bin/clud-bug.js`: +160 lines (runUsage + helpers; argparse +4 flags; HELP +6 lines)
+- `test/usage.test.js` NEW (+200 lines)
+- Composite-pin v0.6.12 → v0.6.13
+
 ## [0.6.12] — 2026-05-28
 
 ### Fixed — `clud-bug-self-update.yml` YAML literal-block bug breaking `workflow_dispatch`
