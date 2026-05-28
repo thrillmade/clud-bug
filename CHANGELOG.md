@@ -23,7 +23,7 @@ Claude caps each variable fetch with `head -c $MAX_*_BYTES`.
 
 - **80 KB diff** covers ~95% of real PRs (measured during the 2026-05-27 spike: median <10 KB, long-tail to 105 KB).
 - **20 KB comments** = ~20 most-recent comments at typical sizes. Skips clud-bug's own prior comments (those are handled via the FIX-PUSH FLOW reviewThreads GraphQL).
-- **4 KB per skill file** fits the baseline kit comfortably; user-added skills get truncated with a `[... N bytes elided ...]` marker.
+- **4 KB per skill file** fits the baseline kit comfortably; user-added skills above the cap get silently truncated by `head -c`. (A `[... N bytes elided ...]` marker would require a post-process step we haven't shipped; the prompt instead tells Claude to note any apparent truncation in the review.)
 
 ### Why soft enforcement (prompt instructions) vs hard caps (allowlist patterns)
 
