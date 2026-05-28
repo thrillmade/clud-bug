@@ -54,6 +54,7 @@ clud-bug
 │   │   ├── feat__0.A.1-extract-prompts.md
 │   │   ├── feat__0.A.2-prompt-caching.md
 │   │   ├── feat__0.A.3-prompt-budgets.md
+│   │   ├── feat__0.A.4-comment-compression.md
 │   │   ├── feat__agent-collab.md
 │   │   ├── feat__agent-skills-sha-bump.md
 │   │   ├── feat__cca-version-pinning.md

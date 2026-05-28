@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-27** — Trim clud-bug's injected AGENTS.md block; move detail to bundled clud-bug-collaboration skill *(feat/0.A.5-agents-md-trim)* — [decisions-branches/feat__0.A.5-agents-md-trim.md](decisions-branches/feat__0.A.5-agents-md-trim.md)
 - **2026-05-27** — Add stats header + severity-prefix + collapsible-reasoning comment format *(feat/0.A.4-comment-compression)* — [decisions-branches/feat__0.A.4-comment-compression.md](decisions-branches/feat__0.A.4-comment-compression.md)
 - **2026-05-27** — Add per-section byte budgets to clud-bug's review prompt + workflow env vars *(feat/0.A.3-prompt-budgets)* — [decisions-branches/feat__0.A.3-prompt-budgets.md](decisions-branches/feat__0.A.3-prompt-budgets.md)
 - **2026-05-27** — Route clud-bug's review prompt into Claude Code CLI's auto-cached system layer via APPEND_SYSTEM_PROMPT env var *(feat/0.A.2-prompt-caching)* — [decisions-branches/feat__0.A.2-prompt-caching.md](decisions-branches/feat__0.A.2-prompt-caching.md)
