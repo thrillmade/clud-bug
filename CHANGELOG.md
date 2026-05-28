@@ -4,6 +4,31 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-05-27
+
+### Changed — per-section budgets cap the variable suffix (caching covered the stable prefix)
+
+Builds on v0.6.3's caching: the stable system-prompt prefix is cached at
+10% of standard input cost, but the variable per-PR content (diff,
+comments, skill files) is still billed at full rate on every review. This
+release adds prompt-level budget instructions + workflow env vars so
+Claude caps each variable fetch with `head -c $MAX_*_BYTES`.
+
+- **`lib/prompts.js`** — `reviewPrompt(...)` now emits a "Section budgets" subsection in the system prompt instructing Claude to cap fetches: `gh pr diff "$PR_NUMBER" | head -c "$MAX_DIFF_BYTES"`, `head -c "$MAX_SKILL_BYTES" .claude/skills/*/SKILL.md`, etc. Tells Claude to note any truncation in the review.
+- **`templates/workflow{,-ts,-py}.yml.tmpl`** — three new env vars on the action step: `MAX_DIFF_BYTES=80000`, `MAX_COMMENT_BYTES=20000`, `MAX_SKILL_BYTES=4000`. Plus `REPO_OWNER` / `REPO_NAME` so the comment-fetch pattern resolves. Consumers can override per-repo by setting these env vars in their workflow.
+- **`Bash(head:*)`** added to allowedTools so Claude can pipe outputs through `head -c` per the budget instructions.
+- **Tests** (`test/prompts.test.js`, +3): assert budget section in prompt, env vars in rendered templates, `Bash(head:*)` in allowedTools across all 3 templates.
+
+### Defaults rationale
+
+- **80 KB diff** covers ~95% of real PRs (measured during the 2026-05-27 spike: median <10 KB, long-tail to 105 KB).
+- **20 KB comments** = ~20 most-recent comments at typical sizes. Skips clud-bug's own prior comments (those are handled via the FIX-PUSH FLOW reviewThreads GraphQL).
+- **4 KB per skill file** fits the baseline kit comfortably; user-added skills above the cap get silently truncated by `head -c`. (A `[... N bytes elided ...]` marker would require a post-process step we haven't shipped; the prompt instead tells Claude to note any apparent truncation in the review.)
+
+### Why soft enforcement (prompt instructions) vs hard caps (allowlist patterns)
+
+Hard caps via allowedTools patterns would be brittle (would need to match every reasonable invocation of `gh pr diff` and reject the unbounded form). Soft caps via prompt instructions are flexible — Claude generally follows the instruction, and the prompt's caching means the instruction itself is free to ship. Phase 1's RTK rollout will provide hard enforcement at the bash-hook layer for the same fetches.
+
 ## [0.6.3] — 2026-05-27
 
 ### Changed — Anthropic prompt caching via `APPEND_SYSTEM_PROMPT` env var

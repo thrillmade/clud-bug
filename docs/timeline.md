@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-27** — Add per-section byte budgets to clud-bug's review prompt + workflow env vars *(feat/0.A.3-prompt-budgets)* — [decisions-branches/feat__0.A.3-prompt-budgets.md](decisions-branches/feat__0.A.3-prompt-budgets.md)
 - **2026-05-27** — Route clud-bug's review prompt into Claude Code CLI's auto-cached system layer via APPEND_SYSTEM_PROMPT env var *(feat/0.A.2-prompt-caching)* — [decisions-branches/feat__0.A.2-prompt-caching.md](decisions-branches/feat__0.A.2-prompt-caching.md)
 - **2026-05-27** — Extract clud-bug review prompt to lib/prompts.js (single source of truth) *(feat/0.A.1-extract-prompts)* — [decisions-branches/feat__0.A.1-extract-prompts.md](decisions-branches/feat__0.A.1-extract-prompts.md)
 - **2026-05-27** — chore: regen docs/file-structure.md (drop legacy Last updated line) *(chore/regen-derived-docs)* — [decisions-branches/chore__regen-derived-docs.md](decisions-branches/chore__regen-derived-docs.md)

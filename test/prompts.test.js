@@ -83,6 +83,51 @@ test('reviewPrompt includes the core review-discipline sections', () => {
   }
 });
 
+// --- 0.A.3: per-section budgets (v0.6.4) ---
+// The prompt instructs Claude to cap per-PR fetches with `head -c
+// $MAX_DIFF_BYTES` etc. Combined with the env vars + Bash(head:*)
+// allowedTool in the workflow templates, this caps the variable
+// (non-cached) suffix of each review.
+
+test('reviewPrompt includes per-section budget instructions', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // Budget header section is present.
+  assert.match(out, /Section budgets \(token-frugal review/);
+  // Each of the three budget env vars is referenced.
+  assert.match(out, /MAX_DIFF_BYTES/);
+  assert.match(out, /MAX_COMMENT_BYTES/);
+  assert.match(out, /MAX_SKILL_BYTES/);
+  // The PR diff capping pattern is in the prompt.
+  assert.match(out, /gh pr diff "\$PR_NUMBER" \| head -c "\$MAX_DIFF_BYTES"/);
+});
+
+test('rendered workflow.yml.tmpl sets the three budget env vars', async () => {
+  const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
+  });
+  assert.match(out, /MAX_DIFF_BYTES: '80000'/);
+  assert.match(out, /MAX_COMMENT_BYTES: '20000'/);
+  assert.match(out, /MAX_SKILL_BYTES: '4000'/);
+  // REPO_OWNER and REPO_NAME are needed by the comment-fetch pattern.
+  assert.match(out, /REPO_OWNER: \$\{\{ github\.repository_owner \}\}/);
+  assert.match(out, /REPO_NAME: \$\{\{ github\.event\.repository\.name \}\}/);
+  // Bash(head:*) added to allowedTools so Claude can pipe through head.
+  assert.match(out, /Bash\(head:\*\)/);
+});
+
+test('rendered workflow-ts and workflow-py templates also set budget env vars', async () => {
+  for (const tmpl of ['workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({
+        projectDescription: 'p',
+        language: tmpl.includes('-ts') ? 'ts' : 'py',
+      }),
+    });
+    assert.match(out, /MAX_DIFF_BYTES: '80000'/, `${tmpl} missing MAX_DIFF_BYTES`);
+    assert.match(out, /Bash\(head:\*\)/, `${tmpl} missing Bash(head:*) in allowedTools`);
+  }
+});
+
 test('templateLanguage maps template filename to reviewPrompt language', () => {
   assert.equal(templateLanguage('workflow-ts.yml.tmpl'), 'ts');
   assert.equal(templateLanguage('workflow-py.yml.tmpl'), 'py');
