@@ -145,6 +145,6 @@ jobs:
       # Letting the action's own failure fail the check is louder and right.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.11
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.12
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

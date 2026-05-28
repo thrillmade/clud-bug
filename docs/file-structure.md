@@ -59,6 +59,7 @@ clud-bug
 │   │   ├── feat__0.A.5-agents-md-trim.md
 │   │   ├── feat__0.A.6-ok-cli-output.md
 │   │   ├── feat__0.A.7-max-turns-thinking-tokens.md
+│   │   ├── feat__0.A.8-pin-sonnet-model.md
 │   │   ├── feat__agent-collab.md
 │   │   ├── feat__agent-skills-sha-bump.md
 │   │   ├── feat__cca-version-pinning.md

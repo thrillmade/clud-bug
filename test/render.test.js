@@ -75,3 +75,45 @@ test('render still throws on a placeholder not in DEFAULTS or vars', () => {
   // that aren't in the defaults map.
   assert.throws(() => render('{{NOT_DEFAULTED}}', {}), /Missing template variable: NOT_DEFAULTED/);
 });
+
+// --- 0.A.11 (v0.6.12): self-update.yml.tmpl YAML literal-block fix ---
+// v0.6.11 and earlier embedded a literal blank line inside a `--body "..."`
+// multi-line string nested in a `run: |` block. GitHub Actions' YAML parser
+// ended the block scalar at the blank line and rejected the next line as an
+// unexpected top-level value — `workflow_dispatch` failed with HTTP 422 on
+// every consuming repo. Fix: build the body via `printf` so the embedded
+// newlines live in shell, not YAML.
+
+test('templates/self-update.yml.tmpl: PR body is built via printf (no blank line inside `run: |` literal)', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const tmpl = await readFile(
+    join(import.meta.dirname, '..', 'templates', 'self-update.yml.tmpl'),
+    'utf8',
+  );
+  // Positive: the printf-based build is present.
+  assert.match(
+    tmpl,
+    /BODY=\$\(printf /,
+    'self-update.yml.tmpl must construct the PR body via `printf` (v0.6.12 fix). '
+      + 'A literal multi-line --body argument with a blank line inside breaks the '
+      + 'YAML `run: |` block scalar and fails workflow_dispatch with HTTP 422.',
+  );
+  // Negative: the buggy literal — `--body "Automated update from clud-bug` line
+  // immediately followed by a blank line and a `Review the diff` line — must
+  // not reappear. Locate the body line and assert there's no blank line
+  // immediately after it before any other content.
+  const lines = tmpl.split('\n');
+  const bodyLineIdx = lines.findIndex((l) =>
+    l.includes('--body "Automated update from clud-bug'),
+  );
+  if (bodyLineIdx !== -1) {
+    // If the v0.6.11 literal pattern reappears, the next line must NOT be blank.
+    assert.notEqual(
+      lines[bodyLineIdx + 1].trim(),
+      '',
+      'self-update.yml.tmpl regressed to v0.6.11 multi-line --body with embedded blank line. '
+        + 'Use printf to build the body in shell instead.',
+    );
+  }
+});
