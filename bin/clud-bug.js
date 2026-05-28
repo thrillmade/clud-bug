@@ -7,7 +7,8 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 import { detect, buildDescriptionLine } from '../lib/detect.js';
-import { renderFile, pickTemplate } from '../lib/render.js';
+import { renderFile, pickTemplate, templateLanguage } from '../lib/render.js';
+import { reviewPrompt } from '../lib/prompts.js';
 import {
   SkillsClient, rankAndCap, writeSkills, writeSkill, loadBaseline,
   readManifest, writeManifest, removeSkill, listInstalled, diffManifest,
@@ -173,8 +174,10 @@ async function runInit(args) {
   const tmplName = pickTemplate(signals.languages);
   const tmplPath = join(TEMPLATES, tmplName);
   const workflow = await renderFile(tmplPath, {
-    PROJECT_DESCRIPTION: buildDescriptionLine(signals),
-    LANGUAGE_HINTS: '',
+    REVIEW_PROMPT: reviewPrompt({
+      projectDescription: buildDescriptionLine(signals),
+      language: templateLanguage(tmplName),
+    }),
   });
   const workflowPath = join(cwd, '.github', 'workflows', 'clud-bug-review.yml');
   await mkdir(dirname(workflowPath), { recursive: true });
