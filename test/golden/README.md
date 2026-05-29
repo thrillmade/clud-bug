@@ -24,15 +24,20 @@ Three categories of regression that no individual test would catch:
 ## Running
 
 ```bash
-# Single-shot from the repo root (also runs in CI via `npm test`):
+# From the clud-bug repo root (also runs in CI via `npm test`):
 node --test test/prompts.eval.test.js
 
-# Or via the new subcommand for richer output:
+# Via the subcommand — same runner, works from anywhere inside the
+# clud-bug repo:
 node bin/clud-bug.js eval
-
-# Or against an arbitrary repo:
-clud-bug eval --repo path/to/clud-bug
 ```
+
+`clud-bug eval` is a **dev-only** command. It runs the gate against
+the review prompt bundled in this repo. `test/` is not in the npm
+`files` array, so an end-user invoking `clud-bug eval` from a globally
+installed copy would hit `ENOENT` — intentional. If you maintain your
+own prompts and want similar regression protection, fork this fixture
+structure into your own repo.
 
 ## When to update the golden set
 

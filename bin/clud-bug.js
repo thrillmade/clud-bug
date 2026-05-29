@@ -129,7 +129,7 @@ async function main() {
     case 'update':  return runUpdateCmd(args);
     case 'edit-workflow': return runEditWorkflow(args);
     case 'usage':   return runUsage(args);
-    case 'eval':    return runEval(args);
+    case 'eval':    return runEval();
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
@@ -139,7 +139,12 @@ async function main() {
 // 0.0.E (v0.6.17): thin wrapper around the golden-set test file. Devs
 // who follow the README invoke `clud-bug eval` — this routes to the
 // same `node --test` runner CI uses, so dev and CI verdicts match.
-async function runEval(_args) {
+//
+// Dev-only: runs against the prompt bundled in PKG_ROOT (the cloned
+// clud-bug repo). `test/` is intentionally not in package.json `files`,
+// so invoking this from a globally installed copy will ENOENT. No args
+// supported yet — the README does not advertise any.
+async function runEval() {
   const result = spawnSync(
     'node',
     ['--test', join(PKG_ROOT, 'test/prompts.eval.test.js')],
