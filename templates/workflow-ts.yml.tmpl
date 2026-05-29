@@ -108,7 +108,7 @@ jobs:
           if $IS_FORK || $IS_BOT; then
             REASON=$($IS_BOT && echo "bot author ($PR_AUTHOR)" || echo "fork ($HEAD_REPO)")
             EXISTING=$(gh api "repos/${BASE_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
-              --jq '[.[] | select(.user.login == "claude[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length')
+              --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length')
             if [ "${EXISTING:-0}" = "0" ]; then
               BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis PR is from a %s. GitHub deliberately does not pass repository secrets to such workflows, so Clud Bug could not authenticate against Anthropic. Review the diff manually.' "$REASON")
               gh pr comment "$PR_NUMBER" --body "$BODY" || true
@@ -165,7 +165,8 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
         run: |
-          BODY=$(echo "$STRUCTURED" | npx --yes clud-bug@{{CLUD_BUG_VERSION}} render --stdin)
+          set -euo pipefail
+          BODY=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@{{CLUD_BUG_VERSION}} render --stdin)
           gh pr comment "$PR_NUMBER" --body "$BODY"
 
       # Fallback when structured_output is empty (max-retries hit).
@@ -175,6 +176,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          set -euo pipefail
           gh pr comment "$PR_NUMBER" --body "## 🐛 Clud Bug review
 
           **This round:** 0 critical · 0 minor · 0 resolved from prior · 0 still open

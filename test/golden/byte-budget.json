@@ -1,11 +1,11 @@
 {
   "$schema-comment": "Size caps for the rendered prompt. UTF-8 byte counts. The CI gate fails if the actual size exceeds the cap. Caps are intentionally close to current size so 0.0.P trim work has headroom without inviting regression.",
   "max_prompt_bytes": {
-    "value": 14000,
-    "why": "Current rendered prompt is ~12.2 KB post-0.0.P trim (down from ~17 KB pre-trim — 29.6% reduction). Cap LOWERED from 18500 to lock in the win while leaving ~1.8 KB headroom for 0.0.O schema directive. Each future addition pays a meaningful tax; deliberate. See CHANGELOG [0.6.20]."
+    "value": 14500,
+    "why": "Current rendered prompt is ~14.0 KB post-0.0.O (was 12.2 KB post-0.0.P; 0.0.O added ~1.8 KB of structured-output + status_header instructions). Cap bumped 14000 → 14500 with this PR; still ~33% below the 18500 pre-0.0.P cap. See CHANGELOG [0.6.22]."
   },
   "max_prompt_lines": {
     "value": 310,
-    "why": "Current is ~272 lines post-0.0.P (down from ~362 — 25% reduction). Cap LOWERED from 380 to lock in the win while leaving ~38 lines headroom for 0.0.O. See CHANGELOG [0.6.20]."
+    "why": "Current is ~295 lines post-0.0.O. Cap holds at 310 — the prompt grew by ~23 lines for 0.0.O but stayed under the line cap. See CHANGELOG [0.6.22]."
   }
 }

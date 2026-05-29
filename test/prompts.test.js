@@ -571,6 +571,26 @@ test('all 3 rendered workflow templates pass bot-login: github-actions[bot] to s
   }
 });
 
+test('all 3 rendered workflow templates: skip-advisory dedup query filters github-actions[bot]', async () => {
+  // REGRESSION GUARD: clud-bug-review on PR #114 caught that the
+  // Guard step's skip-dedup query filtered claude[bot] but the
+  // accompanying gh pr comment posts under github-actions[bot]
+  // (workflow GITHUB_TOKEN identity). The dedup returned 0 every
+  // run, stacking duplicate "Clud Bug skipped" advisories on every
+  // pull_request: synchronize on a long-running fork/bot PR.
+  // Mirror of the strict-mode-gate identity contract — pin it.
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: templateLanguage(tmpl) }),
+    });
+    assert.match(
+      out,
+      /select\(\.user\.login == "github-actions\[bot\]" and \(\.body \| startswith\("## 🐛 Clud Bug skipped"\)\)\)/,
+      `${tmpl}: skip-advisory dedup query must filter github-actions[bot] (the GITHUB_TOKEN identity), not claude[bot]`,
+    );
+  }
+});
+
 test('reviewPrompt: prior-summary detection block names github-actions[bot] (post-0.0.O identity)', () => {
   const out = reviewPrompt({ projectDescription: 'p' });
   // The LLM walks comments to find the prior summary for the incremental-

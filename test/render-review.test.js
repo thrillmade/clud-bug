@@ -43,6 +43,18 @@ test('renderReview: bare H2 header when status_header is unknown (defensive)', (
   assert.match(out, /^## 🐛 Clud Bug review\n/);
 });
 
+test('renderReview: status_header "bare" produces unsuffixed H2 (non-strict-mode default)', () => {
+  // 0.0.O (v0.6.22): the schema explicitly accepts 'bare' as a
+  // status_header value so non-strict-mode repos can keep the v0.6.21-
+  // visible behaviour (no "— clean" / "— critical findings" suffix on
+  // the H2). Without this, every non-strict install would silently
+  // start seeing a suffix in the summary header after merge.
+  const out = renderReview({ ...MIN, status_header: 'bare' });
+  assert.match(out, /^## 🐛 Clud Bug review\n/);
+  assert.doesNotMatch(out, /— clean/);
+  assert.doesNotMatch(out, /— critical findings/);
+});
+
 test('renderReview: per-skill scan emits one line per entry with [skill]: outcome shape', () => {
   const out = renderReview({
     ...MIN,
