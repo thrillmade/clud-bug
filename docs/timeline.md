@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-29** — v0.6.15: model routing for trivial PRs — Haiku for dep bumps (Phase 0.5 / 0.0.R) *(feat/0.0.R-model-routing-trivial)* — [decisions-branches/feat__0.0.R-model-routing-trivial.md](decisions-branches/feat__0.0.R-model-routing-trivial.md)
 - **2026-05-28** — v0.6.14: workflow-PR review skip (Phase 0.5 / 0.0.W) *(feat/0.0.W-workflow-pr-skip)* — [decisions-branches/feat__0.0.W-workflow-pr-skip.md](decisions-branches/feat__0.0.W-workflow-pr-skip.md)
 - **2026-05-28** — PR #104 fix: extract tokens from result-event usage block only (regex was triple-counting) *(feat/0.0.M.1-usage-dashboard)* — [decisions-branches/feat__0.0.M.1-usage-dashboard.md](decisions-branches/feat__0.0.M.1-usage-dashboard.md)
 - **2026-05-28** — PR #104 review fixes: --pr filter, failure-run inclusion, unknownModel surfaced, slopePct distinguished *(feat/0.0.M.1-usage-dashboard)* — [decisions-branches/feat__0.0.M.1-usage-dashboard.md](decisions-branches/feat__0.0.M.1-usage-dashboard.md)
