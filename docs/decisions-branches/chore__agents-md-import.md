@@ -3,3 +3,8 @@
 **Reasoning:** Same pattern as agent-skills #48. 1-line addition: @AGENTS.md as first line of CLAUDE.md. Eliminates the silent failure mode where Claude doesn't follow the stub redirect. Token cost unchanged; single source of truth preserved.
 
 ---
+## 2026-05-29 01:19 - PR #106: regen derived docs after rebase
+
+**Reasoning:** Post-rebase regen of docs/file-structure.md + docs/timeline.md. No source code change.
+
+---
