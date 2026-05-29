@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (93 decisions)
+## 2026-05 (94 decisions)
 
-- **2026-05-29** — fix: update regression-test regex to match grouped GITHUB_OUTPUT block (v0.6.24 SC2129 fix) *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
-- *... 91 more decisions ...*
+- **2026-05-29** — fix: also apply SC2129 grouping to workflow.yml.tmpl (missed in 1223ed1) *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
+- *... 92 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

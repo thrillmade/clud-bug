@@ -32,3 +32,11 @@
 - 300/300 tests pass. Invariant preserved: any future template edit that drops max_turns=15 from the early-exit will still fail the regression test.
 
 ---
+## 2026-05-29 19:43 - fix: also apply SC2129 grouping to workflow.yml.tmpl (missed in 1223ed1)
+
+**Reasoning:** 1223ed1 fixed workflow-py.yml.tmpl + workflow-ts.yml.tmpl but missed workflow.yml.tmpl. SC2129 still fired on the canonical template. Applied the same grouped redirect; 300/300 tests pass; actionlint clean on all 3 rendered templates locally.
+
+**Implications:**
+- Now all 3 templates ship the same grouped pattern. CI should be clean across the board.
+
+---

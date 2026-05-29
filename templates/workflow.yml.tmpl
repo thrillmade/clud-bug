@@ -42,15 +42,18 @@ jobs:
           CHANGED=$(gh pr diff "$PR_NUMBER" -R "$REPO" --name-only)
           MODEL=claude-sonnet-4-6   # default
           if [ -z "$CHANGED" ]; then
-            echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"
-            echo "model=$MODEL" >> "$GITHUB_OUTPUT"
             # v0.6.23 / §5: max_turns must always be emitted because
             # clud-bug-review runs (is_workflow_only=false). Without
             # this, --max-turns $-{{ ... }} expands to '--max-turns '
-            # (empty), failing the CLI invocation. Empty-CHANGED
-            # fires on gh pr diff auth/network failures + the
-            # (theoretical) no-changed-files PR.
-            echo "max_turns=15" >> "$GITHUB_OUTPUT"
+            # (empty), failing the CLI invocation. Empty-CHANGED fires
+            # on gh pr diff auth/network failures + the (theoretical)
+            # no-changed-files PR. Grouped redirect (v0.6.24) silences
+            # shellcheck SC2129.
+            {
+              echo "is_workflow_only=false"
+              echo "model=$MODEL"
+              echo "max_turns=15"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
