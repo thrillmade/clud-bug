@@ -4,6 +4,70 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.20] — 2026-05-29
+
+### Changed — Review prompt trim (Phase 0.5 / 0.0.P)
+
+Cleanup pass over `lib/prompts.js`. The rendered prompt is **down
+~29.6% in bytes** (17351 → 12211) and **~25% in lines** (366 → 272)
+without removing any load-bearing instruction. Gated by the 0.0.E
+golden set (PR #109) — every must-contain phrase still passes.
+
+Targeted compressions:
+
+- **Section budgets intro**: 7 lines → 4. Removed prose paraphrase of
+  "cached prefix is free at 10%."
+- **CRITICAL — identifying the PRIOR SUMMARY**: 11 lines → 6. The
+  detection rule survives; the worked walk-through compresses.
+- **Span check edge case**: 5 lines → 3.
+- **Tee-hint Diagnostics block**: kept exact `### Diagnostics`,
+  `Tee-hint on cap fire`, and "Attempt ONE targeted re-fetch with
+  double the cap" must-contain phrases; trimmed the surrounding
+  "auditable event in the review trail" prose.
+- **Skill routing**: 21 lines → 13. Bullet explanations collapse to
+  one sentence each.
+- **Output-token budget**: kept exact "Keep total output under ~600
+  tokens"; trimmed surrounding "Verbose output costs the consuming
+  repo on every review" sentence to one clause.
+- **Incremental-diff handshake**: 12 lines → 8. Kept the SHA marker
+  literal and the "next review falls back to full \`gh pr diff\`"
+  signal.
+- **Tone block**: 4 lines → 3.
+- **INLINE REVIEW THREADS surface**: 26 lines → 11. The
+  required_review_thread_resolution rationale + `confirmed: true`
+  carve-out are preserved; the "this is what creates *resolvable
+  conversations*" prose collapses.
+- **Counters bullet block**: 14 lines → 5 (one line per counter
+  rather than indented multi-line definitions).
+- **Stats header + per-finding format**: 18 + 17 lines → 8 + 12.
+- **Per-skill scan + dedicated**: 26 lines → 22 (mostly intact —
+  the worked examples ARE the spec).
+- **FIX-PUSH FLOW footer**: 21 lines → 13.
+
+### Golden-budget bump DOWN
+
+`test/golden/byte-budget.json`:
+
+- `max_prompt_bytes`: 18500 → 14000 (locks in the ~5 KB savings;
+  leaves ~1.8 KB headroom for the upcoming 0.0.O schema directive).
+- `max_prompt_lines`: 380 → 310 (locks in the ~90-line savings;
+  leaves ~38 lines headroom for 0.0.O).
+
+Caps DOWN is deliberate — without it, a future addition could refill
+the freed budget invisibly.
+
+### Tests
+
+265 pass (same as [0.6.19] — 0.0.P doesn't add or remove tests).
+Updated `test/prompts.test.js` to assert the trimmed
+"Section budgets (v0.6.4+)" header instead of the prior
+"token-frugal review" phrasing.
+
+### Composite pin
+
+v0.6.19 → v0.6.20 across `templates/workflow{,-py,-ts}.yml.tmpl` and
+`.github/actions/strict-mode-gate/action.yml` header docs.
+
 ## [0.6.19] — 2026-05-29
 
 ### Changed — `clud-bug init` / `clud-bug update` skip CLAUDE.md (etc.) block install when `@AGENTS.md` import is present (Phase 0.5 / 0.0.I.1)
