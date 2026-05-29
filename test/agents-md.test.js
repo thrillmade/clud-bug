@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { applyToRepo, renderBlock, upsertBlock } from '../lib/agents-md.js';
+import { applyToRepo, hasAgentsMdImport, removeBlock, renderBlock, upsertBlock } from '../lib/agents-md.js';
 
 async function makeRepo(files = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-agents-md-'));
@@ -225,5 +225,130 @@ test('applyToRepo: does not create CLAUDE.md or other tool files when absent', a
     assert.equal(await exists(join(dir, 'GEMINI.md')), false);
     assert.equal(await exists(join(dir, '.cursorrules')), false);
     assert.equal(await exists(join(dir, '.windsurfrules')), false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// --- 0.0.I.1 (v0.6.X): @AGENTS.md import detection + block-skip ---
+
+test('hasAgentsMdImport: matches `@AGENTS.md` at start of line', () => {
+  assert.equal(hasAgentsMdImport('@AGENTS.md\n\n# rest\n'), true);
+  assert.equal(hasAgentsMdImport('# heading\n\n@AGENTS.md\n\nfooter\n'), true);
+  // Trailing whitespace tolerated (some editors trim, some don't).
+  assert.equal(hasAgentsMdImport('@AGENTS.md   \n'), true);
+});
+
+test('hasAgentsMdImport: does NOT match prose mentions or partial matches', () => {
+  // Prose mention — has surrounding text on the same line.
+  assert.equal(hasAgentsMdImport('See @AGENTS.md for rules\n'), false);
+  // Wrong file name.
+  assert.equal(hasAgentsMdImport('@CLAUDE.md\n'), false);
+  // Empty / non-string inputs.
+  assert.equal(hasAgentsMdImport(''), false);
+  assert.equal(hasAgentsMdImport(null), false);
+  assert.equal(hasAgentsMdImport(undefined), false);
+});
+
+test('removeBlock: strips the block AND a preceding blank line', () => {
+  const before = '# CLAUDE.md\n\nSee AGENTS.md.\n\n<!-- clud-bug-start -->\nbody\n<!-- clud-bug-end -->\n';
+  const after = removeBlock(before);
+  assert.doesNotMatch(after, /clud-bug-start/);
+  assert.doesNotMatch(after, /clud-bug-end/);
+  // Preserves the surrounding content.
+  assert.match(after, /# CLAUDE\.md/);
+  assert.match(after, /See AGENTS\.md\./);
+  // Does NOT leave a double-blank-line dent where the block used to be.
+  assert.doesNotMatch(after, /\n\n\n/);
+});
+
+test('removeBlock: idempotent — running twice produces the same result', () => {
+  const before = '@AGENTS.md\n\n# stuff\n\n<!-- clud-bug-start -->\nx\n<!-- clud-bug-end -->\n';
+  const once = removeBlock(before);
+  const twice = removeBlock(once);
+  assert.equal(once, twice);
+  // No block present → unchanged.
+  assert.doesNotMatch(once, /clud-bug-/);
+});
+
+test('removeBlock: no-op when no block is present', () => {
+  const before = '@AGENTS.md\n\n# clean\n';
+  assert.equal(removeBlock(before), before);
+});
+
+test('applyToRepo: SKIPS clud-bug block in CLAUDE.md when @AGENTS.md import is present', async () => {
+  // The 0.0.I.1 contract: if CLAUDE.md already imports AGENTS.md, the
+  // AGENTS.md block is the canonical source — don't duplicate into CLAUDE.md.
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    'CLAUDE.md': '@AGENTS.md\n\n# CLAUDE.md stub\n',
+  });
+  try {
+    const r = await applyToRepo(dir, { version: '0.6.18', strictMode: true });
+    // AGENTS.md still gets the block — it's the source of truth.
+    const agents = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /<!-- clud-bug-start -->/);
+    // CLAUDE.md does NOT get a block.
+    const claude = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
+    assert.doesNotMatch(claude, /<!-- clud-bug-start -->/);
+    // CLAUDE.md prior content preserved.
+    assert.match(claude, /@AGENTS\.md/);
+    assert.match(claude, /# CLAUDE\.md stub/);
+    // Touched array does NOT mention CLAUDE.md (no write happened).
+    assert.equal(r.touched.includes('CLAUDE.md'), false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('applyToRepo: REMOVES stale clud-bug block from CLAUDE.md when @AGENTS.md import is present', async () => {
+  // Migration path: an older clud-bug version installed the block into
+  // CLAUDE.md. The user has since added @AGENTS.md at the top. Now the
+  // block is duplicated content. clud-bug init/update should clean it up.
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    'CLAUDE.md': '@AGENTS.md\n\n# stub\n\n<!-- clud-bug-start -->\nOLD STALE BLOCK\n<!-- clud-bug-end -->\n',
+  });
+  try {
+    const r = await applyToRepo(dir, { version: '0.6.18', strictMode: true });
+    const claude = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
+    assert.doesNotMatch(claude, /<!-- clud-bug-start -->/);
+    assert.doesNotMatch(claude, /OLD STALE BLOCK/);
+    assert.match(claude, /@AGENTS\.md/);
+    assert.match(claude, /# stub/);
+    // Touched because we modified the file (block removed).
+    assert.ok(r.touched.includes('CLAUDE.md'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('applyToRepo: STILL installs block into CLAUDE.md when @AGENTS.md import is absent', async () => {
+  // Back-compat: repos that don't use Claude Code's @-import still get the
+  // block in their tool stub files. The skip behavior is opt-in via import.
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    'CLAUDE.md': '# CLAUDE.md\n\nstuff\n',
+  });
+  try {
+    await applyToRepo(dir, { version: '0.6.18', strictMode: true });
+    const claude = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
+    assert.match(claude, /<!-- clud-bug-start -->/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('applyToRepo: SKIPS .cursor/rules/*.md that import @AGENTS.md', async () => {
+  // Cursor rules can also use @-import. Same behaviour: skip the block
+  // when the import is present.
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    '.cursor/rules/general.md': '@AGENTS.md\n\n# general\n',
+    '.cursor/rules/no-import.md': '# no import\n',
+  });
+  try {
+    const r = await applyToRepo(dir, { strictMode: true });
+    const general = await readFile(join(dir, '.cursor/rules/general.md'), 'utf8');
+    const noImport = await readFile(join(dir, '.cursor/rules/no-import.md'), 'utf8');
+    // The @AGENTS.md one gets NO block.
+    assert.doesNotMatch(general, /<!-- clud-bug-start -->/);
+    // The other one DOES get the block (back-compat).
+    assert.match(noImport, /<!-- clud-bug-start -->/);
+    // Touched array reflects only the one we wrote to.
+    assert.ok(r.touched.includes('.cursor/rules/no-import.md'));
+    assert.equal(r.touched.includes('.cursor/rules/general.md'), false);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
