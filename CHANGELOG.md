@@ -4,6 +4,46 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.17] — 2026-05-29
+
+### Added — golden-set regression gate for the review prompt (Phase 0.5 / 0.0.E)
+
+Cheap, deterministic CI gate for the rendered review prompt. **Gates
+0.0.P (prompt trim) and 0.0.O (JSON schema output) — both ship next
+under this guard.** Three categories of structural check, all
+runnable on every PR without LLM execution:
+
+1. **`must-contain`** — instruction phrases the prompt MUST include
+   (17 entries today: severity tiers, comment format, budgets,
+   incremental-diff handshake, brevity directive, FIX-PUSH FLOW, etc.).
+   Catches over-aggressive trims dropping load-bearing instructions.
+2. **`must-not-contain`** — anti-pattern filler from the May 2026
+   LLM token optimization guide § 6 ("Please make sure to…",
+   "I would like you to…", etc.). Locks in cleanups against
+   regression.
+3. **`byte-budget`** — UTF-8 byte and line caps on the rendered
+   prompt. 16 KB / 360 lines today, with documented headroom.
+   Catches the case where a trim PR cuts in one place but adds
+   bytes elsewhere.
+
+### What this gate does NOT test
+
+Live LLM behavior. That's expensive for every-PR CI; lives in a
+separate manual `clud-bug eval --live` flow (future). The structural
+check is enough to safely ship 0.0.P + 0.0.O.
+
+### Updating the golden set
+
+See `test/golden/README.md`. Add `must-contain` entries when shipping
+new load-bearing instructions; add `must-not-contain` entries when
+finding new filler to ban; bump `byte-budget` after major prompt
+structural change with a CHANGELOG note explaining why.
+
+### Net diff
+
+`test/golden/` NEW (4 fixtures + README). `test/prompts.eval.test.js`
+NEW (~120 lines, 6 tests). Composite-pin v0.6.16 → v0.6.17.
+
 ## [0.6.16] — 2026-05-29
 
 ### Added — output-token brevity directive (Phase 0.5 / 0.0.X)

@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-29** — v0.6.17: golden-set regression gate for review prompt (Phase 0.5 / 0.0.E) *(feat/0.0.E-golden-eval-harness)* — [decisions-branches/feat__0.0.E-golden-eval-harness.md](decisions-branches/feat__0.0.E-golden-eval-harness.md)
 - **2026-05-29** — PR #108 regen derived docs after rebase *(feat/0.0.X-output-token-directive)* — [decisions-branches/feat__0.0.X-output-token-directive.md](decisions-branches/feat__0.0.X-output-token-directive.md)
 - **2026-05-29** — v0.6.16: output-token brevity directive in cached prompt (Phase 0.5 / 0.0.X) *(feat/0.0.X-output-token-directive)* — [decisions-branches/feat__0.0.X-output-token-directive.md](decisions-branches/feat__0.0.X-output-token-directive.md)
 - **2026-05-29** — PR #106: regen derived docs after rebase *(chore/agents-md-import)* — [decisions-branches/chore__agents-md-import.md](decisions-branches/chore__agents-md-import.md)
