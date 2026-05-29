@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-29** — 0.0.K: applies_to frontmatter — skill-filter for non-applicable PRs *(feat/0.0.K-skill-loading-minimization)* — [decisions-branches/feat__0.0.K-skill-loading-minimization.md](decisions-branches/feat__0.0.K-skill-loading-minimization.md)
 - **2026-05-29** — 0.0.P: trim review prompt by ~29.6% bytes / ~25% lines without removing must-contain phrases *(feat/0.0.P-prompt-trim)* — [decisions-branches/feat__0.0.P-prompt-trim.md](decisions-branches/feat__0.0.P-prompt-trim.md)
 - **2026-05-29** — Release clud-bug v0.6.19 — 0.0.I.1 skip-block-when-import *(feat/0.0.I.1-skip-block-with-import)* — [decisions-branches/feat__0.0.I.1-skip-block-with-import.md](decisions-branches/feat__0.0.I.1-skip-block-with-import.md)
 - **2026-05-29** — 0.0.I.1 (clud-bug code change): skip installing CLAUDE.md block when @AGENTS.md import is present *(feat/0.0.I.1-skip-block-with-import)* — [decisions-branches/feat__0.0.I.1-skip-block-with-import.md](decisions-branches/feat__0.0.I.1-skip-block-with-import.md)

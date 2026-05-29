@@ -7,7 +7,7 @@ import {
   SkillsClient, rankAndCap, writeSkills, loadBaseline,
   readManifest, writeManifest, mergeManifest,
   removeSkill, listInstalled, diffManifest,
-  readReviewMode, partitionByReviewMode,
+  readReviewMode, partitionByReviewMode, readAppliesTo, appliesToPr,
   extractPerSkillLine, classifyPerSkillOutcome,
   selectReviewHeader, extractFirstReviewHeaderLine, isCriticalReviewHeader,
   selectReviewBody,
@@ -488,6 +488,158 @@ test('partitionByReviewMode: handles skills with no content (defaults to shared)
   const { shared, dedicated } = partitionByReviewMode(skills);
   assert.deepEqual(shared.map((s) => s.name), ['a', 'b']);
   assert.deepEqual(dedicated.map((s) => s.name), ['c']);
+});
+
+// --- 0.0.K (v0.6.21): applies_to frontmatter — skill-filter helper ---
+
+test('readAppliesTo: returns null when frontmatter is absent', () => {
+  assert.equal(readAppliesTo('# bare body, no frontmatter\n'), null);
+});
+
+test('readAppliesTo: returns null when applies_to key is absent', () => {
+  const fm = `---
+name: foo
+review_mode: shared
+---
+
+body`;
+  assert.equal(readAppliesTo(fm), null);
+});
+
+test('readAppliesTo: parses block-list paths + inline-array extensions', () => {
+  const fm = `---
+name: brand-voice
+review_mode: dedicated
+applies_to:
+  paths:
+    - "src/ui/**"
+    - "lib/components/**"
+  extensions: [".tsx", ".jsx", ".css"]
+---
+
+body`;
+  const r = readAppliesTo(fm);
+  assert.deepEqual(r.paths, ['src/ui/**', 'lib/components/**']);
+  assert.deepEqual(r.extensions, ['.tsx', '.jsx', '.css']);
+});
+
+test('readAppliesTo: handles paths-only (extensions absent)', () => {
+  const fm = `---
+applies_to:
+  paths:
+    - "api/**"
+---
+
+body`;
+  const r = readAppliesTo(fm);
+  assert.deepEqual(r.paths, ['api/**']);
+  assert.deepEqual(r.extensions, []);
+});
+
+test('readAppliesTo: handles extensions-only (paths absent)', () => {
+  const fm = `---
+applies_to:
+  extensions: [".sql"]
+---
+
+body`;
+  const r = readAppliesTo(fm);
+  assert.deepEqual(r.paths, []);
+  assert.deepEqual(r.extensions, ['.sql']);
+});
+
+test('readAppliesTo: prose mention of `applies_to` in body does NOT fire', () => {
+  // Match must be in frontmatter only; body mentions are documentation.
+  const fm = `---
+name: foo
+---
+
+This skill applies_to nothing in particular.
+`;
+  assert.equal(readAppliesTo(fm), null);
+});
+
+test('readAppliesTo: empty paths AND empty extensions → null (degenerate rule)', () => {
+  const fm = `---
+applies_to:
+  paths: []
+  extensions: []
+---
+`;
+  // An applies_to with both lists empty is the same as no rule —
+  // returning null lets the back-compat "always apply" branch fire.
+  assert.equal(readAppliesTo(fm), null);
+});
+
+test('appliesToPr: skill WITHOUT applies_to always applies (back-compat)', () => {
+  const fm = `---
+name: critical-issues-only
+---
+
+body`;
+  assert.equal(appliesToPr(fm, ['anything.go']), true);
+  assert.equal(appliesToPr(fm, []), true);
+  assert.equal(appliesToPr(fm, null), true);
+});
+
+test('appliesToPr: extension match fires', () => {
+  const fm = `---
+applies_to:
+  extensions: [".tsx"]
+---
+`;
+  assert.equal(appliesToPr(fm, ['src/App.tsx', 'lib/util.go']), true);
+  assert.equal(appliesToPr(fm, ['lib/util.go']), false);
+});
+
+test('appliesToPr: glob path match fires', () => {
+  const fm = `---
+applies_to:
+  paths:
+    - "src/ui/**"
+---
+`;
+  assert.equal(appliesToPr(fm, ['src/ui/Button.tsx']), true);
+  assert.equal(appliesToPr(fm, ['src/ui/nested/deeply/Foo.tsx']), true);
+  assert.equal(appliesToPr(fm, ['lib/backend/api.go']), false);
+});
+
+test('appliesToPr: single-star does NOT cross slashes; double-star does', () => {
+  const single = `---
+applies_to:
+  paths:
+    - "src/*"
+---
+`;
+  // Single star matches direct children only.
+  assert.equal(appliesToPr(single, ['src/Foo.tsx']), true);
+  assert.equal(appliesToPr(single, ['src/ui/Foo.tsx']), false);
+
+  const double = `---
+applies_to:
+  paths:
+    - "src/**"
+---
+`;
+  // Double star crosses slashes.
+  assert.equal(appliesToPr(double, ['src/Foo.tsx']), true);
+  assert.equal(appliesToPr(double, ['src/ui/nested/Foo.tsx']), true);
+});
+
+test('appliesToPr: paths OR extensions — any single hit applies', () => {
+  const fm = `---
+applies_to:
+  paths:
+    - "src/ui/**"
+  extensions: [".sql"]
+---
+`;
+  // path-only match
+  assert.equal(appliesToPr(fm, ['src/ui/Foo.tsx']), true);
+  // extension-only match
+  assert.equal(appliesToPr(fm, ['db/migrations/0001.sql']), true);
+  // both miss
+  assert.equal(appliesToPr(fm, ['lib/api.go']), false);
 });
 
 // --- BB.3: per-skill check-run classifier (v0.5.10) ---

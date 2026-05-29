@@ -4,6 +4,75 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.21] — 2026-05-29
+
+### Added — Skill `applies_to:` filter (Phase 0.5 / 0.0.K)
+
+Skills can declare an optional `applies_to:` block in their SKILL.md
+frontmatter listing paths/extensions the skill cares about. The review
+prompt now instructs the LLM to scan frontmatter first; if the skill
+declares applies_to AND the PR's changed files match NONE of the
+declared paths/extensions, the body is skipped entirely.
+
+```yaml
+---
+name: brand-voice-review
+review_mode: dedicated
+applies_to:
+  paths:
+    - "src/ui/**"
+    - "lib/components/**"
+  extensions: [".tsx", ".jsx", ".css"]
+---
+```
+
+**Match semantics**: paths OR extensions — any single hit wins. Path
+globs use the minimal set (`*` non-slash, `**` cross-slash, `?` single
+char). Skills without applies_to load unconditionally (back-compat).
+
+**Savings**: for a repo with N installed skills where only K care
+about a given PR's paths, the review skips ~(N-K) × MAX_SKILL_BYTES
+of skill-body fetch. A UI-only PR no longer pays for the
+`pii-and-compliance` body; a backend-only PR no longer pays for
+`brand-voice-review`.
+
+### Library API
+
+Two new helpers exported from `lib/skills.js`:
+
+- `readAppliesTo(skillContent)` — parses the frontmatter block.
+  Returns `{paths: string[], extensions: string[]}` or `null` if
+  absent (or if both lists are empty — the degenerate "no rule" case).
+  Hand-rolled YAML parser scoped to the exact shape; no new deps.
+- `appliesToPr(skillContent, prPaths)` — boolean. Skills without
+  applies_to ALWAYS apply (back-compat).
+
+The CLI doesn't use these helpers itself (the filter runs in the
+LLM's prompt). They're exported for: (1) test coverage, (2) the v0.6
+GitHub App's planned pre-filter step that will compute the applicable
+subset BEFORE the API call so the prompt can list only matching skills.
+
+### Golden gate
+
+Two new must-contain entries lock the prompt section against future
+0.0.P-style trim regression:
+
+- `Skill applies_to`
+- `SKIP that skill's body`
+
+### Tests
+
+277 pass (+12 new in `test/skills.test.js`). Cover: missing
+frontmatter, missing applies_to, block-list + inline-array forms,
+paths-only / extensions-only, prose mention does NOT fire, degenerate
+empty-lists rule returns null, back-compat without applies_to, glob
+single-star vs double-star semantics, paths OR extensions.
+
+### Composite pin
+
+v0.6.20 → v0.6.21 across `templates/workflow{,-py,-ts}.yml.tmpl` and
+`.github/actions/strict-mode-gate/action.yml` header docs.
+
 ## [0.6.20] — 2026-05-29
 
 ### Changed — Review prompt trim (Phase 0.5 / 0.0.P)

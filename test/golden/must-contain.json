@@ -100,6 +100,16 @@
       "pattern": "### Diagnostics",
       "why": "0.0.T (v0.6.18). Surfaces cap-fire events as an auditable block in the summary comment. Removing it would let truncation become invisible again.",
       "category": "fail-safe"
+    },
+    {
+      "pattern": "Skill applies_to",
+      "why": "0.0.K (v0.6.21). The skill-filter instruction. Without it, the LLM falls back to reading every installed SKILL.md unconditionally — the (N-K) * skill_bytes savings disappear.",
+      "category": "skill-filter"
+    },
+    {
+      "pattern": "SKIP that skill's body",
+      "why": "0.0.K (v0.6.21). The actionable rule — the wording the LLM follows to decide which skill bodies to fetch. Trimming around this phrase would gut the filter's behavior.",
+      "category": "skill-filter"
     }
   ]
 }
