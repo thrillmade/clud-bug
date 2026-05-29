@@ -40,6 +40,7 @@ clud-bug
 │   │   ├── ceremony__self-mod-bump-to-v0.5.15.md
 │   │   ├── ceremony__self-mod-v0.6.0.md
 │   │   ├── ceremony__self-mod-v0.6.1.md
+│   │   ├── chore__agents-md-import.md
 │   │   ├── chore__bump-logmind-pin-0.3.3.md
 │   │   ├── chore__empty-strictskills-v2.md
 │   │   ├── chore__logmind-v0.2.10-propagation.md
@@ -52,6 +53,8 @@ clud-bug
 │   │   ├── ci__unify-publish-and-promote.md
 │   │   ├── docs__skill-first-marketing-bb4.md
 │   │   ├── feat__0.0.M.1-usage-dashboard.md
+│   │   ├── feat__0.0.R-model-routing-trivial.md
+│   │   ├── feat__0.0.W-workflow-pr-skip.md
 │   │   ├── feat__0.A.1-extract-prompts.md
 │   │   ├── feat__0.A.10-incremental-diff-review.md
 │   │   ├── feat__0.A.11-fix-self-update-yaml-literal.md
