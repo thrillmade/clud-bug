@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (91 decisions)
+## 2026-05 (92 decisions)
 
-- **2026-05-29** — fix: escape ${{ ... }} in template comment so actionlint stops parsing it as a real expression *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
-- *... 89 more decisions ...*
+- **2026-05-29** — fix: SC2129 — group GITHUB_OUTPUT redirects in empty-CHANGED early-exit *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
+- *... 90 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

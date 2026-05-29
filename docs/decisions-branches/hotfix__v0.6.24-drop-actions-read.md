@@ -16,3 +16,11 @@
 - Pure comment cosmetic change; the actual workflow logic is unchanged. actionlint clean locally; CI should now pass.
 
 ---
+## 2026-05-29 19:40 - fix: SC2129 — group GITHUB_OUTPUT redirects in empty-CHANGED early-exit
+
+**Reasoning:** actionlint flagged the empty-CHANGED early-exit's 3 consecutive 'echo X >> GITHUB_OUTPUT' redirects as SC2129 (style: use { ... } >> file instead). Fixed in all 3 templates by grouping into a single { ... } >> GITHUB_OUTPUT block. Same lint warning was present in v0.6.23 main but admin-bypass-merged via #116; v0.6.24 hotfix should ship clean so the next admin bypass isn't needed for unrelated reasons.
+
+**Implications:**
+- Same template change in all 3 (workflow.yml.tmpl, workflow-py.yml.tmpl, workflow-ts.yml.tmpl). Tests still 300/300 pass; the regression-test asserting max_turns=15 emission still matches via the grouped block.
+
+---
