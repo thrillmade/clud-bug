@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (86 decisions)
+## 2026-05 (87 decisions)
 
-- **2026-05-29** — 0.5 §5: adaptive --max-turns based on PR scope (clud-bug v0.6.23) *(feat/0.5-S5-adaptive-max-turns)* — [decisions-branches/feat__0.5-S5-adaptive-max-turns.md](decisions-branches/feat__0.5-S5-adaptive-max-turns.md)
-- *... 84 more decisions ...*
+- **2026-05-29** — fix(0.5 §5): quote $REPO in adaptive max-turns shell (SC2086) *(feat/0.5-S5-adaptive-max-turns)* — [decisions-branches/feat__0.5-S5-adaptive-max-turns.md](decisions-branches/feat__0.5-S5-adaptive-max-turns.md)
+- *... 85 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

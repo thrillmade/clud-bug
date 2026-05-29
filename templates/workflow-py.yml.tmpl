@@ -83,7 +83,7 @@ jobs:
             MAX_TURNS=10
           else
             FILE_COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
-            THREAD_COUNT=$(gh api graphql -f query='{repository(owner:"'"$(echo $REPO | cut -d/ -f1)"'",name:"'"$(echo $REPO | cut -d/ -f2)"'"){pullRequest(number:'"$PR_NUMBER"'){reviewThreads(first:50){nodes{isResolved comments(first:1){nodes{author{login}}}}}}}}' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and (.comments.nodes[0].author.login == "claude" or .comments.nodes[0].author.login == "claude[bot]"))] | length' 2>/dev/null || echo 0)
+            THREAD_COUNT=$(gh api graphql -f query='{repository(owner:"'"$(echo "$REPO" | cut -d/ -f1)"'",name:"'"$(echo "$REPO" | cut -d/ -f2)"'"){pullRequest(number:'"$PR_NUMBER"'){reviewThreads(first:50){nodes{isResolved comments(first:1){nodes{author{login}}}}}}}}' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and (.comments.nodes[0].author.login == "claude" or .comments.nodes[0].author.login == "claude[bot]"))] | length' 2>/dev/null || echo 0)
             THREAD_COUNT=${THREAD_COUNT:-0}
             if [ "$FILE_COUNT" -ge 30 ] || [ "$THREAD_COUNT" -ge 6 ]; then
               MAX_TURNS=40

@@ -9,3 +9,8 @@
 - Workflow self-modification guard fires once on THIS PR (clud-bug's own workflow file changes). Documented per-PR-checklist structural exception.
 
 ---
+## 2026-05-29 14:49 - fix(0.5 §5): quote $REPO in adaptive max-turns shell (SC2086)
+
+**Reasoning:** actionlint caught unquoted $REPO in two cut invocations inside the gh api graphql query: 'echo $REPO | cut -d/ -f1' and 'echo $REPO | cut -d/ -f2'. shellcheck SC2086 (double quote to prevent globbing and word splitting). Applied 'echo "$REPO" | cut -d/' fix in all 3 templates. 300/300 tests still pass.
+
+---
