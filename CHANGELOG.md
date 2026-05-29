@@ -58,7 +58,8 @@ the freed budget invisibly.
 
 ### Tests
 
-256 pass. Updated `test/prompts.test.js` to assert the trimmed
+265 pass (same as [0.6.19] — 0.0.P doesn't add or remove tests).
+Updated `test/prompts.test.js` to assert the trimmed
 "Section budgets (v0.6.4+)" header instead of the prior
 "token-frugal review" phrasing.
 
