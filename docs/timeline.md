@@ -15,6 +15,8 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-29** — Release clud-bug v0.6.19 — 0.0.I.1 skip-block-when-import *(feat/0.0.I.1-skip-block-with-import)* — [decisions-branches/feat__0.0.I.1-skip-block-with-import.md](decisions-branches/feat__0.0.I.1-skip-block-with-import.md)
+- **2026-05-29** — 0.0.I.1 (clud-bug code change): skip installing CLAUDE.md block when @AGENTS.md import is present *(feat/0.0.I.1-skip-block-with-import)* — [decisions-branches/feat__0.0.I.1-skip-block-with-import.md](decisions-branches/feat__0.0.I.1-skip-block-with-import.md)
 - **2026-05-29** — 0.0.T (clud-bug side): RTK-inspired tee-hint on cap fire — producer-side audit trail *(feat/0.0.T-rtk-inspired-clud-bug)* — [decisions-branches/feat__0.0.T-rtk-inspired-clud-bug.md](decisions-branches/feat__0.0.T-rtk-inspired-clud-bug.md)
 - **2026-05-29** — PR #109 fix: wire up clud-bug eval subcommand (was referenced in README but didn't exist) *(feat/0.0.E-golden-eval-harness)* — [decisions-branches/feat__0.0.E-golden-eval-harness.md](decisions-branches/feat__0.0.E-golden-eval-harness.md)
 - **2026-05-29** — v0.6.17: golden-set regression gate for review prompt (Phase 0.5 / 0.0.E) *(feat/0.0.E-golden-eval-harness)* — [decisions-branches/feat__0.0.E-golden-eval-harness.md](decisions-branches/feat__0.0.E-golden-eval-harness.md)
