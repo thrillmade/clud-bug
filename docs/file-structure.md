@@ -52,6 +52,7 @@ clud-bug
 │   │   ├── ci__unify-publish-and-promote.md
 │   │   ├── docs__skill-first-marketing-bb4.md
 │   │   ├── feat__0.0.M.1-usage-dashboard.md
+│   │   ├── feat__0.0.W-workflow-pr-skip.md
 │   │   ├── feat__0.A.1-extract-prompts.md
 │   │   ├── feat__0.A.10-incremental-diff-review.md
 │   │   ├── feat__0.A.11-fix-self-update-yaml-literal.md
