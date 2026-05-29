@@ -12,9 +12,11 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read   # v0.6.23 / §5: enables github_ci MCP server
     outputs:
       is_workflow_only: ${{ steps.classify.outputs.is_workflow_only }}
       model: ${{ steps.classify.outputs.model }}
+      max_turns: ${{ steps.classify.outputs.max_turns }}
     steps:
       - name: Classify PR diff
         id: classify
@@ -74,6 +76,23 @@ jobs:
             echo "::notice title=Clud Bug 🐛::Trivial PR — routing to Haiku."
           fi
           echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+
+          # Adaptive max-turns (v0.6.23 / §5) — see workflow.yml.tmpl for design notes.
+          MAX_TURNS=15
+          if [ "$IS_TRIVIAL" = "true" ]; then
+            MAX_TURNS=10
+          else
+            FILE_COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
+            THREAD_COUNT=$(gh api graphql -f query='{repository(owner:"'"$(echo $REPO | cut -d/ -f1)"'",name:"'"$(echo $REPO | cut -d/ -f2)"'"){pullRequest(number:'"$PR_NUMBER"'){reviewThreads(first:50){nodes{isResolved comments(first:1){nodes{author{login}}}}}}}}' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and (.comments.nodes[0].author.login == "claude" or .comments.nodes[0].author.login == "claude[bot]"))] | length' 2>/dev/null || echo 0)
+            THREAD_COUNT=${THREAD_COUNT:-0}
+            if [ "$FILE_COUNT" -ge 30 ] || [ "$THREAD_COUNT" -ge 6 ]; then
+              MAX_TURNS=40
+            elif [ "$FILE_COUNT" -ge 10 ] || [ "$THREAD_COUNT" -ge 3 ]; then
+              MAX_TURNS=25
+            fi
+            echo "::notice title=Clud Bug 🐛::Turn budget: $MAX_TURNS ($FILE_COUNT files, $THREAD_COUNT prior threads)."
+          fi
+          echo "max_turns=$MAX_TURNS" >> "$GITHUB_OUTPUT"
 
   clud-bug-review:
     needs: paths-check
@@ -147,7 +166,7 @@ jobs:
           # structured output; post-step renders + posts. See workflow.yml.tmpl for design notes.
           claude_args: |
             --model ${{ needs.paths-check.outputs.model }}
-            --max-turns 15
+            --max-turns ${{ needs.paths-check.outputs.max_turns }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api graphql:*),Bash(gh api repos/:*),Bash(git show:*),Bash(git diff:*),Bash(git merge-base:*),Bash(cat .claude/skills/.clud-bug.json),Bash(cat .claude/skills/*/SKILL.md),Bash(head:*)"
             --json-schema '{{REVIEW_SCHEMA}}'
           prompt: |
@@ -190,7 +209,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.22
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.23
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].

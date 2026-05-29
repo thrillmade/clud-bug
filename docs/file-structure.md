@@ -46,6 +46,7 @@ clud-bug
 │   │   ├── chore__logmind-v0.2.10-propagation.md
 │   │   ├── chore__migrate-to-thrillmade.md
 │   │   ├── chore__regen-derived-docs.md
+│   │   ├── chore__self-upgrade-to-v0.6.22.md
 │   │   ├── chore__strict-skills-opt-in-baselines.md
 │   │   ├── chore__vercel-ignore-and-site-refs.md
 │   │   ├── ci__npm-dist-tag-promote.md
@@ -56,6 +57,7 @@ clud-bug
 │   │   ├── feat__0.0.I.1-skip-block-with-import.md
 │   │   ├── feat__0.0.K-skill-loading-minimization.md
 │   │   ├── feat__0.0.M.1-usage-dashboard.md
+│   │   ├── feat__0.0.O-json-schema.md
 │   │   ├── feat__0.0.P-prompt-trim.md
 │   │   ├── feat__0.0.R-model-routing-trivial.md
 │   │   ├── feat__0.0.T-rtk-inspired-clud-bug.md
@@ -112,7 +114,9 @@ clud-bug
 │   ├── detect.js
 │   ├── edit-workflow.js
 │   ├── prompts.js
+│   ├── render-review.js
 │   ├── render.js
+│   ├── review-schema.js
 │   ├── skills.js
 │   ├── update.js
 │   └── usage.js
@@ -163,6 +167,7 @@ clud-bug
 │   ├── prompts.eval.test.js
 │   ├── prompts.test.js
 │   ├── release-discipline.test.js
+│   ├── render-review.test.js
 │   ├── render.test.js
 │   ├── skills.test.js
 │   ├── update.test.js

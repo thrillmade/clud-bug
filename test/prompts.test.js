@@ -169,16 +169,37 @@ test('all 3 rendered workflow templates set MAX_THINKING_TOKENS=8000', async () 
   }
 });
 
-test('all 3 rendered workflow templates pass --max-turns 15 via claude_args', async () => {
+test('all 3 rendered workflow templates pass adaptive --max-turns via claude_args (v0.6.23 / §5)', async () => {
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
     const out = await renderFile(join(TEMPLATES, tmpl), {
       REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
     });
+    // v0.6.23 / §5: --max-turns is dynamic, sourced from paths-check
+    // pre-flight job's max_turns output. The hard-coded `15` was the
+    // pre-v0.6.23 default; now the value adapts to PR scope.
     assert.match(
       out,
-      /--max-turns 15/,
-      `${tmpl} missing --max-turns 15 in claude_args (v0.6.8)`,
+      /--max-turns \$\{\{\s*needs\.paths-check\.outputs\.max_turns\s*\}\}/,
+      `${tmpl}: claude_args must source --max-turns from paths-check.outputs.max_turns (v0.6.23 / §5)`,
+    );
+    // paths-check job emits the max_turns output.
+    assert.match(
+      out,
+      /max_turns:\s*\$\{\{\s*steps\.classify\.outputs\.max_turns\s*\}\}/,
+      `${tmpl}: paths-check must declare max_turns output`,
+    );
+    // paths-check has the bucket logic.
+    assert.match(
+      out,
+      /MAX_TURNS=15[\s\S]*MAX_TURNS=10[\s\S]*MAX_TURNS=40[\s\S]*MAX_TURNS=25/,
+      `${tmpl}: paths-check must include all 4 max_turns buckets (default=15, trivial=10, very-large=40, larger=25)`,
+    );
+    // actions: read permission for github_ci MCP server.
+    assert.match(
+      out,
+      /paths-check:[\s\S]+?permissions:[\s\S]+?actions: read/,
+      `${tmpl}: paths-check must request actions: read permission (enables github_ci MCP server)`,
     );
   }
 });
