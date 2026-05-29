@@ -1,0 +1,45 @@
+{
+  "$schema-comment": "Anti-pattern phrases (LLM token optimization guide § 6) that should NEVER appear in the rendered prompt. Catches regression where polite filler creeps back in. The 'i' flag lets the patterns be case-insensitive — filler doesn't care about capitalization.",
+  "entries": [
+    {
+      "pattern": "Please make sure to",
+      "why": "Pure filler per the guide. The imperative form ('Make sure to' or just direct statement) is shorter and equally clear.",
+      "category": "filler"
+    },
+    {
+      "pattern": "Please ensure that",
+      "why": "Filler — use imperative.",
+      "category": "filler"
+    },
+    {
+      "pattern": "I would like you to",
+      "why": "Filler — the instruction itself is the request.",
+      "category": "filler"
+    },
+    {
+      "pattern": "It is important that you",
+      "why": "Filler — just state the rule directly.",
+      "category": "filler"
+    },
+    {
+      "pattern": "As an AI language model",
+      "why": "Never appears in instructions and should not be re-added.",
+      "category": "filler"
+    },
+    {
+      "pattern": "Certainly! I'd be happy to",
+      "why": "Output-side conversational wrapping that doesn't belong in instructions.",
+      "category": "filler"
+    },
+    {
+      "pattern": "Please be aware that",
+      "why": "Filler — direct statement instead.",
+      "category": "filler"
+    },
+    {
+      "pattern": "I think it would be a good idea to",
+      "why": "Filler — the instruction itself is the request; never wrap in opinion.",
+      "category": "filler"
+    }
+  ]
+}

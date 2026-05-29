@@ -1,0 +1,90 @@
+{
+  "$schema-comment": "Regex patterns the rendered review prompt MUST contain. Each entry: { pattern: string, why: string, category: string }. The pattern is a JS regex source (no /.../ delimiters; flags are 'u' by default for emoji literals).",
+  "entries": [
+    {
+      "pattern": "critical-issues-only",
+      "why": "Without the critical-issues-only routing, the prompt invites style-nit churn and dilutes the strict-mode signal.",
+      "category": "discipline"
+    },
+    {
+      "pattern": "evidence-based-review",
+      "why": "Every finding must cite file:line evidence; this skill name is what the prompt references in the example.",
+      "category": "discipline"
+    },
+    {
+      "pattern": "## 🐛 Clud Bug review",
+      "why": "The strict-mode gate greps this exact H2 header. Without it, the gate can't classify and falls open.",
+      "category": "strict-mode-contract"
+    },
+    {
+      "pattern": "Found: N 🔴 / N 🟡 / N 🟣",
+      "why": "Stats-header shape (v0.6.5). Drives the fast-triage UX and the comment compression for re-reviews.",
+      "category": "comment-format"
+    },
+    {
+      "pattern": "<details><summary>Reasoning</summary>",
+      "why": "Per-finding reasoning lives inside collapsibles (v0.6.5). Re-reviews skip the body; humans expand.",
+      "category": "comment-format"
+    },
+    {
+      "pattern": "🔴 important",
+      "why": "Severity tier (v0.6.5). Removing this would orphan the stats-header grading.",
+      "category": "comment-format"
+    },
+    {
+      "pattern": "🟡 nit",
+      "why": "Severity tier (v0.6.5).",
+      "category": "comment-format"
+    },
+    {
+      "pattern": "🟣 pre-existing",
+      "why": "Severity tier (v0.6.5). Critical for keeping pre-existing issues from re-firing on every review.",
+      "category": "comment-format"
+    },
+    {
+      "pattern": "MAX_DIFF_BYTES",
+      "why": "Per-section budget (v0.6.4). The prompt teaches Claude to cap with head -c.",
+      "category": "budgets"
+    },
+    {
+      "pattern": "MAX_COMMENT_BYTES",
+      "why": "Per-section budget (v0.6.4).",
+      "category": "budgets"
+    },
+    {
+      "pattern": "MAX_SKILL_BYTES",
+      "why": "Per-section budget (v0.6.4).",
+      "category": "budgets"
+    },
+    {
+      "pattern": "last-reviewed-sha",
+      "why": "Incremental-diff handshake (v0.6.10). Without the marker emission instruction, every re-review reverts to full gh pr diff.",
+      "category": "incremental-diff"
+    },
+    {
+      "pattern": "git merge-base --is-ancestor",
+      "why": "The ancestor-check fallback for force-push/rebase (v0.6.10).",
+      "category": "incremental-diff"
+    },
+    {
+      "pattern": "Keep total output under ~600 tokens",
+      "why": "Brevity directive (v0.6.16 / 0.0.X). The output-side cap that compensates for max_tokens being unavailable in Claude Code CLI.",
+      "category": "brevity"
+    },
+    {
+      "pattern": "FIX-PUSH FLOW",
+      "why": "Section that teaches Claude to resolve prior threads. Without it, the resolved-from-prior counter is always 0 and the loop never closes.",
+      "category": "discipline"
+    },
+    {
+      "pattern": "resolveReviewThread",
+      "why": "The actual GraphQL mutation Claude must call to close prior threads.",
+      "category": "discipline"
+    },
+    {
+      "pattern": "Skills referenced:",
+      "why": "Per-review footer (v0.6.5). Anti-dilution layer — every loaded skill must be acknowledged.",
+      "category": "comment-format"
+    }
+  ]
+}
