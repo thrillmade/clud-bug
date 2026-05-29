@@ -31,6 +31,8 @@ jobs:
           if [ -z "$CHANGED" ]; then
             echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"
             echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+            # v0.6.23 / §5: max_turns must always be emitted — see workflow.yml.tmpl for design notes.
+            echo "max_turns=15" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           IS_WORKFLOW_ONLY=true

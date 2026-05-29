@@ -14,3 +14,11 @@
 **Reasoning:** actionlint caught unquoted $REPO in two cut invocations inside the gh api graphql query: 'echo $REPO | cut -d/ -f1' and 'echo $REPO | cut -d/ -f2'. shellcheck SC2086 (double quote to prevent globbing and word splitting). Applied 'echo "$REPO" | cut -d/' fix in all 3 templates. 300/300 tests still pass.
 
 ---
+## 2026-05-29 14:58 - fix(0.5 §5): emit max_turns=15 in empty-CHANGED early-exit (PR #116 review fix)
+
+**Reasoning:** clud-bug-review on PR #116 caught a regression: when CHANGED is empty (gh pr diff auth/network failure or theoretical no-changed-files PR), paths-check exits 0 without setting max_turns. Then clud-bug-review job runs (is_workflow_only=false) and --max-turns ${{ needs.paths-check.outputs.max_turns }} expands to '--max-turns ' (empty) → CLI fails. Pre-v0.6.23 this was harmless (hard-coded --max-turns 15). Added 'echo max_turns=15 >> GITHUB_OUTPUT' in the empty-CHANGED block of all 3 templates. Added regression test in test/prompts.test.js asserting the empty-CHANGED block emits max_turns=15 before exit 0. 300/300 pass.
+
+**Implications:**
+- Same review caught 4 threads — all reporting the same issue in workflow.yml.tmpl, workflow-py.yml.tmpl, workflow-ts.yml.tmpl. Fix applied to all 3 + test pinned.
+
+---

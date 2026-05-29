@@ -201,6 +201,16 @@ test('all 3 rendered workflow templates pass adaptive --max-turns via claude_arg
       /paths-check:[\s\S]+?permissions:[\s\S]+?actions: read/,
       `${tmpl}: paths-check must request actions: read permission (enables github_ci MCP server)`,
     );
+    // REGRESSION GUARD (PR #116 clud-bug-review catch): the empty-CHANGED
+    // early-exit path (gh pr diff auth/network failure OR theoretical
+    // no-files PR) must ALSO emit max_turns. Otherwise --max-turns expands
+    // to empty in clud-bug-review and fails the CLI invocation. Pre-v0.6.23
+    // this was harmless (hard-coded `15`); this PR introduced the risk.
+    assert.match(
+      out,
+      /if \[ -z "\$CHANGED" \];[\s\S]+?echo "max_turns=15" >> "\$GITHUB_OUTPUT"[\s\S]+?exit 0/,
+      `${tmpl}: empty-CHANGED early-exit must emit max_turns=15 before exit 0`,
+    );
   }
 });
 
