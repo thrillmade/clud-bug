@@ -4,6 +4,51 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.15] — 2026-05-29
+
+### Added — model routing for trivial PRs (Phase 0.5 / 0.0.R)
+
+When a PR is a dep bump (Dependabot/Renovate author) OR a small
+manual lockfile/manifest fix, route the review to Haiku 4.5
+($0.80/MTok input) instead of Sonnet 4.6 ($3/MTok) — another **~75%
+cost reduction** on this PR class.
+
+### Classifier (in paths-check)
+
+A PR is "trivial" if EITHER:
+
+1. The author is `dependabot[bot]` or `renovate[bot]` (regardless of
+   diff size — dep-bump bots open shallow PRs even when lockfile
+   churn is large).
+2. The diff is < 2 KB AND every changed file matches the
+   dep-manifest allow-list:
+   `package.json` / `package-lock.json` / `pnpm-lock.yaml` /
+   `yarn.lock` / `requirements*.txt` / `pyproject.toml` /
+   `poetry.lock` / `uv.lock` / `Gemfile(.lock)` /
+   `go.mod` / `go.sum` / `Cargo.toml` / `Cargo.lock`.
+
+Otherwise: Sonnet (the current default).
+
+### Wiring
+
+`paths-check` job (introduced in v0.6.14) now also emits a `model`
+output. The `clud-bug-review` job's `claude_args` uses
+`--model ${{ needs.paths-check.outputs.model }}` so the SDK picks up
+the routed model dynamically.
+
+### Override
+
+To force a specific model for a specific repo, edit the rendered
+workflow to hard-code `--model claude-sonnet-4-6` (or any other valid
+ID) in place of the expression. The classifier is opt-out by
+construction — any non-trivial diff (real code change, large dep
+bump, mixed paths) defaults to Sonnet.
+
+### Net diff
+
+3 templates × ~30 lines (triviality classifier in `paths-check` +
+`--model` expansion in `claude_args`). Composite-pin v0.6.14 → v0.6.15.
+
 ## [0.6.14] — 2026-05-28
 
 ### Added — workflow-only PR review skip (Phase 0.5 / 0.0.W)

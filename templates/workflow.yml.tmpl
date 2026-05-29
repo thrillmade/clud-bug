@@ -6,15 +6,21 @@ on:
     types: [opened, synchronize]
 
 jobs:
-  # Pre-flight (v0.6.14 / 0.0.W): if the PR ONLY touches clud-bug workflow
-  # files or the strict-mode-gate composite action, skip the LLM review
-  # entirely. claude-code-action would refuse to run on such a PR anyway
-  # (self-modification guard — required for security), and a template
-  # re-render has no useful review surface. Skipping turns a previously
-  # required-admin-bypass merge into a normal one, AND saves the LLM
-  # call cost. Security: the classifier requires ALL changed files to
-  # match the allow-list — a mixed PR (workflow + code) still runs the
-  # review normally.
+  # Pre-flight: classify the PR diff to decide (a) whether to skip the
+  # LLM review entirely, and (b) which model to route to.
+  #
+  # (a) Workflow-only PRs (v0.6.14 / 0.0.W): if every changed file
+  # matches `.github/workflows/clud-bug-*.yml` or
+  # `.github/actions/strict-mode-gate/**`, the LLM call is skipped
+  # entirely — claude-code-action would refuse anyway (self-modification
+  # guard), and template re-renders have no useful review surface.
+  # Skipping converts what were admin-bypass merges into normal ones.
+  #
+  # (b) Trivial PRs (v0.6.15 / 0.0.R): if the PR author is a dep-bumping
+  # bot (dependabot, renovate) OR the diff is small (<2KB) AND only
+  # touches dependency-manifest files, route the review to Haiku
+  # ($0.80/MTok input vs Sonnet's $3) — another ~75% cost reduction on
+  # this PR class. Sonnet remains the default for everything else.
   paths-check:
     runs-on: ubuntu-latest
     permissions:
@@ -22,6 +28,7 @@ jobs:
       pull-requests: read
     outputs:
       is_workflow_only: ${{ steps.classify.outputs.is_workflow_only }}
+      model: ${{ steps.classify.outputs.model }}
     steps:
       - name: Classify PR diff
         id: classify
@@ -29,12 +36,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           CHANGED=$(gh pr diff "$PR_NUMBER" -R "$REPO" --name-only)
+          MODEL=claude-sonnet-4-6   # default
           if [ -z "$CHANGED" ]; then
             echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"
+            echo "model=$MODEL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # --- (a) workflow-only classifier ---
           IS_WORKFLOW_ONLY=true
           while IFS= read -r f; do
             case "$f" in
@@ -45,8 +57,50 @@ jobs:
           done <<< "$CHANGED"
           echo "is_workflow_only=$IS_WORKFLOW_ONLY" >> "$GITHUB_OUTPUT"
           if [ "$IS_WORKFLOW_ONLY" = "true" ]; then
-            echo "::notice title=Clud Bug 🐛::Skipping LLM review — PR only touches workflow files (claude-code-action would refuse anyway due to self-modification guard)."
+            echo "::notice title=Clud Bug 🐛::Skipping LLM review — PR only touches workflow files."
+            echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # --- (b) triviality classifier ---
+          IS_TRIVIAL=false
+          # Bot authors that exclusively open dep-bump PRs go straight
+          # to Haiku regardless of diff size — lockfile churn can be huge
+          # but the review surface is shallow.
+          case "$PR_AUTHOR" in
+            dependabot\[bot\]|renovate\[bot\]) IS_TRIVIAL=true ;;
+          esac
+          # Otherwise: diff < 2KB AND every file matches the dep-manifest
+          # allow-list. Manual lockfile fixes / small version pins
+          # qualify; real feature work does not.
+          if [ "$IS_TRIVIAL" = "false" ]; then
+            DIFF_SIZE=$(gh pr diff "$PR_NUMBER" -R "$REPO" | wc -c | tr -d ' ')
+            if [ "$DIFF_SIZE" -lt 2048 ]; then
+              ALL_TRIVIAL=true
+              while IFS= read -r f; do
+                case "$f" in
+                  package.json|*/package.json) ;;
+                  package-lock.json|*/package-lock.json) ;;
+                  pnpm-lock.yaml|*/pnpm-lock.yaml) ;;
+                  yarn.lock|*/yarn.lock) ;;
+                  requirements*.txt|*/requirements*.txt) ;;
+                  pyproject.toml|*/pyproject.toml) ;;
+                  poetry.lock|*/poetry.lock) ;;
+                  uv.lock|*/uv.lock) ;;
+                  Gemfile|*/Gemfile|Gemfile.lock|*/Gemfile.lock) ;;
+                  go.mod|*/go.mod|go.sum|*/go.sum) ;;
+                  Cargo.toml|*/Cargo.toml|Cargo.lock|*/Cargo.lock) ;;
+                  *) ALL_TRIVIAL=false; break ;;
+                esac
+              done <<< "$CHANGED"
+              [ "$ALL_TRIVIAL" = "true" ] && IS_TRIVIAL=true
+            fi
+          fi
+          if [ "$IS_TRIVIAL" = "true" ]; then
+            MODEL=claude-haiku-4-5-20251001
+            echo "::notice title=Clud Bug 🐛::Trivial PR detected (dep bump / bot author) — routing to Haiku for ~75% cost reduction."
+          fi
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
 
   clud-bug-review:
     needs: paths-check
@@ -164,8 +218,12 @@ jobs:
           # cache_creation_input_tokens in the run's result JSON so we can
           # measure caching effectiveness post-rollout (per v0.6.3 plan).
           show_full_output: true
+          # v0.6.15 / 0.0.R: --model is dynamic. paths-check classifies
+          # the PR as trivial (Haiku) or default (Sonnet). Override
+          # per-repo by editing the rendered workflow if you want a
+          # specific model for a specific repo.
           claude_args: |
-            --model claude-sonnet-4-6
+            --model ${{ needs.paths-check.outputs.model }}
             --max-turns 15
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api graphql:*),Bash(gh api repos/:*),Bash(git show:*),Bash(git diff:*),Bash(git merge-base:*),Bash(cat .claude/skills/.clud-bug.json),Bash(cat .claude/skills/*/SKILL.md),Bash(head:*)"
           prompt: |
@@ -189,6 +247,6 @@ jobs:
       # Letting the action's own failure fail the check is louder and right.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.14
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.15
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

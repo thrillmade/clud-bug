@@ -388,7 +388,11 @@ test('paths-check classifier: allow-list covers clud-bug-*.yml + strict-mode-gat
     'mixed-diff guard MUST be present — any non-allow-list file flips the classifier to false');
 });
 
-test('all 3 rendered workflow templates pin claude_args --model claude-sonnet-4-6 (v0.6.11+)', async () => {
+test('all 3 rendered workflow templates use --model ${{ needs.paths-check.outputs.model }} (v0.6.15+)', async () => {
+  // v0.6.11 hard-coded --model claude-sonnet-4-6. v0.6.15 (0.0.R)
+  // makes the model dynamic: paths-check emits `model` output, which
+  // claude_args interpolates. Trivial PRs route to Haiku; default
+  // remains Sonnet (set in the classifier).
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
     const out = await renderFile(join(TEMPLATES, tmpl), {
@@ -396,10 +400,83 @@ test('all 3 rendered workflow templates pin claude_args --model claude-sonnet-4-
     });
     assert.match(
       out,
-      /--model claude-sonnet-4-6/,
-      `${tmpl} missing --model claude-sonnet-4-6 in claude_args (v0.6.11 — Phase 0.A.8 model pin)`,
+      /--model \$\{\{ needs\.paths-check\.outputs\.model \}\}/,
+      `${tmpl} must use dynamic --model from paths-check (v0.6.15 / 0.0.R)`,
+    );
+    // The hard-coded Sonnet pin from v0.6.11 should no longer appear
+    // as a literal `--model claude-sonnet-4-6` in claude_args.
+    assert.doesNotMatch(
+      out,
+      /--model claude-sonnet-4-6\b/,
+      `${tmpl} should not hard-code --model claude-sonnet-4-6; use the paths-check output instead`,
     );
   }
+});
+
+// --- 0.0.R (v0.6.15): model routing for trivial PRs ---
+
+test('paths-check exposes model output AND defaults to Sonnet', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    // paths-check must emit `model` in its outputs block.
+    assert.match(out, /model:\s*\$\{\{\s*steps\.classify\.outputs\.model\s*\}\}/,
+      `${tmpl} paths-check must expose model output (v0.6.15)`);
+    // The default MODEL inside the classifier is Sonnet — anything
+    // un-classified must NOT silently route to a cheaper model.
+    assert.match(out, /MODEL=claude-sonnet-4-6/,
+      `${tmpl} default MODEL must be Sonnet (safety: trivial routing is opt-in by classifier)`);
+  }
+});
+
+test('triviality classifier: dependabot/renovate bot authors route to Haiku', async () => {
+  // The classifier hard-codes the two bot login names that exclusively
+  // open dep-bump PRs. Adding new dep-bot authors would extend this case.
+  const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
+  });
+  assert.match(out, /dependabot\\\[bot\\\]\|renovate\\\[bot\\\]/,
+    'classifier must match dependabot[bot] AND renovate[bot] (escaped for case glob)');
+  assert.match(out, /MODEL=claude-haiku-4-5-20251001/,
+    'classifier must assign Haiku 4.5 to trivial PRs');
+});
+
+test('triviality classifier: dep-manifest allow-list covers npm/pip/cargo/go/ruby', async () => {
+  const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
+  });
+  // Spot-check one pattern per ecosystem so regressions in the
+  // allow-list are caught.
+  for (const pat of [
+    /package\.json/,
+    /package-lock\.json/,
+    /pyproject\.toml/,
+    /poetry\.lock/,
+    /uv\.lock/,
+    /\bGemfile\b/,
+    /go\.mod\b/,
+    /go\.sum\b/,
+    /Cargo\.toml/,
+    /Cargo\.lock/,
+  ]) {
+    assert.match(out, pat, `triviality allow-list must include ${pat}`);
+  }
+});
+
+test('triviality classifier: any non-allow-list file flips MODEL back to Sonnet (safety)', async () => {
+  // The classifier's bail-out branch — `*) ALL_TRIVIAL=false; break ;;`
+  // — must be present. Without it, a single feature-code file in the
+  // diff would still route to Haiku, defeating the purpose.
+  const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
+  });
+  assert.match(
+    out,
+    /\*\)\s*ALL_TRIVIAL=false/,
+    'mixed-diff guard must flip ALL_TRIVIAL=false when any non-manifest file appears',
+  );
 });
 
 test('templateLanguage maps template filename to reviewPrompt language', () => {

@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize]
 
 jobs:
-  # Pre-flight (v0.6.14 / 0.0.W) — see workflow.yml.tmpl for design notes.
+  # Pre-flight (v0.6.14 / 0.0.W + v0.6.15 / 0.0.R) — see workflow.yml.tmpl.
   paths-check:
     runs-on: ubuntu-latest
     permissions:
@@ -14,6 +14,7 @@ jobs:
       pull-requests: read
     outputs:
       is_workflow_only: ${{ steps.classify.outputs.is_workflow_only }}
+      model: ${{ steps.classify.outputs.model }}
     steps:
       - name: Classify PR diff
         id: classify
@@ -21,9 +22,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           CHANGED=$(gh pr diff "$PR_NUMBER" -R "$REPO" --name-only)
-          if [ -z "$CHANGED" ]; then echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          MODEL=claude-sonnet-4-6
+          if [ -z "$CHANGED" ]; then
+            echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"
+            echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           IS_WORKFLOW_ONLY=true
           while IFS= read -r f; do
             case "$f" in
@@ -35,7 +42,38 @@ jobs:
           echo "is_workflow_only=$IS_WORKFLOW_ONLY" >> "$GITHUB_OUTPUT"
           if [ "$IS_WORKFLOW_ONLY" = "true" ]; then
             echo "::notice title=Clud Bug 🐛::Skipping LLM review — workflow-only PR."
+            echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # Triviality (0.0.R): dep-bumping bot OR small dep-manifest diff.
+          IS_TRIVIAL=false
+          case "$PR_AUTHOR" in
+            dependabot\[bot\]|renovate\[bot\]) IS_TRIVIAL=true ;;
+          esac
+          if [ "$IS_TRIVIAL" = "false" ]; then
+            DIFF_SIZE=$(gh pr diff "$PR_NUMBER" -R "$REPO" | wc -c | tr -d ' ')
+            if [ "$DIFF_SIZE" -lt 2048 ]; then
+              ALL_TRIVIAL=true
+              while IFS= read -r f; do
+                case "$f" in
+                  package.json|*/package.json|package-lock.json|*/package-lock.json) ;;
+                  pnpm-lock.yaml|*/pnpm-lock.yaml|yarn.lock|*/yarn.lock) ;;
+                  requirements*.txt|*/requirements*.txt) ;;
+                  pyproject.toml|*/pyproject.toml|poetry.lock|*/poetry.lock|uv.lock|*/uv.lock) ;;
+                  Gemfile|*/Gemfile|Gemfile.lock|*/Gemfile.lock) ;;
+                  go.mod|*/go.mod|go.sum|*/go.sum) ;;
+                  Cargo.toml|*/Cargo.toml|Cargo.lock|*/Cargo.lock) ;;
+                  *) ALL_TRIVIAL=false; break ;;
+                esac
+              done <<< "$CHANGED"
+              [ "$ALL_TRIVIAL" = "true" ] && IS_TRIVIAL=true
+            fi
+          fi
+          if [ "$IS_TRIVIAL" = "true" ]; then
+            MODEL=claude-haiku-4-5-20251001
+            echo "::notice title=Clud Bug 🐛::Trivial PR — routing to Haiku."
+          fi
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
 
   clud-bug-review:
     needs: paths-check
@@ -106,7 +144,7 @@ jobs:
           track_progress: true
           show_full_output: true
           claude_args: |
-            --model claude-sonnet-4-6
+            --model ${{ needs.paths-check.outputs.model }}
             --max-turns 15
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api graphql:*),Bash(gh api repos/:*),Bash(git show:*),Bash(git diff:*),Bash(git merge-base:*),Bash(cat .claude/skills/.clud-bug.json),Bash(cat .claude/skills/*/SKILL.md),Bash(head:*)"
           prompt: |
@@ -118,6 +156,6 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.14
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.15
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
