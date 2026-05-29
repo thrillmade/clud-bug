@@ -31,6 +31,8 @@ function parseArgs(argv) {
     setProtection: true, quiet: false,
     // 0.0.M.1 (v0.6.13): `clud-bug usage` flags.
     repo: null, pr: null, limit: null, json: false,
+    // 0.0.O (v0.6.22): `clud-bug render` reads its payload from stdin.
+    stdin: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -49,6 +51,7 @@ function parseArgs(argv) {
     else if (a === '--pr') args.pr = Number(argv[++i]);
     else if (a === '--limit') args.limit = Number(argv[++i]);
     else if (a === '--json') args.json = true;
+    else if (a === '--stdin') args.stdin = true;
     else args._.push(a);
   }
   return args;
@@ -79,6 +82,11 @@ Commands:
   eval                  Run the golden-set regression gate against the rendered review
                         prompt (must-contain / must-not-contain / byte-budget). Same as
                         \`node --test test/prompts.eval.test.js\` but works from any cwd.
+  render --stdin        Render a structured-output JSON payload (the action's
+                        \`outputs.structured_output\`, piped via stdin) to the
+                        GitHub-markdown summary comment shape. Invoked by the
+                        workflow post-step; output is what \`gh pr comment\`
+                        receives. Empty stdin or non-object payload exits 2.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -130,9 +138,50 @@ async function main() {
     case 'edit-workflow': return runEditWorkflow(args);
     case 'usage':   return runUsage(args);
     case 'eval':    return runEval();
+    case 'render':  return runRender(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
+  }
+}
+
+// 0.0.O (v0.6.22): render a structured-output JSON payload to the
+// GitHub-markdown summary comment shape. Called by the post-step
+// in the workflow templates: it reads the action's
+// `outputs.structured_output` (one bundled JSON string), pipes it
+// to stdin here, and we emit the rendered markdown on stdout for
+// the shell to pass to `gh pr comment --body`.
+//
+// Usage: `clud-bug render --stdin` (only input source supported).
+// Exit code: 0 on success, 2 on JSON parse error or non-object payload.
+async function runRender(args) {
+  const { renderReview } = await import('../lib/render-review.js');
+  if (!args.stdin) {
+    process.stderr.write('clud-bug render: --stdin is required (the only supported input source).\n');
+    process.exit(2);
+  }
+  let raw = '';
+  for await (const chunk of process.stdin) raw += chunk;
+  raw = raw.trim();
+  if (!raw) {
+    // Empty structured_output → post-step is supposed to skip the
+    // render. Surface the situation rather than silently producing an
+    // empty comment.
+    process.stderr.write('clud-bug render: stdin was empty — nothing to render.\n');
+    process.exit(2);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (e) {
+    process.stderr.write(`clud-bug render: JSON parse failed: ${e.message}\n`);
+    process.exit(2);
+  }
+  try {
+    process.stdout.write(renderReview(payload));
+  } catch (e) {
+    process.stderr.write(`clud-bug render: ${e.message}\n`);
+    process.exit(2);
   }
 }
 
@@ -220,6 +269,7 @@ async function runInit(args) {
   log('  drafting field kit...');
   const tmplName = pickTemplate(signals.languages);
   const tmplPath = join(TEMPLATES, tmplName);
+  // REVIEW_SCHEMA + CCA_VERSION + CLUD_BUG_VERSION come from render.js DEFAULTS.
   const workflow = await renderFile(tmplPath, {
     REVIEW_PROMPT: reviewPrompt({
       projectDescription: buildDescriptionLine(signals),

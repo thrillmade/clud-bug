@@ -1,0 +1,11 @@
+## 2026-05-29 10:32 - 0.0.O: --json-schema structured output → renderer → gh pr comment post-step (replaces LLM-driven free-form summary posting)
+
+**Reasoning:** Verified --json-schema is a first-class Claude Code CLI flag (CONFIRMED, see agent research). New lib/review-schema.js defines a strict schema (additionalProperties: false everywhere, word caps in description fields). New lib/render-review.js + 'clud-bug render --stdin' subcommand renders structured payload to the existing v0.6.5 markdown shape. Templates updated: --json-schema '<schema>' in claude_args, post-step renders + posts via gh pr comment, fallback step posts a bare-H2 advisory when structured_output is empty (max-retries hit). Bash(gh pr comment:*) dropped from --allowedTools since the LLM no longer posts the summary. The cached system prompt has a new 'Emit as structured JSON' instruction at the SUMMARY section + an updated FIX-PUSH ordering that swaps step (c) from 'post summary' to 'emit structured summary output'. Regression test added in test/skills.test.js to pin appliesToPr's endsWith() semantics (the agent-skills#51 reviewer's catch). 295 pass.
+
+**Alternatives considered:** Phase A only: ship the schema + renderer + CLI, leave the workflow templates alone for a follow-up PR. Rejected: half-shipped features create stale-receiver risk where the renderer exists but doesn't get the LLM's structured output., Make the LLM post the comment AND emit structured output. Renderer would compare/dedup. Rejected: double-posting clutters the PR thread and the dedup logic would itself be a source of regressions.
+
+**Implications:**
+- v0.6.22 publish triggers an npm tag bump. Consumer repos running 'clud-bug update' will pick up the new workflow + post-step. The first review under v0.6.22 will exercise the schema; if Anthropic's schema-validation retries fail, the fallback comment shows the user what happened. Build a feedback loop via clud-bug usage --since 24h after first deployment to watch for any structured_output empties.
+- Token economics: schema captures the entire summary as a SINGLE structured emission instead of N tool-call turns (free-form text + tool calls for each inline). Expected: lower output tokens per review, fewer tool-call round-trips. Need to measure via 'clud-bug usage' over the next sprint.
+
+---
