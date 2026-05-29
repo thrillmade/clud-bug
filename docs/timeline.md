@@ -15,6 +15,8 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-29** — PR #108 regen derived docs after rebase *(feat/0.0.X-output-token-directive)* — [decisions-branches/feat__0.0.X-output-token-directive.md](decisions-branches/feat__0.0.X-output-token-directive.md)
+- **2026-05-29** — v0.6.16: output-token brevity directive in cached prompt (Phase 0.5 / 0.0.X) *(feat/0.0.X-output-token-directive)* — [decisions-branches/feat__0.0.X-output-token-directive.md](decisions-branches/feat__0.0.X-output-token-directive.md)
 - **2026-05-29** — PR #106: regen derived docs after rebase *(chore/agents-md-import)* — [decisions-branches/chore__agents-md-import.md](decisions-branches/chore__agents-md-import.md)
 - **2026-05-29** — v0.6.15: model routing for trivial PRs — Haiku for dep bumps (Phase 0.5 / 0.0.R) *(feat/0.0.R-model-routing-trivial)* — [decisions-branches/feat__0.0.R-model-routing-trivial.md](decisions-branches/feat__0.0.R-model-routing-trivial.md)
 - **2026-05-29** — chore: @AGENTS.md import in CLAUDE.md (Q4 refinement / 0.0.I) *(chore/agents-md-import)* — [decisions-branches/chore__agents-md-import.md](decisions-branches/chore__agents-md-import.md)

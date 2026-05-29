@@ -55,6 +55,7 @@ clud-bug
 │   │   ├── feat__0.0.M.1-usage-dashboard.md
 │   │   ├── feat__0.0.R-model-routing-trivial.md
 │   │   ├── feat__0.0.W-workflow-pr-skip.md
+│   │   ├── feat__0.0.X-output-token-directive.md
 │   │   ├── feat__0.A.1-extract-prompts.md
 │   │   ├── feat__0.A.10-incremental-diff-review.md
 │   │   ├── feat__0.A.11-fix-self-update-yaml-literal.md
@@ -143,12 +144,18 @@ clud-bug
 │   ├── workflow-ts.yml.tmpl
 │   └── workflow.yml.tmpl
 ├── test
+│   ├── golden
+│   │   ├── byte-budget.json
+│   │   ├── must-contain.json
+│   │   ├── must-not-contain.json
+│   │   └── README.md
 │   ├── agents-md.test.js
 │   ├── audit.test.js
 │   ├── branch-protection.test.js
 │   ├── cli.test.js
 │   ├── detect.test.js
 │   ├── edit-workflow.test.js
+│   ├── prompts.eval.test.js
 │   ├── prompts.test.js
 │   ├── release-discipline.test.js
 │   ├── render.test.js
