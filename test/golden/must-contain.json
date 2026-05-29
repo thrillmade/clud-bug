@@ -85,6 +85,21 @@
       "pattern": "Skills referenced:",
       "why": "Per-review footer (v0.6.5). Anti-dilution layer — every loaded skill must be acknowledged.",
       "category": "comment-format"
+    },
+    {
+      "pattern": "Tee-hint on cap fire",
+      "why": "0.0.T (v0.6.18). The RTK-inspired truncation-audit pattern. Without this section, the LLM falls back to silent confidence loss when caps fire.",
+      "category": "fail-safe"
+    },
+    {
+      "pattern": "Attempt ONE targeted re-fetch with double the cap",
+      "why": "0.0.T (v0.6.18). The actionable producer-side half — naming what was elided AND attempting recovery. Removing it would leave the diagnostic but no recovery path.",
+      "category": "fail-safe"
+    },
+    {
+      "pattern": "### Diagnostics",
+      "why": "0.0.T (v0.6.18). Surfaces cap-fire events as an auditable block in the summary comment. Removing it would let truncation become invisible again.",
+      "category": "fail-safe"
     }
   ]
 }

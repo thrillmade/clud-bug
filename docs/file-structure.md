@@ -52,6 +52,7 @@ clud-bug
 │   │   ├── ci__npm-publish-trusted.md
 │   │   ├── ci__unify-publish-and-promote.md
 │   │   ├── docs__skill-first-marketing-bb4.md
+│   │   ├── feat__0.0.E-golden-eval-harness.md
 │   │   ├── feat__0.0.M.1-usage-dashboard.md
 │   │   ├── feat__0.0.R-model-routing-trivial.md
 │   │   ├── feat__0.0.W-workflow-pr-skip.md

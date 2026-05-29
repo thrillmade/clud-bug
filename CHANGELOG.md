@@ -4,6 +4,56 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.18] — 2026-05-29
+
+### Added — RTK-inspired tee-hint on cap fire (Phase 0.5 / 0.0.T, clud-bug side)
+
+The review prompt now teaches the LLM to treat any `head -c "$MAX_*"`
+cap fire as an auditable event, not a silent confidence loss. Two
+required behaviours:
+
+1. **Targeted re-fetch with doubled cap** on the specific truncated
+   section. The prompt names the section that fired (diff / skill /
+   comments), the file or query affected, and the exact `head -c
+   $((MAX_* * 2))` re-fetch command.
+2. **`### Diagnostics` block** at the bottom of the summary comment
+   listing each cap that fired, the section affected, and the
+   re-fetch outcome (recovered / still truncated / deferred).
+
+This is the producer-side half of RTK's `force_tee_tail_hint`
+(`src/cmds/python/ruff_cmd.rs:214-219`): never elide without naming
+what was elided. Pattern lifted from MIT-licensed code; RTK is not a
+dependency.
+
+### Golden gate updates
+
+`test/golden/must-contain.json` adds three entries to lock in the new
+section:
+
+- `Tee-hint on cap fire`
+- `Attempt ONE targeted re-fetch with double the cap`
+- `### Diagnostics`
+
+A future 0.0.P trim that drops any of these fails the gate, exactly
+as designed in 0.0.E.
+
+### Golden-budget bump
+
+`test/golden/byte-budget.json`:
+
+- `max_prompt_bytes`: 16000 → 18500 (rendered prompt now 17080 bytes;
+  0.0.T added ~1.1 KB).
+- `max_prompt_lines`: 360 → 380 (rendered prompt now 362 lines).
+
+Both bumps are intentional and the new caps still leave headroom for
+0.0.O. Each `why` field in `byte-budget.json` is updated to point at
+this CHANGELOG entry for the bump rationale.
+
+### Composite pin
+
+v0.6.17 → v0.6.18 across `templates/workflow{,-py,-ts}.yml.tmpl` and
+`.github/actions/strict-mode-gate/action.yml` header docs.
+
 ## [0.6.17] — 2026-05-29
 
 ### Added — golden-set regression gate for the review prompt (Phase 0.5 / 0.0.E)
