@@ -22,3 +22,8 @@
 - Same review caught 4 threads — all reporting the same issue in workflow.yml.tmpl, workflow-py.yml.tmpl, workflow-ts.yml.tmpl. Fix applied to all 3 + test pinned.
 
 ---
+## 2026-05-29 15:05 - fix(0.5 §5): move actions: read to clud-bug-review job (PR #116 review fix)
+
+**Reasoning:** clud-bug-review caught another regression: I put actions: read on paths-check, but per-job GITHUB_TOKEN permissions aren't inherited and claude-code-action runs in clud-bug-review (not paths-check). paths-check doesn't need actions: read at all (only calls gh pr diff + gh api graphql). Moved actions: read from paths-check to clud-bug-review in all 3 templates. Updated regression test to assert (a) clud-bug-review has actions: read, (b) paths-check does NOT — both via positive and negative match.
+
+---

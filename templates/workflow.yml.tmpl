@@ -26,7 +26,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      actions: read   # v0.6.23 / §5: enables the github_ci MCP server when claude-code-action loads it
     outputs:
       is_workflow_only: ${{ steps.classify.outputs.is_workflow_only }}
       model: ${{ steps.classify.outputs.model }}
@@ -155,6 +154,11 @@ jobs:
       # the GitHub Checks API for any skill in .clud-bug.json's strictSkills
       # list (BB.3, v0.5.10+). No-op when strictSkills is unset.
       checks: write
+      # actions: read (v0.6.23 / §5) — claude-code-action's bundled
+      # github_ci MCP server needs this to introspect recent CI runs.
+      # Per-job GITHUB_TOKEN permissions aren't inherited, so this
+      # MUST be on the clud-bug-review job, not paths-check.
+      actions: read
 
     steps:
       - uses: actions/checkout@v6

@@ -12,7 +12,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      actions: read   # v0.6.23 / §5: enables github_ci MCP server
     outputs:
       is_workflow_only: ${{ steps.classify.outputs.is_workflow_only }}
       model: ${{ steps.classify.outputs.model }}
@@ -106,6 +105,8 @@ jobs:
       id-token: write
       # checks: write — composite emits per-skill check-runs (BB.3).
       checks: write
+      # actions: read (v0.6.23 / §5) — github_ci MCP server. See workflow.yml.tmpl for design notes.
+      actions: read
 
     steps:
       - uses: actions/checkout@v6
