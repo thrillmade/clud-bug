@@ -91,8 +91,8 @@ test('reviewPrompt includes the core review-discipline sections', () => {
 
 test('reviewPrompt includes per-section budget instructions', () => {
   const out = reviewPrompt({ projectDescription: 'p' });
-  // Budget header section is present.
-  assert.match(out, /Section budgets \(token-frugal review/);
+  // Budget header section is present (post-0.0.P trim: "Section budgets (v0.6.4+)").
+  assert.match(out, /Section budgets \(v0\.6\.4\+\)/);
   // Each of the three budget env vars is referenced.
   assert.match(out, /MAX_DIFF_BYTES/);
   assert.match(out, /MAX_COMMENT_BYTES/);

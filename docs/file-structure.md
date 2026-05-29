@@ -53,6 +53,7 @@ clud-bug
 │   │   ├── ci__unify-publish-and-promote.md
 │   │   ├── docs__skill-first-marketing-bb4.md
 │   │   ├── feat__0.0.E-golden-eval-harness.md
+│   │   ├── feat__0.0.I.1-skip-block-with-import.md
 │   │   ├── feat__0.0.M.1-usage-dashboard.md
 │   │   ├── feat__0.0.R-model-routing-trivial.md
 │   │   ├── feat__0.0.T-rtk-inspired-clud-bug.md
