@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (85 decisions)
+## 2026-05 (89 decisions)
 
-- **2026-05-29** — clud-bug self-upgrade to its own v0.6.22 + logmind v0.5.6 (Phase 0.5 §3) *(chore/self-upgrade-to-v0.6.22)* — [decisions-branches/chore__self-upgrade-to-v0.6.22.md](decisions-branches/chore__self-upgrade-to-v0.6.22.md)
-- *... 83 more decisions ...*
+- **2026-05-29** — fix(0.5 §5): move actions: read to clud-bug-review job (PR #116 review fix) *(feat/0.5-S5-adaptive-max-turns)* — [decisions-branches/feat__0.5-S5-adaptive-max-turns.md](decisions-branches/feat__0.5-S5-adaptive-max-turns.md)
+- *... 87 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

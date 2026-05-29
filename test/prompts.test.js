@@ -169,16 +169,56 @@ test('all 3 rendered workflow templates set MAX_THINKING_TOKENS=8000', async () 
   }
 });
 
-test('all 3 rendered workflow templates pass --max-turns 15 via claude_args', async () => {
+test('all 3 rendered workflow templates pass adaptive --max-turns via claude_args (v0.6.23 / §5)', async () => {
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
     const out = await renderFile(join(TEMPLATES, tmpl), {
       REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
     });
+    // v0.6.23 / §5: --max-turns is dynamic, sourced from paths-check
+    // pre-flight job's max_turns output. The hard-coded `15` was the
+    // pre-v0.6.23 default; now the value adapts to PR scope.
     assert.match(
       out,
-      /--max-turns 15/,
-      `${tmpl} missing --max-turns 15 in claude_args (v0.6.8)`,
+      /--max-turns \$\{\{\s*needs\.paths-check\.outputs\.max_turns\s*\}\}/,
+      `${tmpl}: claude_args must source --max-turns from paths-check.outputs.max_turns (v0.6.23 / §5)`,
+    );
+    // paths-check job emits the max_turns output.
+    assert.match(
+      out,
+      /max_turns:\s*\$\{\{\s*steps\.classify\.outputs\.max_turns\s*\}\}/,
+      `${tmpl}: paths-check must declare max_turns output`,
+    );
+    // paths-check has the bucket logic.
+    assert.match(
+      out,
+      /MAX_TURNS=15[\s\S]*MAX_TURNS=10[\s\S]*MAX_TURNS=40[\s\S]*MAX_TURNS=25/,
+      `${tmpl}: paths-check must include all 4 max_turns buckets (default=15, trivial=10, very-large=40, larger=25)`,
+    );
+    // actions: read permission for github_ci MCP server — MUST be on
+    // the clud-bug-review job (where claude-code-action runs), NOT on
+    // paths-check. Per-job GITHUB_TOKEN permissions aren't inherited.
+    // PR #116 review caught this misplacement; pinned here as regression
+    // guard.
+    assert.match(
+      out,
+      /clud-bug-review:[\s\S]+?permissions:[\s\S]+?actions: read/,
+      `${tmpl}: clud-bug-review job must request actions: read permission (enables github_ci MCP server; paths-check doesn't need it)`,
+    );
+    assert.doesNotMatch(
+      out,
+      /paths-check:[\s\S]+?permissions:[\s\S]+?actions: read[\s\S]+?outputs:/,
+      `${tmpl}: actions: read must NOT be on paths-check (claude-code-action runs in clud-bug-review)`,
+    );
+    // REGRESSION GUARD (PR #116 clud-bug-review catch): the empty-CHANGED
+    // early-exit path (gh pr diff auth/network failure OR theoretical
+    // no-files PR) must ALSO emit max_turns. Otherwise --max-turns expands
+    // to empty in clud-bug-review and fails the CLI invocation. Pre-v0.6.23
+    // this was harmless (hard-coded `15`); this PR introduced the risk.
+    assert.match(
+      out,
+      /if \[ -z "\$CHANGED" \];[\s\S]+?echo "max_turns=15" >> "\$GITHUB_OUTPUT"[\s\S]+?exit 0/,
+      `${tmpl}: empty-CHANGED early-exit must emit max_turns=15 before exit 0`,
     );
   }
 });

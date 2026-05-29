@@ -4,6 +4,61 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.23] — 2026-05-29
+
+### Added — Adaptive `--max-turns` for high-scope PRs (Phase 0.5 / §5)
+
+Concrete failure that motivated this: **tokenomics PR #18** (docs
+rebrand, 23 modified files + 6 unresolved prior `claude[bot]` threads
+to walk in FIX-PUSH FLOW) exhausted `--max-turns 15` under v0.6.12
+AND again under v0.6.22's structured-output flow. Even Phase 0.5's
+efficiency improvements don't help when the bottleneck is FIX-PUSH
+enumerating + validating prior threads — each thread costs 1-2 turns
+no matter how efficient the surrounding flow is.
+
+**Solution:** the `paths-check` pre-flight job (introduced in 0.0.W)
+now also computes a turn-budget hint forwarded to claude-code-action
+as `--max-turns ${{ needs.paths-check.outputs.max_turns }}`.
+
+| PR scope | `max_turns` | Trigger |
+|---|---|---|
+| Workflow-only | n/a | 0.0.W skips the LLM entirely |
+| Trivial (Haiku class) | 10 | dependabot/renovate OR ≤ 2 KB dep-manifest diff |
+| Standard (default) | 15 | < 10 files AND < 3 prior unresolved claude threads |
+| Larger | 25 | ≥ 10 files OR ≥ 3 prior unresolved claude threads |
+| Very large | 40 | ≥ 30 files OR ≥ 6 prior unresolved claude threads |
+
+Computed in shell from `gh pr diff --name-only` (file count) +
+`gh api graphql` for unresolved claude-bot thread count. Best-effort:
+GraphQL rate-limit / auth failures default to 0 (no escalation, fall
+back to file-count tier). Workflow emits a `::notice` line per run
+showing the chosen budget + the inputs that drove it.
+
+### Added — `actions: read` permission on paths-check
+
+Small enabler — lets `claude-code-action`'s bundled `github_ci` MCP
+server install correctly (it requires `actions: read` to introspect
+recent CI runs). Without this, every review run emits "github_ci
+MCP server requires 'actions: read' permission. Skipping CI server
+installation." in the logs. Harmless but noisy.
+
+### Files
+
+| File | Change |
+|---|---|
+| `templates/workflow{,-py,-ts}.yml.tmpl` | paths-check: add `actions: read` permission + `max_turns` output + bucket logic. clud-bug-review: `--max-turns ${{ needs.paths-check.outputs.max_turns }}` instead of hard-coded `15`. |
+| `test/workflow.test.js` | + 3 fixture tests: trivial → 10, small/standard → 15, ≥10 files → 25, ≥30 files or ≥6 threads → 40. |
+| `package.json` + `.github/actions/strict-mode-gate/action.yml` header + 3 templates | Composite pin v0.6.22 → v0.6.23. |
+
+### Tests
+
+256 → 259 pass (+3 paths-check bucket fixtures).
+
+### Composite pin
+
+v0.6.22 → v0.6.23 across `templates/workflow{,-py,-ts}.yml.tmpl` and
+`.github/actions/strict-mode-gate/action.yml` header docs.
+
 ## [0.6.22] — 2026-05-29
 
 ### Added — `--json-schema` structured output enforcement (Phase 0.5 / 0.0.O)
