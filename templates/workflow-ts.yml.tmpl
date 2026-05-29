@@ -191,3 +191,6 @@ jobs:
         uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.22
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].
+          # See workflow.yml.tmpl for design notes.
+          bot-login: 'github-actions[bot]'

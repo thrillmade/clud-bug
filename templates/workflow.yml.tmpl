@@ -291,3 +291,10 @@ jobs:
         uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.22
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # v0.6.22 / 0.0.O: the summary is now posted by the workflow
+          # post-step under the github-actions[bot] identity (was
+          # claude[bot] when claude-code-action did the posting).
+          # Without this override the gate's default (claude[bot])
+          # never matches the new summary author → strict mode falls
+          # open advisory for every install that opted in.
+          bot-login: 'github-actions[bot]'
