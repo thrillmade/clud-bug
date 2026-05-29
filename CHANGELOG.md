@@ -4,6 +4,48 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.24] — 2026-05-29
+
+### Hotfix — back out `permissions: actions: read` from v0.6.23
+
+The new `actions: read` permission added to the `clud-bug-review` job
+in v0.6.23 (for the bundled `github_ci` MCP server) broke
+`pull_request` trigger firing on **private** consumer repos. After
+v0.6.23 propagation, clud-bug-review stopped scheduling on every PR
+push event on tokenomics (private) and rezgen (private); agent-skills
+(public) and logmind (public) continued firing normally. The workflow
+file is byte-identical across all four repos; the only material
+difference is visibility.
+
+Validated diagnosis: removed `actions: read` from `clud-bug-review`'s
+permissions block in all three templates (`workflow.yml.tmpl`,
+`workflow-py.yml.tmpl`, `workflow-ts.yml.tmpl`). Test
+`test/prompts.test.js` flipped to a `doesNotMatch` guard so the
+permission can't be re-added without an explicit out-of-band fix
+for the private-repo trigger-registration regression.
+
+**User-visible impact**: `claude-code-action` will warn about not
+being able to introspect recent CI runs via `github_ci` MCP. Reviews
+themselves run identically; only the MCP-server-mediated CI awareness
+is missing.
+
+**Migration**: `npx --yes clud-bug@0.6.24 update` re-renders the
+workflow without `actions: read`. Existing v0.6.23 workflows continue
+to function on public repos but are recommended to upgrade so the
+template stays in sync.
+
+**Re-introducing `actions: read`**: deferred to a future version once
+we understand the private-repo trigger semantics. Options under
+consideration: (a) document a manual one-time consumer approval
+workflow, (b) ship a separate opt-in `github_ci_mcp:` workflow env
+var, (c) request `actions: read` at workflow level (not job level)
+and verify trigger behavior is unaffected.
+
+### Composite pin
+
+`strict-mode-gate@v0.6.23` → `strict-mode-gate@v0.6.24` (lock-step
+bump across `templates/*.tmpl` + `action.yml` header).
+
 ## [0.6.23] — 2026-05-29
 
 ### Added — Adaptive `--max-turns` for high-scope PRs (Phase 0.5 / §5)

@@ -28,10 +28,13 @@ jobs:
           CHANGED=$(gh pr diff "$PR_NUMBER" -R "$REPO" --name-only)
           MODEL=claude-sonnet-4-6
           if [ -z "$CHANGED" ]; then
-            echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"
-            echo "model=$MODEL" >> "$GITHUB_OUTPUT"
             # v0.6.23 / §5: max_turns must always be emitted — see workflow.yml.tmpl for design notes.
-            echo "max_turns=15" >> "$GITHUB_OUTPUT"
+            # Grouped redirect (v0.6.24) silences the SC2129 style warning.
+            {
+              echo "is_workflow_only=false"
+              echo "model=$MODEL"
+              echo "max_turns=15"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           IS_WORKFLOW_ONLY=true
@@ -105,8 +108,9 @@ jobs:
       id-token: write
       # checks: write — composite emits per-skill check-runs (BB.3).
       checks: write
-      # actions: read (v0.6.23 / §5) — github_ci MCP server. See workflow.yml.tmpl for design notes.
-      actions: read
+      # v0.6.24: `actions: read` (added in v0.6.23) backed out — broke
+      # `pull_request` trigger firing on private consumer repos. See
+      # workflow.yml.tmpl for the diagnosis.
 
     steps:
       - uses: actions/checkout@v6
@@ -212,7 +216,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.23
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.24
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].

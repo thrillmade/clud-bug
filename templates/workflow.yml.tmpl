@@ -42,15 +42,18 @@ jobs:
           CHANGED=$(gh pr diff "$PR_NUMBER" -R "$REPO" --name-only)
           MODEL=claude-sonnet-4-6   # default
           if [ -z "$CHANGED" ]; then
-            echo "is_workflow_only=false" >> "$GITHUB_OUTPUT"
-            echo "model=$MODEL" >> "$GITHUB_OUTPUT"
             # v0.6.23 / §5: max_turns must always be emitted because
             # clud-bug-review runs (is_workflow_only=false). Without
-            # this, --max-turns ${{ ... }} expands to '--max-turns '
-            # (empty), failing the CLI invocation. Empty-CHANGED
-            # fires on gh pr diff auth/network failures + the
-            # (theoretical) no-changed-files PR.
-            echo "max_turns=15" >> "$GITHUB_OUTPUT"
+            # this, --max-turns $-{{ ... }} expands to '--max-turns '
+            # (empty), failing the CLI invocation. Empty-CHANGED fires
+            # on gh pr diff auth/network failures + the (theoretical)
+            # no-changed-files PR. Grouped redirect (v0.6.24) silences
+            # the SC2129 style warning.
+            {
+              echo "is_workflow_only=false"
+              echo "model=$MODEL"
+              echo "max_turns=15"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -154,11 +157,15 @@ jobs:
       # the GitHub Checks API for any skill in .clud-bug.json's strictSkills
       # list (BB.3, v0.5.10+). No-op when strictSkills is unset.
       checks: write
-      # actions: read (v0.6.23 / §5) — claude-code-action's bundled
-      # github_ci MCP server needs this to introspect recent CI runs.
-      # Per-job GITHUB_TOKEN permissions aren't inherited, so this
-      # MUST be on the clud-bug-review job, not paths-check.
-      actions: read
+      # v0.6.23 attempted to add `actions: read` here for the github_ci
+      # MCP server bundled with claude-code-action. v0.6.24 backed it
+      # out: on private consumer repos the `pull_request` trigger
+      # silently stopped firing the workflow after the permissions
+      # block changed (validated against tokenomics — public agent-skills
+      # kept firing, private tokenomics/rezgen did not). claude-code-action
+      # warns about the missing `actions: read` but reviews still run
+      # correctly. Re-add via a separate path once we understand the
+      # private-repo trigger-registration semantics.
 
     steps:
       - uses: actions/checkout@v6
@@ -335,7 +342,7 @@ jobs:
       # Letting the action's own failure fail the check is louder and right.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.23
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.24
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: the summary is now posted by the workflow
