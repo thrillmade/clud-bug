@@ -55,6 +55,7 @@ clud-bug
 │   │   ├── feat__0.0.E-golden-eval-harness.md
 │   │   ├── feat__0.0.M.1-usage-dashboard.md
 │   │   ├── feat__0.0.R-model-routing-trivial.md
+│   │   ├── feat__0.0.T-rtk-inspired-clud-bug.md
 │   │   ├── feat__0.0.W-workflow-pr-skip.md
 │   │   ├── feat__0.0.X-output-token-directive.md
 │   │   ├── feat__0.A.1-extract-prompts.md
