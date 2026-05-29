@@ -1,0 +1,8 @@
+## 2026-05-28 18:13 - v0.6.14: workflow-PR review skip (Phase 0.5 / 0.0.W)
+
+**Reasoning:** Eliminates the structural admin-bypass merges Phase 0 hit ~6 times during propagation. New paths-check pre-flight job classifies the PR diff: if ALL changed files match either .github/workflows/clud-bug-*.yml OR .github/actions/strict-mode-gate/** patterns, outputs.is_workflow_only=true. clud-bug-review job carries needs: paths-check + if: needs.paths-check.outputs.is_workflow_only != 'true', so it skips entirely on workflow-only PRs. claude-code-action would refuse to run on such PRs anyway (self-modification guard); the LLM call doesn't happen, the strict-mode gate has nothing to fail on (skipped jobs satisfy branch protection), and the org saves the per-skipped-review cost (~$0.20-$0.30 × ~50-80 propagation PRs/year). Security guarantee: the classifier requires EVERY changed file to match the allow-list. Mixed PRs (workflow + code) still run the review normally — no path to sneak unrelated changes through. Applied across all 3 templates (workflow.yml.tmpl + workflow-ts.yml.tmpl + workflow-py.yml.tmpl); composite-pin bumped v0.6.13 → v0.6.14. +3 regression tests assert paths-check job presence, needs/if wiring on clud-bug-review, and the mixed-diff guard (any non-allow-list file flips classifier to false). 245 tests pass.
+
+**Implications:**
+- Org-wide impact validated by this PR's own review — it touches workflow files + tests + CHANGELOG + package.json, so the classifier should NOT report it as workflow-only (mixed = code change). Future workflow-only PRs (clud-bug-self-update from consuming repos) skip the review.
+
+---

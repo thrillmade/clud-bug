@@ -336,6 +336,58 @@ test('all 3 rendered workflow templates allow git diff + git merge-base (v0.6.10
 // docs. Pin the model explicitly so we don't drift back to Opus on a future
 // claude-code-action default change.
 
+// --- 0.0.W (v0.6.14): workflow-PR review skip ---
+// When a PR only touches workflow files, the clud-bug-review job skips
+// entirely (claude-code-action would refuse anyway due to self-modification
+// guard; no useful review surface either). Eliminates the ~6 admin-bypass
+// merges per propagation cycle.
+
+test('all 3 rendered workflow templates declare a paths-check pre-flight job (v0.6.14+)', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(out, /^\s+paths-check:/m,
+      `${tmpl} missing the paths-check job (v0.6.14 / 0.0.W)`);
+    assert.match(out, /is_workflow_only:/,
+      `${tmpl} missing the is_workflow_only output (v0.6.14)`);
+  }
+});
+
+test('all 3 rendered workflow templates: clud-bug-review depends on paths-check + skips on workflow-only', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(out, /needs: paths-check/,
+      `${tmpl} clud-bug-review must depend on paths-check`);
+    assert.match(
+      out,
+      /if:\s*needs\.paths-check\.outputs\.is_workflow_only\s*!=\s*'true'/,
+      `${tmpl} clud-bug-review must skip when paths-check reports workflow-only`,
+    );
+  }
+});
+
+test('paths-check classifier: allow-list covers clud-bug-*.yml + strict-mode-gate/**', async () => {
+  // The classifier shell embedded in the workflow uses `case "$f" in ...`
+  // with two patterns. Both must be present for the security guarantee
+  // (mixed PRs must NOT match — only files matching one of these is
+  // workflow-only).
+  const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
+  });
+  assert.match(out, /\.github\/workflows\/clud-bug-\*\.yml\)/);
+  assert.match(out, /\.github\/actions\/strict-mode-gate\/\*\)/);
+  // Critical: the `*) IS_WORKFLOW_ONLY=false; break ;;` default branch
+  // ensures any unmatched file flips the classifier — a mixed PR cannot
+  // sneak through.
+  assert.match(out, /\*\)\s*IS_WORKFLOW_ONLY=false/,
+    'mixed-diff guard MUST be present — any non-allow-list file flips the classifier to false');
+});
+
 test('all 3 rendered workflow templates pin claude_args --model claude-sonnet-4-6 (v0.6.11+)', async () => {
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';

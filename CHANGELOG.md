@@ -4,6 +4,45 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.14] — 2026-05-28
+
+### Added — workflow-only PR review skip (Phase 0.5 / 0.0.W)
+
+Eliminates the structural admin-bypass merges we did ~6 times during
+Phase 0 propagation. When a PR ONLY touches `clud-bug-*.yml` workflow
+files OR `.github/actions/strict-mode-gate/**`, the LLM review skips
+entirely — and the strict-mode gate skips with it.
+
+### Why
+
+`anthropics/claude-code-action` refuses to run on PRs that modify its
+own workflow file (security guard against self-neutering edits).
+Phase 0 hit this on every propagation cycle — the only path was
+admin-bypass merge. v0.6.14 makes the right thing automatic: the LLM
+call doesn't happen, the strict-mode gate has nothing to fail on,
+branch protection is satisfied by the skip, and the org saves the
+per-skipped-review cost (~$0.20–$0.30 × ~50–80 propagation PRs/year).
+
+### How
+
+New `paths-check` pre-flight job classifies the PR diff. If ALL
+changed files match the allow-list (`.github/workflows/clud-bug-*.yml`
+or `.github/actions/strict-mode-gate/**`), it sets
+`outputs.is_workflow_only=true`. The `clud-bug-review` job carries
+`needs: paths-check` + `if: needs.paths-check.outputs.is_workflow_only != 'true'`.
+
+### Security guarantee
+
+The classifier requires EVERY changed file to match the allow-list. A
+mixed PR (workflow + code) still runs the review normally — no path
+to sneak unrelated changes through by bundling them with a workflow
+tweak.
+
+### Net diff
+
+3 templates × ~30 lines (new `paths-check` job + `needs:` / `if:` on
+`clud-bug-review`). Composite-pin v0.6.13 → v0.6.14.
+
 ## [0.6.13] — 2026-05-28
 
 ### Added — `clud-bug usage` $/LOC dashboard (Phase 0.5 / 0.0.M.1)
