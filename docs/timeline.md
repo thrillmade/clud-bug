@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (94 decisions)
+## 2026-05 (95 decisions)
 
-- **2026-05-29** — fix: also apply SC2129 grouping to workflow.yml.tmpl (missed in 1223ed1) *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
-- *... 92 more decisions ...*
+- **2026-05-29** — fix: avoid literal 'shellcheck' word in template comments — shellcheck parsed it as a malformed directive *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
+- *... 93 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

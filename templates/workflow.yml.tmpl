@@ -48,7 +48,7 @@ jobs:
             # (empty), failing the CLI invocation. Empty-CHANGED fires
             # on gh pr diff auth/network failures + the (theoretical)
             # no-changed-files PR. Grouped redirect (v0.6.24) silences
-            # shellcheck SC2129.
+            # the SC2129 style warning.
             {
               echo "is_workflow_only=false"
               echo "model=$MODEL"

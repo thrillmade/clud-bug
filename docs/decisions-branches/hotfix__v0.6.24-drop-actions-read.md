@@ -40,3 +40,11 @@
 - Now all 3 templates ship the same grouped pattern. CI should be clean across the board.
 
 ---
+## 2026-05-29 19:45 - fix: avoid literal 'shellcheck' word in template comments — shellcheck parsed it as a malformed directive
+
+**Reasoning:** shellcheck reads '# shellcheck <key>=<value>' lines as DIRECTIVES. My SC2129-fix comment said 'silences shellcheck SC2129' — shellcheck saw the word 'shellcheck' and tried to parse 'SC2129' as a directive key, then SC1072 'Expected = after directive key' fired. Rephrased to 'silences the SC2129 style warning' (no literal 'shellcheck' word; still informative).
+
+**Implications:**
+- All 3 templates corrected. actionlint clean locally; 300/300 tests pass.
+
+---

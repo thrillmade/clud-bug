@@ -29,7 +29,7 @@ jobs:
           MODEL=claude-sonnet-4-6
           if [ -z "$CHANGED" ]; then
             # v0.6.23 / §5: max_turns must always be emitted — see workflow.yml.tmpl for design notes.
-            # Grouped redirect (v0.6.24) silences shellcheck SC2129.
+            # Grouped redirect (v0.6.24) silences the SC2129 style warning.
             {
               echo "is_workflow_only=false"
               echo "model=$MODEL"
