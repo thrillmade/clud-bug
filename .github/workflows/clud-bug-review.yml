@@ -280,8 +280,14 @@ jobs:
             comment to exist for every review pass.
 
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
+      # v0.6.22 / 0.0.O: bumped from v0.6.2 because clud-bug's own summary
+      # now posts under github-actions[bot] (workflow post-step) instead
+      # of claude[bot] (claude-code-action). The bot-login override picks
+      # up the new identity; without it the gate keeps reading the OLD
+      # claude[bot]-authored review with "— critical findings" header.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.2
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.21
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          bot-login: 'github-actions[bot]'

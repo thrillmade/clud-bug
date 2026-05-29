@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-29** — 0.0.O follow-up: update clud-bug's own workflow strict-mode-gate pin + bot-login override to match the new identity contract *(feat/0.0.O-json-schema)* — [decisions-branches/feat__0.0.O-json-schema.md](decisions-branches/feat__0.0.O-json-schema.md)
 - **2026-05-29** — 0.0.O: --json-schema structured output → renderer → gh pr comment post-step (replaces LLM-driven free-form summary posting) *(feat/0.0.O-json-schema)* — [decisions-branches/feat__0.0.O-json-schema.md](decisions-branches/feat__0.0.O-json-schema.md)
 - **2026-05-29** — 0.0.K: applies_to frontmatter — skill-filter for non-applicable PRs *(feat/0.0.K-skill-loading-minimization)* — [decisions-branches/feat__0.0.K-skill-loading-minimization.md](decisions-branches/feat__0.0.K-skill-loading-minimization.md)
 - **2026-05-29** — 0.0.P: trim review prompt by ~29.6% bytes / ~25% lines without removing must-contain phrases *(feat/0.0.P-prompt-trim)* — [decisions-branches/feat__0.0.P-prompt-trim.md](decisions-branches/feat__0.0.P-prompt-trim.md)
