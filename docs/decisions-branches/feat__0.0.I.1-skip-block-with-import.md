@@ -9,3 +9,11 @@
 - Test fixture: 9 new tests in test/agents-md.test.js covering hasAgentsMdImport line-anchor edge cases, removeBlock idempotence + preserving prose around the block, applyToRepo behavior for (a) skip block on CLAUDE.md with import, (b) clean up stale block on CLAUDE.md with import, (c) back-compat install on CLAUDE.md without import, (d) .cursor/rules walk respects the same rule.
 
 ---
+## 2026-05-29 09:46 - Release clud-bug v0.6.19 — 0.0.I.1 skip-block-when-import
+
+**Reasoning:** Version bump packaging commit for the 0.0.I.1 behaviour change (see earlier decision on this branch). Bumps package.json + composite-pin lock-step in templates/workflow{,-py,-ts}.yml.tmpl + .github/actions/strict-mode-gate/action.yml header docs from 0.6.18 to 0.6.19. CHANGELOG [0.6.19] entry documents the behaviour change + tests + composite pin.
+
+**Implications:**
+- After this lands + v0.6.19 is tagged + npm publishes, consumers running 'clud-bug update' will see their CLAUDE.md (etc.) tool-stub block disappear if they have @AGENTS.md at the top — which all 5 consuming repos now do post-0.0.I.
+
+---

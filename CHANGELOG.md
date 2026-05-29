@@ -4,6 +4,44 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.19] — 2026-05-29
+
+### Changed — `clud-bug init` / `clud-bug update` skip CLAUDE.md (etc.) block install when `@AGENTS.md` import is present (Phase 0.5 / 0.0.I.1)
+
+Companion behaviour for the 0.0.I rollout. With `@AGENTS.md` eagerly
+imported at the top of consuming repos' CLAUDE.md (Q4 refinement
+landed in PR #106 + downstream rollout), the AGENTS.md clud-bug block
+becomes the canonical source and the same block in CLAUDE.md is
+eagerly-inlined duplicate content. This release:
+
+- **Skips block installation** in tool-stub files (`CLAUDE.md`,
+  `GEMINI.md`, `.github/copilot-instructions.md`, `.cursorrules`,
+  `.windsurfrules`, `.clinerules`, `.continuerules`, and any
+  `.cursor/rules/*.md`) when the file already contains `@AGENTS.md`
+  at start-of-line.
+- **Removes any pre-existing block** in those files when the import
+  is present — migration path for repos installed under older
+  clud-bug versions.
+- **AGENTS.md is unaffected** — still the canonical source and always
+  receives the block.
+
+The detection is line-anchored: a prose mention like "See @AGENTS.md
+for rules" does NOT trigger the skip. Only the literal import
+directive (`@AGENTS.md` alone on its line) qualifies.
+
+### Tests
+
+`test/agents-md.test.js` adds 9 new tests covering: `hasAgentsMdImport`
+line-anchor edge cases, `removeBlock` idempotence + preserved
+surrounding content, skip-on-import for CLAUDE.md, stale-block cleanup
+on CLAUDE.md with import, back-compat install when no import,
+`.cursor/rules` walk respects the same rule. Suite: 265 pass, 0 fail.
+
+### Composite pin
+
+v0.6.18 → v0.6.19 across `templates/workflow{,-py,-ts}.yml.tmpl` and
+`.github/actions/strict-mode-gate/action.yml` header docs.
+
 ## [0.6.18] — 2026-05-29
 
 ### Added — RTK-inspired tee-hint on cap fire (Phase 0.5 / 0.0.T, clud-bug side)
