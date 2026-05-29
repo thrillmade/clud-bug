@@ -550,6 +550,65 @@ test('rendered workflow-py.yml.tmpl contains Python bullets (no generic test-cov
   assert.doesNotMatch(out, /\n            - Broken or missing test coverage/);
 });
 
+// --- 0.0.O (v0.6.22): post-step identity contract ---
+// REGRESSION GUARD: clud-bug-review on PR #114 caught that moving the
+// summary post to a workflow step with `GH_TOKEN: secrets.GITHUB_TOKEN`
+// attributes the comment to github-actions[bot], NOT claude[bot]. The
+// strict-mode gate, per-skill check-runs, and incremental-diff handshake
+// all filter on bot author — without these tests, a future template
+// refactor could silently re-introduce the identity mismatch.
+
+test('all 3 rendered workflow templates pass bot-login: github-actions[bot] to strict-mode-gate', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: templateLanguage(tmpl) }),
+    });
+    assert.match(
+      out,
+      /strict-mode-gate@[^\n]+\n\s+with:\n\s+github-token: [^\n]+\n[\s\S]*?bot-login: 'github-actions\[bot\]'/,
+      `${tmpl}: strict-mode-gate must receive bot-login: 'github-actions[bot]' since the summary is posted by the workflow post-step under that identity`,
+    );
+  }
+});
+
+test('all 3 rendered workflow templates: skip-advisory dedup query filters github-actions[bot]', async () => {
+  // REGRESSION GUARD: clud-bug-review on PR #114 caught that the
+  // Guard step's skip-dedup query filtered claude[bot] but the
+  // accompanying gh pr comment posts under github-actions[bot]
+  // (workflow GITHUB_TOKEN identity). The dedup returned 0 every
+  // run, stacking duplicate "Clud Bug skipped" advisories on every
+  // pull_request: synchronize on a long-running fork/bot PR.
+  // Mirror of the strict-mode-gate identity contract — pin it.
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: templateLanguage(tmpl) }),
+    });
+    assert.match(
+      out,
+      /select\(\.user\.login == "github-actions\[bot\]" and \(\.body \| startswith\("## 🐛 Clud Bug skipped"\)\)\)/,
+      `${tmpl}: skip-advisory dedup query must filter github-actions[bot] (the GITHUB_TOKEN identity), not claude[bot]`,
+    );
+  }
+});
+
+test('reviewPrompt: prior-summary detection block names github-actions[bot] (post-0.0.O identity)', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // The LLM walks comments to find the prior summary for the incremental-
+  // diff handshake. The summary is now posted by github-actions[bot].
+  assert.match(out, /github-actions\[bot\] comments newest-first/);
+  // Pre-v0.6.22 back-compat note: the prompt should mention that older
+  // summaries are claude[bot]-authored so the LLM can still find them on
+  // mid-version repos.
+  assert.match(out, /Pre-v0\.6\.22 summaries are claude\[bot\]-authored/);
+});
+
+test('reviewPrompt: PR-comments fetch excludes BOTH claude[bot] and github-actions[bot]', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // Otherwise the LLM reads back its own prior summary in the comments fetch,
+  // wasting bytes and double-counting the review state.
+  assert.match(out, /\.user\.login != "claude\[bot\]" and \.user\.login != "github-actions\[bot\]"/);
+});
+
 test('APPEND_SYSTEM_PROMPT content is byte-stable across reviews of different PRs (cache prerequisite)', async () => {
   // Caching only works if the cached prefix is BYTE-IDENTICAL across runs.
   // Two synthetic reviews of the same repo (same projectDescription, same

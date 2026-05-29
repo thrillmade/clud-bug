@@ -110,6 +110,16 @@
       "pattern": "SKIP that skill's body",
       "why": "0.0.K (v0.6.21). The actionable rule — the wording the LLM follows to decide which skill bodies to fetch. Trimming around this phrase would gut the filter's behavior.",
       "category": "skill-filter"
+    },
+    {
+      "pattern": "Emit the summary as structured JSON output",
+      "why": "0.0.O (v0.6.22). Without this directive, the LLM falls back to free-form `gh pr comment` posting and the post-step renders an empty comment.",
+      "category": "structured-output"
+    },
+    {
+      "pattern": "Do NOT post the summary yourself",
+      "why": "0.0.O (v0.6.22). Prevents the LLM from double-posting (one free-form via gh pr comment AND the rendered post-step) which would clutter the PR thread.",
+      "category": "structured-output"
     }
   ]
 }

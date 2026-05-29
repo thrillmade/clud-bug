@@ -4,6 +4,140 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.22] — 2026-05-29
+
+### Added — `--json-schema` structured output enforcement (Phase 0.5 / 0.0.O)
+
+The review prompt now instructs the LLM to emit the summary as
+structured JSON via Claude Code CLI's `--json-schema` flag (a
+first-class CLI flag, verified live against `anthropics/claude-code-action`).
+A workflow post-step reads the action's `outputs.structured_output`,
+renders to the existing GitHub-markdown summary shape, and posts via
+`gh pr comment`. The LLM no longer writes the summary comment itself.
+
+### Schema
+
+`lib/review-schema.js` exports `REVIEW_SCHEMA` +
+`serializedReviewSchema()`. Flat top-level object,
+`additionalProperties: false` on every nested object (schema-strict
+mode per Anthropic's structured-outputs guidance). Word/char caps
+embedded in `description:` fields — advisory but signal-preserving
+alongside the prompt's existing 0.0.X brevity directive.
+
+### Renderer
+
+`lib/render-review.js` exports `renderReview(data)` that returns the
+markdown body for `gh pr comment`. New `clud-bug render --stdin`
+subcommand pipes structured JSON from stdin to the renderer (the
+workflow post-step calls it via `npx --yes clud-bug@<pinned> render
+--stdin`). 17 fixture-based tests cover: clean / critical-findings /
+bare-header variants, per-skill scan, dedicated sections, all three
+severity tiers + emoji prefixes, diagnostics, anchor-without-line,
+cross-cutting findings, defensive coercion on bad counts.
+
+### Workflow changes
+
+`templates/workflow{,-py,-ts}.yml.tmpl`:
+
+- `--json-schema '{{REVIEW_SCHEMA}}'` added to `claude_args` (schema
+  embedded at template render time via `lib/render.js`'s new
+  `REVIEW_SCHEMA` + `CLUD_BUG_VERSION` defaults).
+- New `clud-bug-review` step `id` so subsequent steps can read
+  `steps.clud-bug-review.outputs.structured_output`.
+- New "Render + post structured review" step (guarded on non-empty
+  structured output) calls `npx --yes clud-bug@<pinned> render
+  --stdin` and posts via `gh pr comment`.
+- New "Fallback summary" step posts a bare-H2 advisory comment when
+  the schema-validation retries exhaust (empty `structured_output`).
+  Strict-mode gate sees the bare header and falls open rather than
+  panicking on a missing summary.
+- Removed `Bash(gh pr comment:*)` from `--allowedTools` — the LLM no
+  longer posts the summary; only the post-step (workflow-level shell)
+  does, with the workflow's GITHUB_TOKEN.
+
+### Library API
+
+- `serializedReviewSchema()` — `JSON.stringify(REVIEW_SCHEMA)` for
+  embedding in workflow templates.
+- `renderReview(data)` — pure markdown renderer.
+- `lib/render.js` DEFAULTS now includes `REVIEW_SCHEMA` (from
+  `review-schema.js`) and `CLUD_BUG_VERSION` (read from package.json
+  at module-load time).
+
+### Golden gate
+
+Two new must-contain entries:
+
+- `Emit the summary as structured JSON output`
+- `Do NOT post the summary yourself`
+
+### Regression test (out of band)
+
+`appliesToPr` (0.0.K, v0.6.21) now has an explicit test pinning the
+`endsWith()` contract for compound suffixes like `.test.ts` /
+`_test.py`. Caught by the clud-bug-review on agent-skills#51 — without
+the test, a future refactor to `path.extname()` would silently break
+the test-discipline skill's applies_to.
+
+### Identity contract — `claude[bot]` → `github-actions[bot]`
+
+Moving the summary post from claude-code-action to a workflow step
+changes the comment author from `claude[bot]` to `github-actions[bot]`
+(the GITHUB_TOKEN identity). Three downstream consumers depend on the
+author and are migrated this release:
+
+- **Strict-mode gate**: each rendered template now passes
+  `bot-login: 'github-actions[bot]'` to `strict-mode-gate`. The
+  composite default stays `claude[bot]` for v0.6.21- back-compat.
+- **Prior-summary detection (incremental-diff handshake)**: the
+  prompt now walks `github-actions[bot]` comments first; falls back
+  to `claude[bot]` for pre-v0.6.22 summaries so mid-version repos
+  still find the prior SHA marker.
+- **Skip-advisory dedup query** (Guard step): the jq filter now
+  selects `github-actions[bot]` so `pull_request: synchronize` on
+  long-running fork/bot PRs without `ANTHROPIC_API_KEY` doesn't
+  stack duplicate "Clud Bug skipped" advisories.
+- **PR-comments fetch**: the LLM's per-PR comment scan now excludes
+  BOTH `claude[bot]` AND `github-actions[bot]` so the LLM doesn't
+  read back its own summary as PR context.
+
+Inline review threads stay `claude[bot]`-authored (the MCP tool
+routes through claude-code-action).
+
+### User-visible header behaviour preserved via `status_header: "bare"`
+
+The schema's `status_header` enum is `['critical findings', 'clean',
+'bare']`. Non-strict-mode repos (the default) emit `'bare'` and the
+renderer produces an unsuffixed `## 🐛 Clud Bug review` H2 — matches
+the v0.6.21- visible behaviour. Without `'bare'`, every non-strict
+install would silently start seeing `— clean` / `— critical findings`
+suffix after merge.
+
+### Shell hardening
+
+Render + post + fallback steps now lead with `set -euo pipefail` and
+use `printf '%s\n'` instead of `echo` for `$STRUCTURED` (defensive
+against payloads beginning with `-n` / `-e` / `--`). Failure
+attribution stays honest when `npx` or the renderer exits non-zero —
+the failing step is the one that actually failed, not the downstream
+`gh pr comment "must specify body"`.
+
+### Tests
+
+300 pass (+23 vs v0.6.21: 17 render-review + 1 endsWith + 5 identity-
+contract pins).
+
+### Composite pin
+
+v0.6.21 → v0.6.22 across `templates/workflow{,-py,-ts}.yml.tmpl` and
+`.github/actions/strict-mode-gate/action.yml` header docs.
+
+### Byte budget
+
+Cap bumped 14000 → 14500 (deliberate; 0.0.O adds ~1.8 KB of
+structured-output + status_header instructions). Still ~22% below the
+18500 pre-0.0.P cap.
+
 ## [0.6.21] — 2026-05-29
 
 ### Added — Skill `applies_to:` filter (Phase 0.5 / 0.0.K)

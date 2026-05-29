@@ -626,6 +626,26 @@ applies_to:
   assert.equal(appliesToPr(double, ['src/ui/nested/Foo.tsx']), true);
 });
 
+test('appliesToPr: compound suffixes like ".test.ts" match via endsWith (not path.extname)', () => {
+  // REGRESSION GUARD: clud-bug-review on agent-skills#51 flagged that if
+  // appliesToPr used path.extname() the compound-suffix entries (.test.ts,
+  // _test.py, etc.) in test-discipline's applies_to would silently never
+  // fire. The implementation uses endsWith — pin that here so a future
+  // "let's normalize to extname" refactor doesn't break the contract.
+  const fm = `---
+applies_to:
+  extensions: [".test.ts", "_test.py"]
+---
+`;
+  assert.equal(appliesToPr(fm, ['src/auth.test.ts']), true,
+    'compound suffix .test.ts must match src/auth.test.ts');
+  assert.equal(appliesToPr(fm, ['db/seeder_test.py']), true,
+    'compound suffix _test.py must match db/seeder_test.py');
+  // Negative — bare .ts should NOT match if only .test.ts is in the list.
+  assert.equal(appliesToPr(fm, ['src/auth.ts']), false,
+    '.ts alone should NOT match when only .test.ts is declared');
+});
+
 test('appliesToPr: paths OR extensions — any single hit applies', () => {
   const fm = `---
 applies_to:

@@ -22,14 +22,33 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
       - name: Render templates with placeholder values
         run: |
           mkdir -p .ci-rendered
+          # v0.6.22 / 0.0.O: render via the real renderer so REVIEW_SCHEMA +
+          # CLUD_BUG_VERSION + REVIEW_PROMPT substitutions land. Previously
+          # only PROJECT_DESCRIPTION + LANGUAGE_HINTS were sed-substituted;
+          # the new {{REVIEW_SCHEMA}} and {{CLUD_BUG_VERSION}} placeholders
+          # leaked literal {{...}} braces into shell run blocks and SC1083'd
+          # actionlint. The renderer matches what clud-bug init produces.
           for tmpl in templates/workflow*.yml.tmpl; do
-            out=".ci-rendered/$(basename "${tmpl%.tmpl}")"
-            sed -e 's/{{PROJECT_DESCRIPTION}}/A test project./g' \
-                -e 's/{{LANGUAGE_HINTS}}//g' \
-                "$tmpl" > "$out"
+            tmpl_name=$(basename "$tmpl")
+            out=".ci-rendered/${tmpl_name%.tmpl}"
+            node -e "
+              import('./lib/render.js').then(async ({renderFile, templateLanguage}) => {
+                const {reviewPrompt} = await import('./lib/prompts.js');
+                const out = await renderFile('$tmpl', {
+                  REVIEW_PROMPT: reviewPrompt({
+                    projectDescription: 'A test project.',
+                    language: templateLanguage('$tmpl_name'),
+                  }),
+                });
+                process.stdout.write(out);
+              });
+            " > "$out"
           done
       - name: Install actionlint
         env:
