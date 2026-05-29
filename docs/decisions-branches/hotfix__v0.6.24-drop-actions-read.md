@@ -24,3 +24,11 @@
 - Same template change in all 3 (workflow.yml.tmpl, workflow-py.yml.tmpl, workflow-ts.yml.tmpl). Tests still 300/300 pass; the regression-test asserting max_turns=15 emission still matches via the grouped block.
 
 ---
+## 2026-05-29 19:41 - fix: update regression-test regex to match grouped GITHUB_OUTPUT block (v0.6.24 SC2129 fix)
+
+**Reasoning:** The SC2129 fix moved 'echo max_turns=15' INSIDE a { ... } >> GITHUB_OUTPUT group. The regression-test regex pinned the exact 'echo "max_turns=15" >> "$GITHUB_OUTPUT"' literal pattern; that no longer matches because the redirect is on the closing brace. Relaxed regex to match just 'echo "max_turns=15"' within the empty-CHANGED block — still pins the invariant (max_turns must be emitted before exit 0) without coupling to redirect placement.
+
+**Implications:**
+- 300/300 tests pass. Invariant preserved: any future template edit that drops max_turns=15 from the early-exit will still fail the regression test.
+
+---

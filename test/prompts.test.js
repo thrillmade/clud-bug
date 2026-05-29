@@ -214,9 +214,12 @@ test('all 3 rendered workflow templates pass adaptive --max-turns via claude_arg
     // no-files PR) must ALSO emit max_turns. Otherwise --max-turns expands
     // to empty in clud-bug-review and fails the CLI invocation. Pre-v0.6.23
     // this was harmless (hard-coded `15`); this PR introduced the risk.
+    // v0.6.24 SC2129 fix: the 3 echoes are now grouped under a single
+    // { ... } >> "$GITHUB_OUTPUT" block. Regex updated to match both
+    // the old per-line form AND the new grouped form.
     assert.match(
       out,
-      /if \[ -z "\$CHANGED" \];[\s\S]+?echo "max_turns=15" >> "\$GITHUB_OUTPUT"[\s\S]+?exit 0/,
+      /if \[ -z "\$CHANGED" \];[\s\S]+?echo "max_turns=15"[\s\S]+?exit 0/,
       `${tmpl}: empty-CHANGED early-exit must emit max_turns=15 before exit 0`,
     );
   }
