@@ -76,6 +76,9 @@ Commands:
                         rate, 30-day rolling \$/LOC trend, per-repo/per-model
                         distributions, and outliers (> 2x org median).
                         Use --pr / --repo / --since / --limit / --json to filter.
+  eval                  Run the golden-set regression gate against the rendered review
+                        prompt (must-contain / must-not-contain / byte-budget). Same as
+                        \`node --test test/prompts.eval.test.js\` but works from any cwd.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -126,10 +129,23 @@ async function main() {
     case 'update':  return runUpdateCmd(args);
     case 'edit-workflow': return runEditWorkflow(args);
     case 'usage':   return runUsage(args);
+    case 'eval':    return runEval(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
   }
+}
+
+// 0.0.E (v0.6.17): thin wrapper around the golden-set test file. Devs
+// who follow the README invoke `clud-bug eval` — this routes to the
+// same `node --test` runner CI uses, so dev and CI verdicts match.
+async function runEval(_args) {
+  const result = spawnSync(
+    'node',
+    ['--test', join(PKG_ROOT, 'test/prompts.eval.test.js')],
+    { stdio: 'inherit' },
+  );
+  process.exit(result.status ?? 1);
 }
 
 async function runInit(args) {

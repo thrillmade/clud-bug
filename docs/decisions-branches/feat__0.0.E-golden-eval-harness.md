@@ -6,3 +6,8 @@
 - Adding must-contain entries when shipping new load-bearing instructions; adding must-not-contain when finding new filler patterns; bumping byte-budget after major structural changes with CHANGELOG notes. 0.0.P (prompt trim) and 0.0.O (--json-schema) PRs unlock once this lands.
 
 ---
+## 2026-05-29 09:12 - PR #109 fix: wire up clud-bug eval subcommand (was referenced in README but didn't exist)
+
+**Reasoning:** 🟡 nit from clud-bug review: test/golden/README.md mentioned 'node bin/clud-bug.js eval' and 'clud-bug eval' as runnable commands but the subcommand dispatch didn't include 'eval'. Two options offered: drop the doc references, or wire it up. Wired it up — small runEval() function shells to 'node --test test/prompts.eval.test.js' via spawnSync so dev invocations match CI exactly. PKG_ROOT-relative path means it works from any cwd. Added eval to HELP. Smoke-tested: 'node bin/clud-bug.js eval' runs all 6 golden tests. 256 pass.
+
+---
