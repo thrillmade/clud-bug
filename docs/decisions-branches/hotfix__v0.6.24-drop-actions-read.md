@@ -8,3 +8,11 @@
 - Bumps to v0.6.24. CHANGELOG entry documents the diagnosis. Test in test/prompts.test.js flipped to a doesNotMatch guard (with regex tightened to match only YAML mapping form, not the explanatory comment block) so re-adding actions: read requires an explicit out-of-band fix. 300/300 tests pass. strict-mode-gate composite-pin bumped v0.6.23 → v0.6.24 across templates + action.yml header.
 
 ---
+## 2026-05-29 19:37 - fix: escape ${{ ... }} in template comment so actionlint stops parsing it as a real expression
+
+**Reasoning:** actionlint scans all run: | shell scripts for ${{ ... }} expressions, regardless of whether they're inside a shell COMMENT. The v0.6.23 max_turns / §5 explanatory comment 'this, --max-turns ${{ ... }} expands to ...' tripped this — the literal ... isn't valid GHA expression syntax. Replaced with $-{{ ... }} (visually similar, doesn't trigger the parser). v0.6.23 main was admin-bypass-merged with this lint already failing; v0.6.24 hotfix should ship clean.
+
+**Implications:**
+- Pure comment cosmetic change; the actual workflow logic is unchanged. actionlint clean locally; CI should now pass.
+
+---

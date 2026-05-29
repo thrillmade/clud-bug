@@ -46,7 +46,7 @@ jobs:
             echo "model=$MODEL" >> "$GITHUB_OUTPUT"
             # v0.6.23 / §5: max_turns must always be emitted because
             # clud-bug-review runs (is_workflow_only=false). Without
-            # this, --max-turns ${{ ... }} expands to '--max-turns '
+            # this, --max-turns $-{{ ... }} expands to '--max-turns '
             # (empty), failing the CLI invocation. Empty-CHANGED
             # fires on gh pr diff auth/network failures + the
             # (theoretical) no-changed-files PR.
