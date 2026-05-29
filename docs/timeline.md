@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (89 decisions)
+## 2026-05 (90 decisions)
 
-- **2026-05-29** — fix(0.5 §5): move actions: read to clud-bug-review job (PR #116 review fix) *(feat/0.5-S5-adaptive-max-turns)* — [decisions-branches/feat__0.5-S5-adaptive-max-turns.md](decisions-branches/feat__0.5-S5-adaptive-max-turns.md)
-- *... 87 more decisions ...*
+- **2026-05-29** — Hotfix v0.6.24: back out 'actions: read' permission — broke pull_request trigger firing on private repos under v0.6.23 *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
+- *... 88 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

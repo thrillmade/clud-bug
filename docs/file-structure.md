@@ -63,6 +63,7 @@ clud-bug
 │   │   ├── feat__0.0.T-rtk-inspired-clud-bug.md
 │   │   ├── feat__0.0.W-workflow-pr-skip.md
 │   │   ├── feat__0.0.X-output-token-directive.md
+│   │   ├── feat__0.5-S5-adaptive-max-turns.md
 │   │   ├── feat__0.A.1-extract-prompts.md
 │   │   ├── feat__0.A.10-incremental-diff-review.md
 │   │   ├── feat__0.A.11-fix-self-update-yaml-literal.md

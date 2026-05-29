@@ -195,20 +195,19 @@ test('all 3 rendered workflow templates pass adaptive --max-turns via claude_arg
       /MAX_TURNS=15[\s\S]*MAX_TURNS=10[\s\S]*MAX_TURNS=40[\s\S]*MAX_TURNS=25/,
       `${tmpl}: paths-check must include all 4 max_turns buckets (default=15, trivial=10, very-large=40, larger=25)`,
     );
-    // actions: read permission for github_ci MCP server — MUST be on
-    // the clud-bug-review job (where claude-code-action runs), NOT on
-    // paths-check. Per-job GITHUB_TOKEN permissions aren't inherited.
-    // PR #116 review caught this misplacement; pinned here as regression
-    // guard.
-    assert.match(
-      out,
-      /clud-bug-review:[\s\S]+?permissions:[\s\S]+?actions: read/,
-      `${tmpl}: clud-bug-review job must request actions: read permission (enables github_ci MCP server; paths-check doesn't need it)`,
-    );
+    // v0.6.24 backout — `actions: read` was added in v0.6.23 for
+    // github_ci MCP server but broke `pull_request` trigger firing
+    // on private consumer repos (validated: tokenomics + rezgen
+    // stopped firing after v0.6.23 propagation; agent-skills + logmind
+    // continued firing). Until the private-repo trigger-registration
+    // semantics are understood, the templates MUST NOT request
+    // `actions: read` anywhere — but the explanatory comment block
+    // mentioning the backout is fine. Match only the unindented YAML
+    // mapping form (i.e. an actual permission grant, not a comment).
     assert.doesNotMatch(
       out,
-      /paths-check:[\s\S]+?permissions:[\s\S]+?actions: read[\s\S]+?outputs:/,
-      `${tmpl}: actions: read must NOT be on paths-check (claude-code-action runs in clud-bug-review)`,
+      /^[ \t]+actions: read[ \t]*$/m,
+      `${tmpl}: v0.6.24 backout — templates must not request 'actions: read' as a YAML mapping (broke pull_request triggers on private repos under v0.6.23). Comment text mentioning the backout is OK.`,
     );
     // REGRESSION GUARD (PR #116 clud-bug-review catch): the empty-CHANGED
     // early-exit path (gh pr diff auth/network failure OR theoretical
