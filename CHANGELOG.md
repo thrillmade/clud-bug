@@ -4,6 +4,30 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.16] — 2026-05-29
+
+### Added — output-token brevity directive (Phase 0.5 / 0.0.X)
+
+Tiny prompt addition. Per the May 2026 LLM token optimization guide
+(section 6), `max_tokens` should be capped per call type — but the
+Claude Code CLI doesn't expose it (the SDK is agent-shaped, not
+single-call). Workaround: an explicit brevity instruction inside the
+cached system-prompt appendix.
+
+The new directive tells Claude:
+
+- Keep total output under ~600 tokens
+- Per finding: one-sentence claim + `<details>` reasoning ≤ 80 words
+- No code quotes > 2 lines
+- Omit reasoning details that don't change the verdict
+
+Discipline, not a hard cap. Verbose review output costs the consuming
+repo on every review; brevity compounds across the org.
+
+### Net diff
+
+`lib/prompts.js`: +8 lines. Composite-pin v0.6.15 → v0.6.16.
+
 ## [0.6.15] — 2026-05-29
 
 ### Added — model routing for trivial PRs (Phase 0.5 / 0.0.R)

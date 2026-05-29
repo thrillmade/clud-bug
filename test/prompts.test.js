@@ -413,6 +413,21 @@ test('all 3 rendered workflow templates use --model ${{ needs.paths-check.output
   }
 });
 
+// --- 0.0.X (v0.6.16): output-token brevity directive ---
+// The Claude Code CLI doesn't expose max_tokens (the SDK is agent-shaped,
+// not single-call). Workaround: an explicit brevity instruction in the
+// cached system prompt appendix. The directive lives in lib/prompts.js
+// (the canonical source for the appendix) so caching covers it.
+
+test('reviewPrompt: includes output-token brevity directive (v0.6.16 / 0.0.X)', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  // Core directive: ~600 token cap.
+  assert.match(out, /Keep total output under ~600 tokens/);
+  // Per-finding caps that drive the budget.
+  assert.match(out, /Reasoning.*≤ 80 words/);
+  assert.match(out, /No code quotes > 2 lines/);
+});
+
 // --- 0.0.R (v0.6.15): model routing for trivial PRs ---
 
 test('paths-check exposes model output AND defaults to Sonnet', async () => {
