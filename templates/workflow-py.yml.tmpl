@@ -1,4 +1,4 @@
-# clud-bug-template-version: v11
+# clud-bug-template-version: v12
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -53,17 +53,32 @@ jobs:
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          IS_WORKFLOW_ONLY=true
+          # v0.6.26 / 0.0.W² — see workflow.yml.tmpl for design notes.
+          ALL_IN_ALLOWLIST=true
+          HAS_WORKFLOW_CHANGE=false
           while IFS= read -r f; do
             case "$f" in
-              .github/workflows/clud-bug-*.yml) ;;
-              .github/actions/strict-mode-gate/*) ;;
-              *) IS_WORKFLOW_ONLY=false; break ;;
+              .github/workflows/clud-bug-*.yml) HAS_WORKFLOW_CHANGE=true ;;
+              .github/actions/strict-mode-gate/*) HAS_WORKFLOW_CHANGE=true ;;
+              AGENTS.md) ;;
+              .cursorrules|.clinerules|.windsurfrules|.continuerules) ;;
+              .github/copilot-instructions.md) ;;
+              .claude/skills/.clud-bug.json) ;;
+              .claude/skills/critical-issues-only/SKILL.md) ;;
+              .claude/skills/evidence-based-review/SKILL.md) ;;
+              .claude/skills/respect-existing-conventions/SKILL.md) ;;
+              docs/timeline.md|docs/file-structure.md|docs/decisions.md) ;;
+              docs/decisions-branches/*.md) ;;
+              *) ALL_IN_ALLOWLIST=false; break ;;
             esac
           done <<< "$CHANGED"
+          IS_WORKFLOW_ONLY=false
+          if [ "$ALL_IN_ALLOWLIST" = "true" ] && [ "$HAS_WORKFLOW_CHANGE" = "true" ]; then
+            IS_WORKFLOW_ONLY=true
+          fi
           echo "is_workflow_only=$IS_WORKFLOW_ONLY" >> "$GITHUB_OUTPUT"
           if [ "$IS_WORKFLOW_ONLY" = "true" ]; then
-            echo "::notice title=Clud Bug 🐛::Skipping LLM review — workflow-only PR."
+            echo "::notice title=Clud Bug 🐛::Skipping LLM review — clud-bug update output."
             echo "model=$MODEL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -268,28 +283,63 @@ jobs:
 
           $CALIBRATION"
 
-      # Fallback when structured_output is empty (max-retries hit).
+      # v0.6.26 / §5.5 Layer 6 fallback render-from-inlines — see workflow.yml.tmpl for design notes.
       - name: Fallback summary (structured_output empty)
         if: success() && steps.clud-bug-review.outputs.structured_output == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TURNS_ESTIMATED: ${{ needs.paths-check.outputs.turns_estimated }}
+          MAX_TURNS: ${{ needs.paths-check.outputs.max_turns }}
+          FILES_COUNT: ${{ needs.paths-check.outputs.files_count }}
+          LINES_ADDED: ${{ needs.paths-check.outputs.lines_added }}
+          LINES_DELETED: ${{ needs.paths-check.outputs.lines_deleted }}
+          THREADS_COUNT: ${{ needs.paths-check.outputs.threads_count }}
         run: |
           set -euo pipefail
-          gh pr comment "$PR_NUMBER" --body "## 🐛 Clud Bug review
+          INLINES=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" \
+            --jq "[.[] | select(.user.login == \"claude[bot]\" and .commit_id == \"$HEAD_SHA\")]")
+          INLINE_COUNT=$(echo "$INLINES" | jq 'length')
+          CRITICAL=$(echo "$INLINES" | jq '[.[] | select(.body | test("🔴"))] | length')
+          MINOR=$(echo "$INLINES" | jq '[.[] | select(.body | test("🟡"))] | length')
+          PREEXISTING=$(echo "$INLINES" | jq '[.[] | select(.body | test("🟣"))] | length')
+          CALIBRATION="<!-- clud-bug-calibration: turns_estimated=$TURNS_ESTIMATED, max_turns=$MAX_TURNS, files=$FILES_COUNT, lines_added=$LINES_ADDED, lines_deleted=$LINES_DELETED, threads=$THREADS_COUNT, structured_output=empty, inline_findings=$INLINE_COUNT -->"
+          if [ "$INLINE_COUNT" -gt 0 ]; then
+            STATUS=""
+            [ "$CRITICAL" -gt 0 ] && STATUS=" — critical findings"
+            gh pr comment "$PR_NUMBER" --body "## 🐛 Clud Bug review${STATUS}
+
+          **This round:** $CRITICAL critical · $MINOR minor · 0 resolved from prior · 0 still open
+
+          Found: $CRITICAL 🔴 / $MINOR 🟡 / $PREEXISTING 🟣
+
+          ⚠️ **Synthetic summary** (v0.6.26 §5.5 Layer 6 fallback). Inline findings above ARE the substantive review.
+
+          <!-- last-reviewed-sha: $HEAD_SHA -->
+
+          $CALIBRATION"
+          else
+            gh pr comment "$PR_NUMBER" --body "## 🐛 Clud Bug review
 
           **This round:** 0 critical · 0 minor · 0 resolved from prior · 0 still open
 
           Found: 0 🔴 / 0 🟡 / 0 🟣
 
-          ⚠️ Structured output (\`--json-schema\`) returned empty — likely max-retries hit on schema validation. Investigate the action logs.
+          ⚠️ Structured output (\`--json-schema\`) returned empty AND no inline findings posted. Investigate run logs.
 
-          Skills referenced: [none]"
+          Skills referenced: [none]
+
+          <!-- last-reviewed-sha: $HEAD_SHA -->
+
+          $CALIBRATION"
+          fi
 
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.25
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.26
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].
