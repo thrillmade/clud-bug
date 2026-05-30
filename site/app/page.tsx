@@ -28,6 +28,7 @@ export default async function Home() {
             Clud <em>Bug</em>.
           </h1>
           <p className="subtitle appear-2">
+            The first <strong>skill-driven development</strong> tool.
             Skills you write. Reviews the bot does.
             <em className="binomial">— Cluddus bugfindii, observed crawling on every PR.</em>
           </p>
@@ -66,6 +67,13 @@ export default async function Home() {
               Next.js repo, FastAPI patterns for a FastAPI repo, your team&rsquo;s own rules
               for your team&rsquo;s own repo. Every PR gets a comment within ~2 minutes,
               shaped by skills relevant to what you actually wrote.
+            </p>
+            <p>
+              <strong>Skill-driven development</strong>: test-driven development for AI.
+              You write skills first — your team&rsquo;s conventions, brand voice,
+              API-contract rules, compliance constraints — and every PR review is
+              graded against them. Generic best-practice advice that contradicts a
+              project skill is wrong by definition. Skills carry authority.
             </p>
           </div>
         </div>

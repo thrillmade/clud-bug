@@ -9,3 +9,14 @@
 - Drop-in propagation story now uses §V Habitat Expansion — pairs nicely with §IV Field Economy as the two-section diptych on operational benefits.
 
 ---
+## 2026-05-30 11:15 - site: weave skill-driven development (SDD) framing into hero + §I
+
+**Reasoning:** User (2026-05-30) coined Skill Driven Development as the unifying methodology — 'it's like test driven development for AI'. Web search confirmed SDD as unclaimed term. Clud bug is the SDD enforcement tool: skills are the contract, every finding cites the skill, generic advice contradicting a project skill is wrong by definition. Add 'first skill-driven development tool' to hero subtitle + new paragraph in §I Habitat & Habit explaining the SDD ↔ TDD analogy.
+
+**Alternatives considered:** rebrand entire hero around SDD — rejected, 'Skills you write. Reviews the bot does.' already strong; SDD framing additive not replacement, add a new §VII SDD section — rejected, §I is the natural home (where 'why this exists' lives)
+
+**Implications:**
+- Same code, materially different positioning: 'PR review tool with skills' → 'the first SDD toolchain.' Zero-marginal cost to add now; high cost to add later if someone else coins a near-term.
+- Pairs with logmind.dev SDD framing (parallel commit on PR #88) + GH topic + README touches across thrillmade/{clud-bug, logmind, agent-skills}.
+
+---
