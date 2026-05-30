@@ -169,19 +169,19 @@ test('all 3 rendered workflow templates set MAX_THINKING_TOKENS=8000', async () 
   }
 });
 
-test('all 3 rendered workflow templates pass adaptive --max-turns via claude_args (v0.6.23 / §5)', async () => {
+test('all 3 rendered workflow templates pass smart-budget --max-turns via claude_args (v0.6.25 / §5.5 Layer 1)', async () => {
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
     const out = await renderFile(join(TEMPLATES, tmpl), {
       REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
     });
-    // v0.6.23 / §5: --max-turns is dynamic, sourced from paths-check
-    // pre-flight job's max_turns output. The hard-coded `15` was the
-    // pre-v0.6.23 default; now the value adapts to PR scope.
+    // v0.6.25 / §5.5 Layer 1: --max-turns is dynamic, sourced from
+    // paths-check's max_turns output (computed via line-based formula,
+    // not the v0.6.23 4-bucket if-elif).
     assert.match(
       out,
       /--max-turns \$\{\{\s*needs\.paths-check\.outputs\.max_turns\s*\}\}/,
-      `${tmpl}: claude_args must source --max-turns from paths-check.outputs.max_turns (v0.6.23 / §5)`,
+      `${tmpl}: claude_args must source --max-turns from paths-check.outputs.max_turns`,
     );
     // paths-check job emits the max_turns output.
     assert.match(
@@ -189,11 +189,47 @@ test('all 3 rendered workflow templates pass adaptive --max-turns via claude_arg
       /max_turns:\s*\$\{\{\s*steps\.classify\.outputs\.max_turns\s*\}\}/,
       `${tmpl}: paths-check must declare max_turns output`,
     );
-    // paths-check has the bucket logic.
+    // v0.6.25 Layer 1: paths-check has the smart-budget formula
+    // (jq estimator + 20% safety margin + 60-turn ceiling).
     assert.match(
       out,
-      /MAX_TURNS=15[\s\S]*MAX_TURNS=10[\s\S]*MAX_TURNS=40[\s\S]*MAX_TURNS=25/,
-      `${tmpl}: paths-check must include all 4 max_turns buckets (default=15, trivial=10, very-large=40, larger=25)`,
+      /TURNS_ESTIMATED=\$\(echo "\$FILES_JSON" \| jq/,
+      `${tmpl}: paths-check must include the smart-budget jq estimator (v0.6.25 / §5.5 Layer 1)`,
+    );
+    assert.match(
+      out,
+      /def per_line\(path\):/,
+      `${tmpl}: smart-budget formula must define per_line(path) for type-weighting`,
+    );
+    assert.match(
+      out,
+      /MAX_TURNS=\$\(\(\s*\(?TURNS_ESTIMATED\s*\*\s*12\s*\+\s*9\s*\)?\s*\/\s*10\s*\)\)/,
+      `${tmpl}: paths-check must apply the 20% safety margin (max_turns = ceil(estimated × 1.2))`,
+    );
+    assert.match(
+      out,
+      /MAX_TURNS=60/,
+      `${tmpl}: paths-check must enforce the 60-turn ceiling (Layer 5 retry above this in v0.6.26+)`,
+    );
+    // v0.6.25 Layer 1.5: paths-check emits the calibration outputs.
+    for (const outName of ['turns_estimated', 'files_count', 'lines_added', 'lines_deleted', 'threads_count']) {
+      assert.match(
+        out,
+        new RegExp(`${outName}:\\s*\\$\\{\\{\\s*steps\\.classify\\.outputs\\.${outName}\\s*\\}\\}`),
+        `${tmpl}: paths-check must declare ${outName} output (v0.6.25 / §5.5 Layer 1.5 calibration)`,
+      );
+    }
+    // v0.6.25 Layer 2: per-PR prompt block carries the live budget values.
+    assert.match(
+      out,
+      /max_turns=\$\{\{\s*needs\.paths-check\.outputs\.max_turns\s*\}\}/,
+      `${tmpl}: per-PR prompt must inject max_turns into the Layer 2 budget block`,
+    );
+    // v0.6.25: workflow-level concurrency group.
+    assert.match(
+      out,
+      /concurrency:\s*\n\s+group:\s*clud-bug-review/,
+      `${tmpl}: workflow-level concurrency group must cancel older in-flight runs (v0.6.25)`,
     );
     // v0.6.24 backout — `actions: read` was added in v0.6.23 for
     // github_ci MCP server but broke `pull_request` trigger firing

@@ -4,6 +4,114 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.25] — 2026-05-30
+
+### Smart Budget System — Phase 1 (Layers 1 + 1.5 + 2)
+
+Tokenomics PR #21 exhausted v0.6.23's adaptive `--max-turns=25` while
+emitting a structured-output summary on a 26-file docs PR. Posted one
+inline finding, ran 4 minutes, exited fail before structured-output
+emit. Root cause: file count is a crude proxy; pre-flight can't predict
+review complexity without lines + edit type + file class. This ships
+Phase 1 of the long-term Smart Budget System architecture (full
+7-layer design in
+`/Users/ludlow/.claude/plans/ok-here-is-recent-distributed-chipmunk.md`
+§5.5; remaining 5 layers ship in v0.6.26 / v0.6.27 / v0.6.28 / v0.7.0).
+
+**Layer 1 — Smart pre-flight estimation** (paths-check, all 3 templates):
+the §5 4-bucket if-elif (10 / 15 / 25 / 40) is replaced with a
+line-based formula:
+
+```
+per_file_cost = 0.3 + added × tw × 1.0
+                    + modified × tw × 1.5      # context-heavy
+                    + deleted × tw × 0.1       # trivial
+
+type_weight tw (turns per line):
+  code (.ts/.py/.js/.go/.rs/...) : 1/50
+  docs (.md/.txt/.rst/.adoc/...) : 1/150
+  tests (.test.*/.spec.*/__tests__/...) : 1/100
+  config (.yml/.toml/.json/.cfg) : 1/100
+  derived (timeline.md/file-structure.md/decisions.md): 0  # skip
+
+estimated_turns = 5                                    # emit overhead
+                + sum(per_file_cost for f in diff)
+                + 1.5 × prior_unresolved_claude_threads
+
+max_turns = max(estimated × 1.2, 15)  # 20% safety margin
+max_turns = min(max_turns, 60)        # ceiling; Layer 5 retry above
+```
+
+Inline python3 estimator runs on the existing ubuntu-latest runner;
+`gh pr view --json files` already returns per-file `additions`/`deletions`.
+
+**Layer 1.5 — Calibration measurement**: the Render-and-post step
+appends a hidden HTML marker to the summary comment:
+
+```html
+<!-- clud-bug-calibration: turns_estimated=N, max_turns=M, files=F, lines_added=A, lines_deleted=D, threads=T -->
+```
+
+Aggregator script ships in v0.6.26 (`clud-bug usage --calibration`);
+data collection starts immediately. Calibration target: 90th-percentile
+reviews fit in `max_turns × 1.0` (no Layer 5 retry needed).
+
+**Layer 2 — In-prompt budget awareness**: the static system prompt
+(cache-friendly) carries a new "Turn budget self-rationing" section
+with the rules. The per-PR `prompt:` block injects the live values
+(`max_turns`, `estimated`, `files`, `+added/-deleted`, `prior_threads`).
+The AI is directed to:
+
+- Reserve the LAST 5 turns for structured-output emit (non-skippable).
+- Self-ration: ~1 turn per 50 lines code, ~1 turn per 150 lines docs.
+- Switch to broader+shallower coverage if behind pace.
+- **Never silently skip a file** — every file gets at least a
+  one-sentence verdict in `per_skill_scan`.
+
+### Cleanups (ride the same propagation cycle)
+
+**Workflow concurrency group**: hit live on tokenomics #21 where my
+merge-of-main push and logmind's auto-regen-derived-docs follow-up
+fired two concurrent clud-bug-review runs (each posted its own
+in-progress todo comment). Standard GH fix added at workflow level:
+
+```yaml
+concurrency:
+  group: clud-bug-review-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+```
+
+Newer pushes auto-cancel older in-flight runs on the same PR.
+
+**Issue #89** `buildDescriptionLine` newline sanitization: when
+`signals.description` comes from a multi-paragraph source (README
+first paragraph, etc.), literal `\n` characters used to break the
+rendered YAML's `APPEND_SYSTEM_PROMPT` value. Fixed via
+`.replace(/\s+/g, ' ').trim()` before further processing in
+`lib/detect.js`.
+
+**Gotcha #2 — publisher SKILL.md path detection**: every prior
+propagation cycle required manual fixup in agent-skills's AGENTS.md
+because `clud-bug update` rendered the consumer-install path
+(`.claude/skills/clud-bug-collaboration/SKILL.md`) into a repo that
+hosts the skill SOURCE at `skills/clud-bug-collaboration/SKILL.md`.
+New `detectSkillRelPath(cwd)` in `lib/agents-md.js` checks for the
+publisher path first; `renderBlock({ skillRelPath })` uses it.
+End of manual fixup.
+
+### Composite pin
+
+`strict-mode-gate@v0.6.24` → `strict-mode-gate@v0.6.25` (lock-step
+bump across `templates/*.tmpl` + `action.yml` header).
+
+### Migration
+
+`npx --yes clud-bug@0.6.25 update` re-renders the workflow with the
+smart-budget paths-check + Layer 2 prompt + Layer 1.5 calibration
+post-step. Existing v0.6.24 workflows continue to function — the
+output schema is additive (new outputs land alongside the unchanged
+`max_turns`).
+
 ## [0.6.24] — 2026-05-29
 
 ### Hotfix — back out `permissions: actions: read` from v0.6.23

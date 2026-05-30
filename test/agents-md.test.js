@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { applyToRepo, hasAgentsMdImport, removeBlock, renderBlock, upsertBlock } from '../lib/agents-md.js';
+import { applyToRepo, detectSkillRelPath, hasAgentsMdImport, removeBlock, renderBlock, upsertBlock } from '../lib/agents-md.js';
 
 async function makeRepo(files = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-agents-md-'));
@@ -350,5 +350,55 @@ test('applyToRepo: SKIPS .cursor/rules/*.md that import @AGENTS.md', async () =>
     // Touched array reflects only the one we wrote to.
     assert.ok(r.touched.includes('.cursor/rules/no-import.md'));
     assert.equal(r.touched.includes('.cursor/rules/general.md'), false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// v0.6.25 / gotcha #2 — publisher SKILL.md path detection.
+test('detectSkillRelPath: returns consumer path when skill source is absent', async () => {
+  const dir = await makeRepo({});
+  try {
+    const path = await detectSkillRelPath(dir);
+    assert.equal(path, '.claude/skills/clud-bug-collaboration/SKILL.md');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('detectSkillRelPath: returns publisher path when skills/clud-bug-collaboration/SKILL.md exists', async () => {
+  // agent-skills is the canonical publisher: skill source lives at
+  // `skills/clud-bug-collaboration/SKILL.md`. Rendering the consumer
+  // path into AGENTS.md broke check-links every prior propagation
+  // cycle (manual fix per cycle). Fixed in v0.6.25.
+  const dir = await makeRepo({
+    'skills/clud-bug-collaboration/SKILL.md': '# clud-bug-collaboration skill source\n',
+  });
+  try {
+    const path = await detectSkillRelPath(dir);
+    assert.equal(path, 'skills/clud-bug-collaboration/SKILL.md');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('renderBlock: skillRelPath override changes the link target', () => {
+  const consumer = renderBlock({ version: '0.6.25', strictMode: true });
+  assert.match(consumer, /\.claude\/skills\/clud-bug-collaboration\/SKILL\.md/);
+
+  const publisher = renderBlock({
+    version: '0.6.25',
+    strictMode: true,
+    skillRelPath: 'skills/clud-bug-collaboration/SKILL.md',
+  });
+  assert.match(publisher, /\]\(skills\/clud-bug-collaboration\/SKILL\.md\)/);
+  // ensure publisher form doesn't accidentally retain the consumer prefix
+  assert.doesNotMatch(publisher, /\.claude\/skills\/clud-bug-collaboration\/SKILL\.md/);
+});
+
+test('applyToRepo: auto-uses publisher path when skill source detected (end-to-end)', async () => {
+  const dir = await makeRepo({
+    'AGENTS.md': '# project\n',
+    'skills/clud-bug-collaboration/SKILL.md': '# source\n',
+  });
+  try {
+    await applyToRepo(dir, { version: '0.6.25', strictMode: false });
+    const agents = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /\]\(skills\/clud-bug-collaboration\/SKILL\.md\)/);
+    assert.doesNotMatch(agents, /\.claude\/skills\/clud-bug-collaboration\/SKILL\.md/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

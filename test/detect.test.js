@@ -129,3 +129,32 @@ test('buildDescriptionLine falls back gracefully with no signals', () => {
   });
   assert.match(line, /unavailable/);
 });
+
+// v0.6.25 / issue #89 — `buildDescriptionLine` collapses multi-line
+// descriptions to a single line. Without this, a multi-paragraph
+// README first paragraph leaks literal `\n` into the rendered YAML's
+// APPEND_SYSTEM_PROMPT, breaking YAML parsing on `clud-bug update`.
+test('buildDescriptionLine collapses internal newlines + tabs to single spaces (issue #89)', () => {
+  const line = buildDescriptionLine({
+    name: 'demo',
+    description: 'A multi-line\ndescription\n\nwith\ttabs and blanks',
+    primaryLanguage: null,
+    searchTerms: [],
+  });
+  assert.doesNotMatch(line, /\n/, 'must not contain literal newlines');
+  assert.doesNotMatch(line, /\t/, 'must not contain literal tabs');
+  assert.doesNotMatch(line, / {2}/, 'must not contain double-spaces (runs collapsed)');
+  assert.match(line, /A multi-line description with tabs and blanks\./);
+});
+
+test('buildDescriptionLine adds trailing period iff missing (preserved across #89 fix)', () => {
+  const withPeriod = buildDescriptionLine({
+    name: null, description: 'Already punctuated.', primaryLanguage: null, searchTerms: [],
+  });
+  assert.match(withPeriod, /Already punctuated\.$/);
+
+  const noPeriod = buildDescriptionLine({
+    name: null, description: 'Needs one', primaryLanguage: null, searchTerms: [],
+  });
+  assert.match(noPeriod, /Needs one\.$/);
+});

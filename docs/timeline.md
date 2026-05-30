@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (95 decisions)
+## 2026-05 (97 decisions)
 
-- **2026-05-29** — fix: avoid literal 'shellcheck' word in template comments — shellcheck parsed it as a malformed directive *(hotfix/v0.6.24-drop-actions-read)* — [decisions-branches/hotfix__v0.6.24-drop-actions-read.md](decisions-branches/hotfix__v0.6.24-drop-actions-read.md)
-- *... 93 more decisions ...*
+- **2026-05-29** — fix(v0.6.25): update stale Layer 1 formula comments (5→10 emit overhead, python3→jq) *(feat/v0.6.25-smart-budget-phase-1)* — [decisions-branches/feat__v0.6.25-smart-budget-phase-1.md](decisions-branches/feat__v0.6.25-smart-budget-phase-1.md)
+- *... 95 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

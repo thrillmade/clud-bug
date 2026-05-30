@@ -1,0 +1,18 @@
+## 2026-05-29 21:50 - feat(v0.6.25): Smart Budget System Phase 1 (Layers 1 + 1.5 + 2) + 3 cleanups
+
+**Reasoning:** Tokenomics PR #21 exhausted v0.6.23's adaptive --max-turns=25 while emitting a structured-output summary on a 26-file docs PR. Posted one inline finding, ran 4 minutes, exited fail before structured-output emit. Root cause: file count was a crude proxy; pre-flight can't predict review complexity without lines + edit-type + file-class. Ships Phase 1 of the 7-layer Smart Budget System (full design in plan §5.5; remaining 5 layers in v0.6.26 / v0.6.27 / v0.6.28 / v0.7.0). Layer 1 replaces §5's 4-bucket if-elif with a jq-driven line-based formula (file_open_cost + added×tw + modified×1.5×tw + deleted×0.1×tw, with tw varying by file class: code 1/50, docs 1/150, tests/config 1/100, derived 0). Layer 1.5 emits turns_estimated + lines counts to a hidden HTML calibration marker for tuning over the Step 4 30-day window. Layer 2 adds a system-prompt 'Turn budget self-rationing' section + injects live values into the per-PR prompt; rules direct AI to reserve last 5 turns for emit + switch to broader+shallower coverage when behind pace + never silently skip a file. Plus 3 cleanups that ride the same propagation cycle: workflow-level concurrency group (cancels older in-flight runs on rapid back-to-back pushes), issue #89 buildDescriptionLine newline sanitization, gotcha #2 publisher SKILL.md path detection (end of manual fix every propagation cycle on agent-skills).
+
+**Alternatives considered:** Single big-bang release with all 7 layers — rejected: user direction 'ship small changes over and over for new versions and get this right'. Incremental phases let us collect calibration data between releases and tune before adding more complexity., Widen the v0.6.23 4-bucket boundaries instead of rewriting the formula — rejected: same crude-proxy problem at higher numbers. Lines + types is the right primitive; sanity-checked on tokenomics #21 (predicts 21 turns → max_turns=26, empirically used ~25)., Use python3 heredoc for the estimator — abandoned: YAML run: | block indentation incompatible with bash heredoc + Python indent sensitivity. jq handles JSON + arithmetic without indentation drama and is preinstalled on ubuntu-latest.
+
+**Implications:**
+- Bumps to v0.6.25. Template version v10→v11. strict-mode-gate composite pin v0.6.24→v0.6.25. byte-budget golden caps relaxed 14500→16000 / 310→340 (Layer 2 added ~1.0 KB of self-rationing rules). 6 new tests (4 for gotcha #2 publisher path, 2 for #89 newline collapse, augmented for smart-budget formula assertions). Workflow concurrency group will eliminate the duplicate-review failure tokenomics #21 hit. v0.6.25 propagation will be workflow-only PRs → 0.0.W skip → no admin-bypass needed.
+
+---
+## 2026-05-29 22:00 - fix(v0.6.25): update stale Layer 1 formula comments (5→10 emit overhead, python3→jq)
+
+**Reasoning:** Bot caught two stale doc comments in workflow.yml.tmpl's Layer 1 block: the prose said 'estimated = 5 + ...' (intermediate design) and 'python3 is the inline estimator' (earlier attempt before switching to jq). Both shipped to consumer rendered workflows; would mislead anyone reading the workflow. Updated to match shipped code: emit overhead 10 with the empirical-tokenomics-#21-calibration justification, and jq as the estimator with the YAML-block-indent rationale for why we switched off python3.
+
+**Implications:**
+- Comments-only fix on workflow.yml.tmpl (the canonical template); py + ts templates already point to it via 'see workflow.yml.tmpl' for the formula doc. 306/306 tests still pass.
+
+---
