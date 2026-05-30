@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (98 decisions)
+## 2026-05 (99 decisions)
 
-- **2026-05-29** — chore: clud-bug self-upgrade to v0.6.25 (dogfood Smart Budget Phase 1) *(chore/self-upgrade-v0.6.25)* — [decisions-branches/chore__self-upgrade-v0.6.25.md](decisions-branches/chore__self-upgrade-v0.6.25.md)
-- *... 96 more decisions ...*
+- **2026-05-29** — feat(v0.6.26): Smart Budget Phase 2a — 0.0.W² widen skip + L6 fallback render-from-inlines *(feat/v0.6.26-smart-budget-phase-2)* — [decisions-branches/feat__v0.6.26-smart-budget-phase-2.md](decisions-branches/feat__v0.6.26-smart-budget-phase-2.md)
+- *... 97 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

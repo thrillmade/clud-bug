@@ -4,6 +4,62 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.26] — 2026-05-30
+
+### Smart Budget Phase 2a — 0.0.W² widen skip allowlist + Layer 6 fallback render-from-inlines
+
+**0.0.W² — widen the workflow-only-skip allowlist (paths-check).**
+Every prior `clud-bug update` propagation cycle required admin-bypass merge
+because the App-side guard refuses workflow-modifying PRs and v0.6.14's 0.0.W
+only skipped pure-workflow PRs. `clud-bug update` produces HYBRID PRs so
+0.0.W never fired → admin-bypass every cycle. 6 such bypasses across the
+v0.6.24 + v0.6.25 cycle.
+
+Fix widens 0.0.W's allowlist to: workflow/strict-mode-gate files (existing),
+AGENTS.md, .cursorrules / .clinerules / .windsurfrules / .continuerules,
+.github/copilot-instructions.md, .claude/skills/.clud-bug.json,
+.claude/skills/{critical-issues-only,evidence-based-review,respect-existing-conventions}/SKILL.md,
+docs/timeline.md / docs/file-structure.md / docs/decisions.md,
+docs/decisions-branches/*.md. Skip fires when EVERY changed file is in the
+allowlist AND HAS_WORKFLOW_CHANGE=true (workflow-file or strict-mode-gate
+change present). The HAS_WORKFLOW_CHANGE signature distinguishes
+`clud-bug update` output from a user editing AGENTS.md by hand —
+naked AGENTS.md edits still go through normal review, guarding the
+prompt-injection-via-AGENTS.md attack surface.
+
+Safety: workflow file still App-guard-protected. Non-executable files
+in the allowlist can't grant code execution. strictMode read from base
+ref so a PR can't disable strict-mode on itself.
+
+**Layer 6 — fallback render-from-inlines (clud-bug-review post-step).**
+When `structured_output` is empty BUT inline findings were posted before
+the action gave up (tokenomics #21 pattern), the post-step scrapes
+`gh api pulls/N/comments` for claude[bot]'s comments on the current SHA,
+counts them by 🔴 / 🟡 / 🟣 emoji prefix, and synthesizes a structured
+summary that cites the real counts. Comment labeled "**Synthetic summary**
+(v0.6.26 §5.5 Layer 6 fallback)" so readers know it's reconstructed.
+Strict-mode gate anchor matches; gate falls open advisory.
+
+If NO inline findings either, falls through to legacy bare-H2 advisory.
+
+L6 is the safety net; L5 (auto-retry on cap-hit) ships in v0.6.27 because
+it restructures the workflow's job-dependency graph (separate concern).
+
+### Composite pin
+
+`strict-mode-gate@v0.6.25` → `strict-mode-gate@v0.6.26` lock-step.
+
+### Template version
+
+`v11` → `v12` to reflect the 0.0.W² classifier change.
+
+### Migration
+
+`npx --yes clud-bug@0.6.26 update` re-renders the workflow. Existing
+v0.6.25 workflows continue to function — additive changes are
+backward-compatible (is_workflow_only output retained with widened
+semantic).
+
 ## [0.6.25] — 2026-05-30
 
 ### Smart Budget System — Phase 1 (Layers 1 + 1.5 + 2)

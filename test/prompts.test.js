@@ -449,21 +449,50 @@ test('all 3 rendered workflow templates: clud-bug-review depends on paths-check 
   }
 });
 
-test('paths-check classifier: allow-list covers clud-bug-*.yml + strict-mode-gate/**', async () => {
-  // The classifier shell embedded in the workflow uses `case "$f" in ...`
-  // with two patterns. Both must be present for the security guarantee
-  // (mixed PRs must NOT match — only files matching one of these is
-  // workflow-only).
+test('paths-check classifier: 0.0.W² allow-list + workflow-change signal (v0.6.26+)', async () => {
+  // The classifier shell uses `case "$f" in ...`. v0.6.14 (0.0.W) had two
+  // patterns (workflow + strict-mode-gate); v0.6.26 (0.0.W²) widened the
+  // allow-list to cover all files `clud-bug update` produces, AND added a
+  // HAS_WORKFLOW_CHANGE signature so naked AGENTS.md edits still get
+  // reviewed.
   const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
     REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
   });
-  assert.match(out, /\.github\/workflows\/clud-bug-\*\.yml\)/);
-  assert.match(out, /\.github\/actions\/strict-mode-gate\/\*\)/);
-  // Critical: the `*) IS_WORKFLOW_ONLY=false; break ;;` default branch
+
+  // Original 0.0.W patterns — these set HAS_WORKFLOW_CHANGE=true.
+  assert.match(out, /\.github\/workflows\/clud-bug-\*\.yml\)\s*HAS_WORKFLOW_CHANGE=true/,
+    'workflow-file change must flip HAS_WORKFLOW_CHANGE');
+  assert.match(out, /\.github\/actions\/strict-mode-gate\/\*\)\s*HAS_WORKFLOW_CHANGE=true/,
+    'strict-mode-gate change must flip HAS_WORKFLOW_CHANGE');
+
+  // v0.6.26 / 0.0.W² additions — these are silent allowlist entries
+  // (don't trigger the workflow-change signal alone).
+  for (const pattern of [
+    /AGENTS\.md\)/,
+    /\.cursorrules\|\.clinerules\|\.windsurfrules\|\.continuerules\)/,
+    /\.github\/copilot-instructions\.md\)/,
+    /\.claude\/skills\/\.clud-bug\.json\)/,
+    /\.claude\/skills\/critical-issues-only\/SKILL\.md\)/,
+    /\.claude\/skills\/evidence-based-review\/SKILL\.md\)/,
+    /\.claude\/skills\/respect-existing-conventions\/SKILL\.md\)/,
+    /docs\/timeline\.md\|docs\/file-structure\.md\|docs\/decisions\.md\)/,
+    /docs\/decisions-branches\/\*\.md\)/,
+  ]) {
+    assert.match(out, pattern, `0.0.W² allowlist must include pattern matching ${pattern}`);
+  }
+
+  // Critical: the `*) ALL_IN_ALLOWLIST=false; break ;;` default branch
   // ensures any unmatched file flips the classifier — a mixed PR cannot
   // sneak through.
-  assert.match(out, /\*\)\s*IS_WORKFLOW_ONLY=false/,
+  assert.match(out, /\*\)\s*ALL_IN_ALLOWLIST=false/,
     'mixed-diff guard MUST be present — any non-allow-list file flips the classifier to false');
+
+  // 0.0.W² safety: both conditions required to skip review. Naked
+  // AGENTS.md edits (allowlist match but no workflow change) MUST run
+  // review — this is the prompt-injection-via-AGENTS.md guard.
+  assert.match(out,
+    /ALL_IN_ALLOWLIST.*=.*"true".*\&\&.*HAS_WORKFLOW_CHANGE.*=.*"true"/s,
+    '0.0.W² must require BOTH all-in-allowlist AND has-workflow-change to skip review');
 });
 
 test('all 3 rendered workflow templates use --model ${{ needs.paths-check.outputs.model }} (v0.6.15+)', async () => {
