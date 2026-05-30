@@ -8,3 +8,11 @@
 - Bumps to v0.6.25. Template version v10→v11. strict-mode-gate composite pin v0.6.24→v0.6.25. byte-budget golden caps relaxed 14500→16000 / 310→340 (Layer 2 added ~1.0 KB of self-rationing rules). 6 new tests (4 for gotcha #2 publisher path, 2 for #89 newline collapse, augmented for smart-budget formula assertions). Workflow concurrency group will eliminate the duplicate-review failure tokenomics #21 hit. v0.6.25 propagation will be workflow-only PRs → 0.0.W skip → no admin-bypass needed.
 
 ---
+## 2026-05-29 22:00 - fix(v0.6.25): update stale Layer 1 formula comments (5→10 emit overhead, python3→jq)
+
+**Reasoning:** Bot caught two stale doc comments in workflow.yml.tmpl's Layer 1 block: the prose said 'estimated = 5 + ...' (intermediate design) and 'python3 is the inline estimator' (earlier attempt before switching to jq). Both shipped to consumer rendered workflows; would mislead anyone reading the workflow. Updated to match shipped code: emit overhead 10 with the empirical-tokenomics-#21-calibration justification, and jq as the estimator with the YAML-block-indent rationale for why we switched off python3.
+
+**Implications:**
+- Comments-only fix on workflow.yml.tmpl (the canonical template); py + ts templates already point to it via 'see workflow.yml.tmpl' for the formula doc. 306/306 tests still pass.
+
+---

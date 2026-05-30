@@ -154,15 +154,22 @@ jobs:
           #   config (.yml/.toml/.json/.cfg)        : 1/100
           #   derived (timeline.md/file-structure.md/decisions.md) : 0
           #
-          #   estimated_turns = 5 + sum(per_file_cost) + 1.5 × prior_threads
+          #   estimated_turns = 10 + sum(per_file_cost) + 1.5 × prior_threads
           #   max_turns = max(estimated × 1.2, 15)        # 20% safety margin
           #   max_turns = min(max_turns, 60)              # ceiling; L5 retry above
           #
+          # Emit overhead 10 (raised from initial 5 design): tokenomics
+          # #21 (26 docs files, +310/-235) used ~25 turns vs old-formula
+          # 16 — structured-output emit + JSON-schema retries + initial
+          # context loading cost ~5-10 turns themselves. Will retune from
+          # Layer 1.5 calibration data in v0.6.26+.
+          #
           # `gh` is the source for additions/deletions + threads.
-          # python3 is the inline estimator (always available on
-          # ubuntu-latest runners). Calibration in v0.6.26+ via the
-          # turns_estimated + turns_actually_used data points the
-          # post-step records (Layer 1.5).
+          # `jq` is the inline estimator (preinstalled on ubuntu-latest
+          # runners; an earlier design used python3 but jq sidesteps the
+          # YAML-block-indent vs heredoc-content-indent dance).
+          # Calibration via the turns_estimated + turns_actually_used data
+          # points the post-step records (Layer 1.5).
           FILE_COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
           # Count unresolved claude-bot threads. Best-effort: rate-limit
           # or auth failures default to 0 (no escalation, fall back to
