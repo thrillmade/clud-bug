@@ -34,6 +34,7 @@ clud-bug
 │   ├── render-review.js
 │   ├── render.js
 │   ├── review-schema.js
+│   ├── skill-usage.js
 │   ├── skills.js
 │   ├── update.js
 │   └── usage.js
@@ -67,6 +68,7 @@ clud-bug
 │   ├── release-discipline.test.js
 │   ├── render-review.test.js
 │   ├── render.test.js
+│   ├── skill-usage.test.js
 │   ├── skills.test.js
 │   ├── update.test.js
 │   └── usage.test.js
