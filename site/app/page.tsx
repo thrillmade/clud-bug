@@ -28,6 +28,7 @@ export default async function Home() {
             Clud <em>Bug</em>.
           </h1>
           <p className="subtitle appear-2">
+            <strong>Skills-driven development</strong> at PR time.
             Skills you write. Reviews the bot does.
             <em className="binomial">— Cluddus bugfindii, observed crawling on every PR.</em>
           </p>
@@ -66,6 +67,14 @@ export default async function Home() {
               Next.js repo, FastAPI patterns for a FastAPI repo, your team&rsquo;s own rules
               for your team&rsquo;s own repo. Every PR gets a comment within ~2 minutes,
               shaped by skills relevant to what you actually wrote.
+            </p>
+            <p>
+              <a href="https://zakelfassi.com/skdd-skills-driven-development"><strong>Skills-driven
+              development</strong></a> (SkDD): test-driven development for AI. You
+              write skills first — your team&rsquo;s conventions, brand voice,
+              API-contract rules, compliance constraints — and every PR review is
+              graded against them. Generic best-practice advice that contradicts a
+              project skill is wrong by definition. Skills carry authority.
             </p>
           </div>
         </div>
@@ -176,10 +185,74 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ─────────── §IV — INSTALL ─────────── */}
+      {/* ─────────── §IV — REVIEW BUDGET ─────────── */}
+      <section className="section">
+        <header className="section-head">
+          <span className="section-num">§ IV — Field Economy</span>
+          <h2 className="section-title">Even the largest specimens get a full examination.</h2>
+        </header>
+        <div className="section-body">
+          <aside className="marginalia">
+            The naturalist sizes up the specimen before reaching for the
+            magnifying glass. Tiny moth, brief examination. Large beetle, longer
+            study. Either way: no half-finished field notes.
+          </aside>
+          <div className="section-prose">
+            <p>
+              Every PR review gets a budget tailored to its diff. Clud Bug looks
+              at the changed lines first &mdash; a one-file typo gets a quick
+              pass; a thousand-line refactor gets the time it needs. The bot is
+              told its own budget upfront and checks in with itself mid-review,
+              so the summary at the bottom of your PR is always a finished
+              thought, never a half-written sentence.
+            </p>
+            <p>
+              <strong>Why this matters.</strong> Stock PR-review tools pick a
+              fixed turn count and hope. On small PRs they overspend; on large
+              PRs they run out and leave you with an incomplete review. The
+              budget-aware approach: tiny PR gets ~5 turns of attention, large
+              PR gets ~25, very large gets ~40 &mdash; same Clud Bug, same
+              quality bar.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ─────────── §V — DROP-IN PROPAGATION ─────────── */}
+      <section className="section">
+        <header className="section-head">
+          <span className="section-num">§ V — Habitat Expansion</span>
+          <h2 className="section-title">One PR per repo. Then quiet self-updates.</h2>
+        </header>
+        <div className="section-body">
+          <aside className="marginalia">
+            Adding a specimen to a new habitat takes the same act of collection
+            every time. After that, the colony tends itself.
+          </aside>
+          <div className="section-prose">
+            <p>
+              Rolling Clud Bug across an org used to take an admin override on
+              every workflow file as it landed. Now: one PR per repo, then
+              quiet. Subsequent updates to skills, prompts, or the workflow
+              itself ship through clean PRs that the bot auto-classifies and
+              skips when there&rsquo;s nothing for a reviewer to read.
+            </p>
+            <p>
+              <strong>Code changes still get reviewed.</strong> The auto-skip
+              fires only on workflow-only PRs &mdash; any commit that touches a
+              source file outside the allowlist still gets the full Clud Bug
+              treatment. Skill files, configs, and decision logs may ride
+              along, but the moment something in <code>src/</code> changes,
+              the naturalist is on the scene.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ─────────── §VI — INSTALL ─────────── */}
       <section className="section" id="how-to-collect">
         <header className="section-head">
-          <span className="section-num">§ IV — Field Procedure</span>
+          <span className="section-num">§ VI — Field Procedure</span>
           <h2 className="section-title">How to begin collecting.</h2>
         </header>
         <div className="section-body">
@@ -204,7 +277,7 @@ export default async function Home() {
 
       <footer className="colophon">
         <span>
-          Open source. <a href="https://github.com/thrillmade/clud-bug/blob/main/LICENSE">MIT</a>.
+          Open source. <a href="https://github.com/thrillmade/clud-bug/blob/main/LICENSE">MIT</a>. v0.6.27.
         </span>
         <span className="credit">
           a <a href="https://thrillmot.com" rel="noopener">thrillmot</a> project

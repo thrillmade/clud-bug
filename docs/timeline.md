@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (101 decisions)
+## 2026-05 (104 decisions)
 
-- **2026-05-29** — feat(v0.6.27): Smart Budget Phase 3 — Layer 3 mid-review self-check-in *(feat/v0.6.27-L3-mid-review-check-in)* — [decisions-branches/feat__v0.6.27-L3-mid-review-check-in.md](decisions-branches/feat__v0.6.27-L3-mid-review-check-in.md)
-- *... 99 more decisions ...*
+- **2026-05-30** — site: align SDD framing with Zak Elfassi's SkDD prior art *(site/smart-budget-and-drop-in-propagation)* — [decisions-branches/site__smart-budget-and-drop-in-propagation.md](decisions-branches/site__smart-budget-and-drop-in-propagation.md)
+- *... 102 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)
