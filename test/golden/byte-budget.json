@@ -1,11 +1,11 @@
 {
   "$schema-comment": "Size caps for the rendered prompt. UTF-8 byte counts. The CI gate fails if the actual size exceeds the cap. Caps are intentionally close to current size so 0.0.P trim work has headroom without inviting regression.",
   "max_prompt_bytes": {
-    "value": 14500,
-    "why": "Current rendered prompt is ~14.0 KB post-0.0.O (was 12.2 KB post-0.0.P; 0.0.O added ~1.8 KB of structured-output + status_header instructions). Cap bumped 14000 → 14500 with this PR; still ~33% below the 18500 pre-0.0.P cap. See CHANGELOG [0.6.22]."
+    "value": 16000,
+    "why": "Current rendered prompt is ~15.4 KB post-v0.6.25 §5.5 Layer 2 (added ~1.0 KB of turn-budget self-rationing rules + emit-reserve discipline). Cap bumped 14500 → 16000 with v0.6.25; still well below the 18500 pre-0.0.P cap. Layer 2's prompt expansion is load-bearing for the Smart Budget System (rules describe how the AI rations its turn budget); shrinkage candidates land if calibration data shows the rules can be expressed more tightly. See CHANGELOG [0.6.25]."
   },
   "max_prompt_lines": {
-    "value": 310,
-    "why": "Current is ~295 lines post-0.0.O. Cap holds at 310 — the prompt grew by ~23 lines for 0.0.O but stayed under the line cap. See CHANGELOG [0.6.22]."
+    "value": 340,
+    "why": "Current is ~325 lines post-v0.6.25 §5.5 Layer 2 (+~25 lines for the Turn budget self-rationing section). Cap bumped 310 → 340 with v0.6.25. See CHANGELOG [0.6.25]."
   }
 }
