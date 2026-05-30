@@ -28,7 +28,7 @@ export default async function Home() {
             Clud <em>Bug</em>.
           </h1>
           <p className="subtitle appear-2">
-            The first <strong>skill-driven development</strong> tool.
+            <strong>Skills-driven development</strong> at PR time.
             Skills you write. Reviews the bot does.
             <em className="binomial">— Cluddus bugfindii, observed crawling on every PR.</em>
           </p>
@@ -69,8 +69,9 @@ export default async function Home() {
               shaped by skills relevant to what you actually wrote.
             </p>
             <p>
-              <strong>Skill-driven development</strong>: test-driven development for AI.
-              You write skills first — your team&rsquo;s conventions, brand voice,
+              <a href="https://zakelfassi.com/skdd-skills-driven-development"><strong>Skills-driven
+              development</strong></a> (SkDD): test-driven development for AI. You
+              write skills first — your team&rsquo;s conventions, brand voice,
               API-contract rules, compliance constraints — and every PR review is
               graded against them. Generic best-practice advice that contradicts a
               project skill is wrong by definition. Skills carry authority.

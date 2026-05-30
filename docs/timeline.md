@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-05
 
+- **2026-05-30** — site: align SDD framing with Zak Elfassi's SkDD prior art *(site/smart-budget-and-drop-in-propagation)* — [decisions-branches/site__smart-budget-and-drop-in-propagation.md](decisions-branches/site__smart-budget-and-drop-in-propagation.md)
 - **2026-05-30** — site: weave skill-driven development (SDD) framing into hero + §I *(site/smart-budget-and-drop-in-propagation)* — [decisions-branches/site__smart-budget-and-drop-in-propagation.md](decisions-branches/site__smart-budget-and-drop-in-propagation.md)
 - **2026-05-30** — site: surface Smart Review Budget + Drop-in Propagation in field-guide voice *(site/smart-budget-and-drop-in-propagation)* — [decisions-branches/site__smart-budget-and-drop-in-propagation.md](decisions-branches/site__smart-budget-and-drop-in-propagation.md)
 - **2026-05-29** — feat(v0.6.27): Smart Budget Phase 3 — Layer 3 mid-review self-check-in *(feat/v0.6.27-L3-mid-review-check-in)* — [decisions-branches/feat__v0.6.27-L3-mid-review-check-in.md](decisions-branches/feat__v0.6.27-L3-mid-review-check-in.md)
