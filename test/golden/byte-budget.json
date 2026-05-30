@@ -1,11 +1,11 @@
 {
   "$schema-comment": "Size caps for the rendered prompt. UTF-8 byte counts. The CI gate fails if the actual size exceeds the cap. Caps are intentionally close to current size so 0.0.P trim work has headroom without inviting regression.",
   "max_prompt_bytes": {
-    "value": 16000,
-    "why": "Current rendered prompt is ~15.4 KB post-v0.6.25 §5.5 Layer 2 (added ~1.0 KB of turn-budget self-rationing rules + emit-reserve discipline). Cap bumped 14500 → 16000 with v0.6.25; still well below the 18500 pre-0.0.P cap. Layer 2's prompt expansion is load-bearing for the Smart Budget System (rules describe how the AI rations its turn budget); shrinkage candidates land if calibration data shows the rules can be expressed more tightly. See CHANGELOG [0.6.25]."
+    "value": 17500,
+    "why": "Current rendered prompt is ~16.6 KB post-v0.6.27 §5.5 Layer 3 (added ~600 bytes of mid-review self-check-in rules: [budget] heartbeat-every-5-turns pattern + pace-behind pivot strategy). Cap bumped 16000 → 17500 with v0.6.27; still well below the 18500 pre-0.0.P cap. Each Smart Budget layer compounds prompt-side rules to give the AI a tighter model of its own pacing; rule shrinkage candidates land when calibration data validates the wording can be tighter. See CHANGELOG [0.6.27]."
   },
   "max_prompt_lines": {
-    "value": 340,
-    "why": "Current is ~325 lines post-v0.6.25 §5.5 Layer 2 (+~25 lines for the Turn budget self-rationing section). Cap bumped 310 → 340 with v0.6.25. See CHANGELOG [0.6.25]."
+    "value": 365,
+    "why": "Current is ~351 lines post-v0.6.27 §5.5 Layer 3 (+~26 lines for the Mid-review self-check-in section). Cap bumped 340 → 365 with v0.6.27. See CHANGELOG [0.6.27]."
   }
 }
