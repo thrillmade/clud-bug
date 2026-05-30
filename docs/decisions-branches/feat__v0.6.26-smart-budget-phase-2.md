@@ -8,3 +8,11 @@
 - Bumps to v0.6.26. Template version v11→v12. strict-mode-gate composite pin v0.6.25→v0.6.26. Updated test 'paths-check classifier: 0.0.W² allow-list + workflow-change signal (v0.6.26+)' covers all the new patterns + the HAS_WORKFLOW_CHANGE = workflow-file mapping + the mixed-diff guard + the AND-both-required logic. 306/306 tests pass. v0.6.26 propagation cycle will be the FIRST one to not require admin-bypass on consumer repos (the propagation PRs themselves will be detected as clud-bug-update-output and auto-skipped).
 
 ---
+## 2026-05-29 23:16 - fix(v0.6.26): address PR #120 review — L6 still-open counter + add L6 test coverage
+
+**Reasoning:** Two real critical findings from clud-bug-review on #120, both legit: (1) 'still open' counter misuse — per spec, that field means prior unresolved threads whose issue still stands, NOT new findings from the current pass. L6 incorrectly used INLINE_COUNT (current-pass findings count) in that slot. L6 only fires on first-pass (structured_output empty means we never reached the resolve-prior-threads stage), so still-open is always 0 in the L6 synthetic. (2) L6 had zero test coverage — the new inline-scraping + jq filter + emoji parsing + synthetic-summary generation path was entirely untested. Added 6 new tests covering: gh api endpoint + filter, emoji-prefix counting, correct counter semantics (PR #120 regression guard), Synthetic-summary label + v0.6.26 marker, critical-findings status_header suffix for strict-mode gate, legacy bare-H2 fallback path.
+
+**Implications:**
+- All 3 templates corrected. 312/312 tests pass (6 new). Regression guard added: doesNotMatch on  still open so a future refactor can't reintroduce the spec misuse.
+
+---

@@ -495,6 +495,112 @@ test('paths-check classifier: 0.0.W² allow-list + workflow-change signal (v0.6.
     '0.0.W² must require BOTH all-in-allowlist AND has-workflow-change to skip review');
 });
 
+// v0.6.26 / §5.5 Layer 6 — fallback render-from-inlines. PR #120 review
+// caught the un-tested code path. The L6 step scrapes inline findings via
+// gh api, counts them by emoji prefix, and synthesizes a structured
+// summary. These tests pin the load-bearing pieces of that flow.
+test('Layer 6 fallback: scrapes inline findings via gh api with claude[bot] + commit_id filter', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-py.yml.tmpl', 'workflow-ts.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    // Must hit the pulls/N/comments endpoint (inline findings live there;
+    // issues/N/comments is the summary thread — would miss everything).
+    assert.match(out, /pulls\/\$PR_NUMBER\/comments/,
+      `${tmpl}: L6 must scrape pulls/PR/comments (inline endpoint)`);
+    // Must filter by claude[bot] author (the inline-finding poster) AND
+    // the current HEAD_SHA (so prior-pass findings don't double-count).
+    assert.match(out, /select\(\.user\.login\s*==\s*\\?"claude\[bot\]\\?"\s*and\s*\.commit_id\s*==\s*\\?"\$HEAD_SHA\\?"\)/,
+      `${tmpl}: L6 must filter inline findings to claude[bot] + current HEAD_SHA`);
+  }
+});
+
+test('Layer 6 fallback: counts findings by emoji prefix (🔴 / 🟡 / 🟣)', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-py.yml.tmpl', 'workflow-ts.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(out, /CRITICAL=.*test\(\\?"🔴\\?"\)/,
+      `${tmpl}: L6 must count 🔴 critical findings`);
+    assert.match(out, /MINOR=.*test\(\\?"🟡\\?"\)/,
+      `${tmpl}: L6 must count 🟡 minor findings`);
+    assert.match(out, /PREEXISTING=.*test\(\\?"🟣\\?"\)/,
+      `${tmpl}: L6 must count 🟣 preexisting findings`);
+  }
+});
+
+test('Layer 6 fallback: synthetic summary uses correct counters (PR #120 review fix)', async () => {
+  // The "still open" counter is for prior unresolved threads — NEW
+  // findings from the current pass aren't "still open" in that sense.
+  // PR #120 review caught the original L6 misusing INLINE_COUNT as the
+  // still-open value. Pin the correct semantic: still-open is 0 in the
+  // L6 synthetic, because L6 only fires on the first pass (structured
+  // output empty means we never reached the resolve-prior-threads stage).
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-py.yml.tmpl', 'workflow-ts.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    // The L6 "This round" line uses the per-emoji counters for critical
+    // + minor, and 0 for both "resolved from prior" and "still open".
+    assert.match(out, /\$CRITICAL critical · \$MINOR minor · 0 resolved from prior · 0 still open/,
+      `${tmpl}: L6 synthetic "This round" line must use correct counters (PR #120 fix)`);
+    // Regression guard: never use INLINE_COUNT as the still-open value.
+    assert.doesNotMatch(out, /\$INLINE_COUNT still open/,
+      `${tmpl}: L6 must NOT use INLINE_COUNT for the still-open field (per-spec misuse caught in PR #120 review)`);
+  }
+});
+
+test('Layer 6 fallback: synthetic summary cites "Synthetic summary" + version marker so readers know', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-py.yml.tmpl', 'workflow-ts.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(out, /\*\*Synthetic summary\*\*/,
+      `${tmpl}: L6 must label its synthetic summary so readers know it's reconstructed`);
+    assert.match(out, /v0\.6\.26.*Layer 6 fallback/,
+      `${tmpl}: L6 must cite the v0.6.26 §5.5 Layer 6 marker for traceability`);
+  }
+});
+
+test('Layer 6 fallback: critical-findings status_header when CRITICAL > 0', async () => {
+  // Strict-mode gate greps the H2 line for "critical findings". L6 must
+  // suffix the H2 with " — critical findings" when CRITICAL > 0 so the
+  // gate fires correctly. Without this, a synthetic summary covering
+  // real critical inline findings would fall open advisory and skip the
+  // gate — a silent quality regression.
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-py.yml.tmpl', 'workflow-ts.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(out, /\[ "\$CRITICAL" -gt 0 \] && STATUS=" — critical findings"/,
+      `${tmpl}: L6 must set "— critical findings" suffix when CRITICAL > 0 so strict-mode gate fires`);
+  }
+});
+
+test('Layer 6 fallback: legacy bare-H2 path when no inline findings either', async () => {
+  // L6 falls through to the legacy bare-H2 advisory when INLINE_COUNT
+  // is 0 — the action errored before posting anything substantive, so
+  // there's nothing to synthesize. This preserves v0.6.22's behaviour
+  // for the "action exploded with no output" failure mode.
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-py.yml.tmpl', 'workflow-ts.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(out, /if \[ "\$INLINE_COUNT" -gt 0 \]/,
+      `${tmpl}: L6 must branch on INLINE_COUNT > 0`);
+    // Both branches must emit a comment (no silent exit).
+    const gateMatches = out.match(/gh pr comment "\$PR_NUMBER" --body/g) || [];
+    assert.ok(gateMatches.length >= 3,
+      `${tmpl}: L6 must emit a comment in both branches (synthetic + bare-H2) AND the structured-render step has its own — found ${gateMatches.length}`);
+  }
+});
+
 test('all 3 rendered workflow templates use --model ${{ needs.paths-check.outputs.model }} (v0.6.15+)', async () => {
   // v0.6.11 hard-coded --model claude-sonnet-4-6. v0.6.15 (0.0.R)
   // makes the model dynamic: paths-check emits `model` output, which
