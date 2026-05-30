@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (100 decisions)
+## 2026-05 (101 decisions)
 
-- **2026-05-29** — fix(v0.6.26): address PR #120 review — L6 still-open counter + add L6 test coverage *(feat/v0.6.26-smart-budget-phase-2)* — [decisions-branches/feat__v0.6.26-smart-budget-phase-2.md](decisions-branches/feat__v0.6.26-smart-budget-phase-2.md)
-- *... 98 more decisions ...*
+- **2026-05-29** — feat(v0.6.27): Smart Budget Phase 3 — Layer 3 mid-review self-check-in *(feat/v0.6.27-L3-mid-review-check-in)* — [decisions-branches/feat__v0.6.27-L3-mid-review-check-in.md](decisions-branches/feat__v0.6.27-L3-mid-review-check-in.md)
+- *... 99 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

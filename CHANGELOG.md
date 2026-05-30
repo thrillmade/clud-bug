@@ -4,6 +4,43 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.27] — 2026-05-30
+
+### Smart Budget Phase 3 — Layer 3 mid-review self-check-in (prompt-only)
+
+Adds a one-line `[budget]` heartbeat that the AI must emit every 5
+tool_uses:
+
+```
+[budget] files_reviewed=X/N, turns_used=Y/M, pace=ok|behind
+```
+
+When `pace = behind` (file-coverage rate trailing budget after
+reserving the last 5 turns for emit), the AI is directed to:
+
+1. Stop deep-dive analysis on the current file.
+2. Switch to one-sentence verdicts for every remaining file.
+3. Keep going through the whole diff — silent skipping is
+   non-negotiable.
+
+Two purposes: (a) forces internal pacing so the AI can't drift past
+budget unnoticed, (b) the heartbeat lands in the action's streaming
+output for post-hoc calibration of Layer 1's per-line cost
+coefficients.
+
+L5 auto-retry deferred to v0.6.28 because the workflow's
+job-dependency-graph restructuring is its own concern.
+
+### Composite pin
+
+`strict-mode-gate@v0.6.26` → `@v0.6.27` lock-step bump.
+
+### Migration
+
+`npx --yes clud-bug@0.6.27 update` re-renders the workflow. Purely
+additive prompt rule; no schema changes. Backward-compatible with
+v0.6.26 calibration markers.
+
 ## [0.6.26] — 2026-05-30
 
 ### Smart Budget Phase 2a — 0.0.W² widen skip allowlist + Layer 6 fallback render-from-inlines
