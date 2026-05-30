@@ -52,6 +52,7 @@ function parseArgs(argv) {
     else if (a === '--limit') args.limit = Number(argv[++i]);
     else if (a === '--json') args.json = true;
     else if (a === '--stdin') args.stdin = true;
+    else if (a === '--health') args.health = true;
     else args._.push(a);
   }
   return args;
@@ -79,6 +80,13 @@ Commands:
                         rate, 30-day rolling \$/LOC trend, per-repo/per-model
                         distributions, and outliers (> 2x org median).
                         Use --pr / --repo / --since / --limit / --json to filter.
+  usage --health        Deterministic skill-health dashboard (v0.6.28). Reads
+                        \`.claude/skills/.clud-bug.json\` usage block + renders
+                        archive-candidate / stale / new / healthy status per skill.
+                        Read-only — no automation acts on the output. Humans
+                        decide which skills to prune. Workflow integration ships
+                        in v0.6.29; today this command surfaces whatever data
+                        has been written manually or by future runs.
   eval                  Run the golden-set regression gate against the rendered review
                         prompt (must-contain / must-not-contain / byte-budget). Same as
                         \`node --test test/prompts.eval.test.js\` but works from any cwd.
@@ -807,6 +815,14 @@ async function runAudit(args) {
 // Default scope: 30 days, all repos with clud-bug-review.yml in the gh
 // user's auth scope. --repo / --pr / --since / --limit narrow.
 async function runUsage(args) {
+  // v0.6.28 — `clud-bug usage --health`: deterministic skill-health
+  // dashboard. Reads `.claude/skills/.clud-bug.json` usage block,
+  // applies thresholds, renders read-only table. No automation acts
+  // on the output. Per the pragmatic SkDD pivot (2026-05-30).
+  if (args.health) {
+    return runUsageHealth(args);
+  }
+
   const limit = args.limit ?? 50;
   const since = args.since ?? '30d';
 
@@ -861,6 +877,44 @@ async function runUsage(args) {
 
 // `gh repo list` won't filter by workflow file content, so we iterate
 // repos the user has access to and probe for clud-bug-review.yml. We
+// v0.6.28 — `clud-bug usage --health` implementation. Reads the local
+// .claude/skills/.clud-bug.json usage block, applies deterministic
+// thresholds, renders a read-only dashboard. No I/O beyond the JSON
+// read. Workflow integration that POPULATES the usage block ships in
+// v0.6.29; today this command is the consumer half of the contract.
+async function runUsageHealth(_args) {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { assessSkillHealth, formatHealthDashboard } = await import('../lib/skill-usage.js');
+
+  const jsonPath = path.resolve(process.cwd(), '.claude', 'skills', '.clud-bug.json');
+
+  let parsed;
+  try {
+    const raw = await fs.readFile(jsonPath, 'utf-8');
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      process.stderr.write(
+        `clud-bug usage --health: no .claude/skills/.clud-bug.json found in ${process.cwd()}.\n` +
+        `Run \`npx clud-bug init\` first to install the catalog state.\n`
+      );
+      process.exit(1);
+    }
+    process.stderr.write(`clud-bug usage --health: failed to parse .clud-bug.json: ${err.message}\n`);
+    process.exit(1);
+  }
+
+  const usage = parsed && parsed.usage ? parsed.usage : {};
+  const rows = assessSkillHealth(usage, new Date());
+  process.stdout.write(formatHealthDashboard(rows) + '\n');
+
+  // Exit code semantics: 0 (informational). The dashboard is read-only;
+  // archive-candidates being present is NOT a failure mode — humans
+  // decide. CI gates should NOT block on this.
+  ok(`skill health: ${rows.length} skill${rows.length === 1 ? '' : 's'} tracked`);
+}
+
 // limit to 100 to avoid pagination explosions.
 async function discoverConsumingRepos() {
   const list = await ghJson(['repo', 'list', '--limit', '100', '--json', 'nameWithOwner']);

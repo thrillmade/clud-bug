@@ -4,6 +4,63 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.28] — 2026-05-30
+
+### Added — Components 1+2 of the pragmatic SkDD pivot
+
+Strategic pivot (2026-05-30) away from speculative recursive-meta-skill
+direction toward **deterministic usage tracking + human-gated skill
+approval**. This release ships the data layer + CLI. Workflow
+integration (auto-population of usage data after every review) lands
+in v0.6.29.
+
+#### `lib/skill-usage.js` — pure data layer (Component 1)
+
+Three pure functions:
+- `computeSkillUsageDelta(reviewJson)` — extract per-skill `loads` +
+  `citations` from one review's structured-output JSON. Multiple
+  findings from the same skill = 1 citation (per-review counting).
+- `mergeSkillUsage(existing, delta, timestamp)` — accumulate deltas.
+  `last_cited` updates only on citation.
+- `assessSkillHealth(usage, now)` — apply deterministic thresholds:
+  - **archive-candidate**: `citations == 0 + loads >= 5`
+  - **stale**: last cited > 60 days ago
+  - **new**: `loads < 5` (still bedding in; don't judge)
+  - **healthy**: cited within 60 days
+- `formatHealthDashboard(rows)` — render the 3-column read-only table.
+
+21 tests in `test/skill-usage.test.js` covering every branch + boundary.
+
+#### `clud-bug usage --health` — read-only dashboard (Component 2)
+
+New flag on the existing `usage` command. Reads
+`.claude/skills/.clud-bug.json` usage block, applies thresholds,
+renders 3-column table (status / slug / loads / citations / last cited).
+
+**No automation acts on the output.** Humans decide which skills to
+prune. CI gates should NOT block on this.
+
+### Maintenance
+
+- Composite-action pin bumped: `strict-mode-gate@v0.6.27` → `@v0.6.28`
+  across `templates/workflow.yml.tmpl`, `workflow-py.yml.tmpl`,
+  `workflow-ts.yml.tmpl`, and `.github/actions/strict-mode-gate/action.yml`
+  (release-discipline test enforces this).
+
+### Upstream context
+
+- Pairs with logmind v0.6.0 (`logmind skill new/test` CLI — already
+  shipped) + agent-skills' new-skill issue template (in flight).
+- The hard non-recursion line: **one** meta-skill exists
+  (`skill-frontmatter-quality`). No autonomous skill generation;
+  no AI judging AI's skill work; no recursion beyond depth 1.
+
+### Coming in v0.6.29
+
+- Workflow post-step integration (auto-populate usage block after every review)
+- L5 auto-retry on cap-hit (demoted from v0.6.28 per the pivot)
+- L4 permission-to-continue
+
 ## [0.6.27] — 2026-05-30
 
 ### Smart Budget Phase 3 — Layer 3 mid-review self-check-in (prompt-only)
