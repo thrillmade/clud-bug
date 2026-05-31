@@ -1,4 +1,4 @@
-# clud-bug-template-version: v11
+# clud-bug-template-version: v12
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -53,17 +53,32 @@ jobs:
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          IS_WORKFLOW_ONLY=true
+          # v0.6.26 / 0.0.W² — see workflow.yml.tmpl for design notes.
+          ALL_IN_ALLOWLIST=true
+          HAS_WORKFLOW_CHANGE=false
           while IFS= read -r f; do
             case "$f" in
-              .github/workflows/clud-bug-*.yml) ;;
-              .github/actions/strict-mode-gate/*) ;;
-              *) IS_WORKFLOW_ONLY=false; break ;;
+              .github/workflows/clud-bug-*.yml) HAS_WORKFLOW_CHANGE=true ;;
+              .github/actions/strict-mode-gate/*) HAS_WORKFLOW_CHANGE=true ;;
+              AGENTS.md) ;;
+              .cursorrules|.clinerules|.windsurfrules|.continuerules) ;;
+              .github/copilot-instructions.md) ;;
+              .claude/skills/.clud-bug.json) ;;
+              .claude/skills/critical-issues-only/SKILL.md) ;;
+              .claude/skills/evidence-based-review/SKILL.md) ;;
+              .claude/skills/respect-existing-conventions/SKILL.md) ;;
+              docs/timeline.md|docs/file-structure.md|docs/decisions.md) ;;
+              docs/decisions-branches/*.md) ;;
+              *) ALL_IN_ALLOWLIST=false; break ;;
             esac
           done <<< "$CHANGED"
+          IS_WORKFLOW_ONLY=false
+          if [ "$ALL_IN_ALLOWLIST" = "true" ] && [ "$HAS_WORKFLOW_CHANGE" = "true" ]; then
+            IS_WORKFLOW_ONLY=true
+          fi
           echo "is_workflow_only=$IS_WORKFLOW_ONLY" >> "$GITHUB_OUTPUT"
           if [ "$IS_WORKFLOW_ONLY" = "true" ]; then
-            echo "::notice title=Clud Bug 🐛::Skipping LLM review — workflow-only PR."
+            echo "::notice title=Clud Bug 🐛::Skipping LLM review — clud-bug update output."
             echo "model=$MODEL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -375,6 +390,36 @@ jobs:
                 every file's verdict so a maintainer can verify nothing was
                 skipped.
 
+            Mid-review self-check-in (v0.6.27 / §5.5 Layer 3):
+            After every 5 tool_uses, write a single-line budget heartbeat as a
+            free-text "thinking" message (not a tool call — these don't cost a
+            turn) of the form:
+
+              [budget] files_reviewed=X/N, turns_used=Y/M, pace=ok|behind
+
+            Where:
+              - X / N is the count of files you've meaningfully looked at so far
+                over the total in this PR's diff.
+              - Y / M is your current turn count over max_turns.
+              - pace = "ok" when X / N >= Y / (M - 5). The denominator subtracts the
+                5-turn emit reservation: over the (M - 5) turns available for file
+                review, your file-coverage rate must match where you actually are
+                in the budget. (Don't subtract from Y — that would be saying "I've
+                used Y minus 5 turns" which double-counts the reservation.)
+                pace = "behind" otherwise.
+
+            When pace = "behind", immediately pivot strategy:
+              1. Stop deep-dive analysis on the current file.
+              2. Switch to one-sentence verdicts for every remaining file.
+              3. Keep going through the whole diff — silent skipping is
+                 non-negotiable. Cover everything, even if some files only get
+                 "no issues found in this file" as their verdict.
+
+            The heartbeat serves two purposes: (a) forces internal pacing — you
+            can't drift past budget without noticing; (b) lands in the action's
+            streaming output for post-hoc calibration of the per-line cost
+            coefficients used by paths-check's Layer 1 estimator.
+
             Incremental-diff handshake (v0.6.10+) — emit the SHA marker:
             At the very end of the summary (after the Skills-referenced footer,
             on its own line), append:
@@ -589,34 +634,93 @@ jobs:
           THREADS_COUNT: ${{ needs.paths-check.outputs.threads_count }}
         run: |
           set -euo pipefail
-          BODY=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.6.25 render --stdin)
+          BODY=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.6.29 render --stdin)
           CALIBRATION="<!-- clud-bug-calibration: turns_estimated=$TURNS_ESTIMATED, max_turns=$MAX_TURNS, files=$FILES_COUNT, lines_added=$LINES_ADDED, lines_deleted=$LINES_DELETED, threads=$THREADS_COUNT -->"
           gh pr comment "$PR_NUMBER" --body "$BODY
 
           $CALIBRATION"
 
-      # Fallback when structured_output is empty (max-retries hit).
+      # v0.6.29 / Component 4 — see workflow.yml.tmpl for design notes.
+      - name: Update skill-usage tracking
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        env:
+          STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          mkdir -p .claude/skills
+          if [ ! -f .claude/skills/.clud-bug.json ]; then
+            echo '{"version": 1}' > .claude/skills/.clud-bug.json
+          fi
+          printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.6.29 update-skill-usage --stdin
+          echo "::notice title=skill-usage::recorded review delta to ephemeral .clud-bug.json (v0.6.30 will add cross-review aggregation)"
+
+      - name: Upload skill-usage artifact
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: clud-bug-skill-usage-pr-${{ github.event.pull_request.number }}
+          path: .claude/skills/.clud-bug.json
+          retention-days: 90
+
+      # v0.6.26 / §5.5 Layer 6 fallback render-from-inlines — see workflow.yml.tmpl for design notes.
       - name: Fallback summary (structured_output empty)
         if: success() && steps.clud-bug-review.outputs.structured_output == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TURNS_ESTIMATED: ${{ needs.paths-check.outputs.turns_estimated }}
+          MAX_TURNS: ${{ needs.paths-check.outputs.max_turns }}
+          FILES_COUNT: ${{ needs.paths-check.outputs.files_count }}
+          LINES_ADDED: ${{ needs.paths-check.outputs.lines_added }}
+          LINES_DELETED: ${{ needs.paths-check.outputs.lines_deleted }}
+          THREADS_COUNT: ${{ needs.paths-check.outputs.threads_count }}
         run: |
           set -euo pipefail
-          gh pr comment "$PR_NUMBER" --body "## 🐛 Clud Bug review
+          INLINES=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" \
+            --jq "[.[] | select(.user.login == \"claude[bot]\" and .commit_id == \"$HEAD_SHA\")]")
+          INLINE_COUNT=$(echo "$INLINES" | jq 'length')
+          CRITICAL=$(echo "$INLINES" | jq '[.[] | select(.body | test("🔴"))] | length')
+          MINOR=$(echo "$INLINES" | jq '[.[] | select(.body | test("🟡"))] | length')
+          PREEXISTING=$(echo "$INLINES" | jq '[.[] | select(.body | test("🟣"))] | length')
+          CALIBRATION="<!-- clud-bug-calibration: turns_estimated=$TURNS_ESTIMATED, max_turns=$MAX_TURNS, files=$FILES_COUNT, lines_added=$LINES_ADDED, lines_deleted=$LINES_DELETED, threads=$THREADS_COUNT, structured_output=empty, inline_findings=$INLINE_COUNT -->"
+          if [ "$INLINE_COUNT" -gt 0 ]; then
+            STATUS=""
+            [ "$CRITICAL" -gt 0 ] && STATUS=" — critical findings"
+            gh pr comment "$PR_NUMBER" --body "## 🐛 Clud Bug review${STATUS}
+
+          **This round:** $CRITICAL critical · $MINOR minor · 0 resolved from prior · 0 still open
+
+          Found: $CRITICAL 🔴 / $MINOR 🟡 / $PREEXISTING 🟣
+
+          ⚠️ **Synthetic summary** (v0.6.26 §5.5 Layer 6 fallback). Inline findings above ARE the substantive review.
+
+          <!-- last-reviewed-sha: $HEAD_SHA -->
+
+          $CALIBRATION"
+          else
+            gh pr comment "$PR_NUMBER" --body "## 🐛 Clud Bug review
 
           **This round:** 0 critical · 0 minor · 0 resolved from prior · 0 still open
 
           Found: 0 🔴 / 0 🟡 / 0 🟣
 
-          ⚠️ Structured output (\`--json-schema\`) returned empty — likely max-retries hit on schema validation. Investigate the action logs.
+          ⚠️ Structured output (\`--json-schema\`) returned empty AND no inline findings posted. Investigate run logs.
 
-          Skills referenced: [none]"
+          Skills referenced: [none]
+
+          <!-- last-reviewed-sha: $HEAD_SHA -->
+
+          $CALIBRATION"
+          fi
 
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.25
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.29
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].

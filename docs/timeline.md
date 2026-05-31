@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (105 decisions)
+## 2026-05 (106 decisions)
 
-- **2026-05-31** — clud-bug v0.6.29: workflow post-step + update-skill-usage CLI (Component 4) *(feat/v0.6.29-skill-usage-workflow-integration)* — [decisions-branches/feat__v0.6.29-skill-usage-workflow-integration.md](decisions-branches/feat__v0.6.29-skill-usage-workflow-integration.md)
-- *... 103 more decisions ...*
+- **2026-05-31** — chore: self-propagate v0.6.29 (skill-usage workflow integration eats its own dogfood) *(chore/self-propagate-v0.6.29)* — [decisions-branches/chore__self-propagate-v0.6.29.md](decisions-branches/chore__self-propagate-v0.6.29.md)
+- *... 104 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)
