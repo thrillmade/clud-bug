@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (104 decisions)
+## 2026-05 (105 decisions)
 
-- **2026-05-30** — site: align SDD framing with Zak Elfassi's SkDD prior art *(site/smart-budget-and-drop-in-propagation)* — [decisions-branches/site__smart-budget-and-drop-in-propagation.md](decisions-branches/site__smart-budget-and-drop-in-propagation.md)
-- *... 102 more decisions ...*
+- **2026-05-31** — clud-bug v0.6.29: workflow post-step + update-skill-usage CLI (Component 4) *(feat/v0.6.29-skill-usage-workflow-integration)* — [decisions-branches/feat__v0.6.29-skill-usage-workflow-integration.md](decisions-branches/feat__v0.6.29-skill-usage-workflow-integration.md)
+- *... 103 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)

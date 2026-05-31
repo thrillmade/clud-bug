@@ -4,6 +4,56 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.29] — 2026-05-31
+
+### Added — Component 4 of the pragmatic SkDD pivot (workflow integration)
+
+Closes the loop on v0.6.28's data layer + CLI. The `update-skill-usage`
+subcommand + workflow post-step now auto-populate the skill-usage
+block from every review's structured output, so `clud-bug usage
+--health` has live data to surface instead of waiting on consumers
+to run anything manually.
+
+#### `clud-bug update-skill-usage --stdin` (new subcommand)
+
+Reads structured-output JSON from stdin, computes the per-skill
+delta via `computeSkillUsageDelta`, merges into
+`.claude/skills/.clud-bug.json` via `mergeSkillUsage`, and writes
+atomically (temp file + rename). Returns exit 0 on no-op cases
+(empty stdin, no skills in payload, missing .clud-bug.json) so the
+workflow post-step never fails the review on usage-tracking issues.
+Exits 2 only on hard input errors (`--stdin` missing, malformed JSON).
+
+#### Workflow post-step (all 3 templates)
+
+`workflow.yml.tmpl`, `workflow-ts.yml.tmpl`, `workflow-py.yml.tmpl`
+gain two new post-steps after the existing render step:
+
+1. **Update skill-usage tracking** — pipes `STRUCTURED` through
+   `npx clud-bug@<pin> update-skill-usage --stdin`. Bootstraps an
+   empty `{"version": 1}` shell if the workspace lacks one (so a
+   fresh consumer repo doesn't no-op forever). `continue-on-error:
+   true` — usage-tracking flakes never fail a review.
+2. **Upload skill-usage artifact** — uploads the workspace
+   `.clud-bug.json` as a 90-day-retained workflow artifact named
+   `clud-bug-skill-usage-pr-<N>`. v0.6.30 will add cross-review
+   aggregation logic so `clud-bug usage --health` reads the artifact
+   stream and accumulates real org-level data over time.
+
+**Why artifact instead of committing back to main**: committing
+would require `contents: write` permission expansion (v0.6.23
+regression risk on private-repo triggers) + race-handling logic.
+Artifacts are GitHub-native persistence with zero permission
+expansion + zero commit noise.
+
+#### Tests
+
+`test/update-skill-usage.test.js` — 7 CLI-level tests covering
+required `--stdin` flag, empty stdin, malformed JSON, payload with
+no skills, first-write, idempotent accumulation, missing-file
+skip-with-warning. All green alongside existing 333 tests (340
+total).
+
 ## [0.6.28] — 2026-05-30
 
 ### Added — Components 1+2 of the pragmatic SkDD pivot

@@ -283,6 +283,30 @@ jobs:
 
           $CALIBRATION"
 
+      # v0.6.29 / Component 4 — see workflow.yml.tmpl for design notes.
+      - name: Update skill-usage tracking
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        env:
+          STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          mkdir -p .claude/skills
+          if [ ! -f .claude/skills/.clud-bug.json ]; then
+            echo '{"version": 1}' > .claude/skills/.clud-bug.json
+          fi
+          printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@{{CLUD_BUG_VERSION}} update-skill-usage --stdin
+          echo "::notice title=skill-usage::recorded review delta to ephemeral .clud-bug.json (v0.6.30 will add cross-review aggregation)"
+
+      - name: Upload skill-usage artifact
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: clud-bug-skill-usage-pr-${{ github.event.pull_request.number }}
+          path: .claude/skills/.clud-bug.json
+          retention-days: 90
+
       # v0.6.26 / §5.5 Layer 6 fallback render-from-inlines — see workflow.yml.tmpl for design notes.
       - name: Fallback summary (structured_output empty)
         if: success() && steps.clud-bug-review.outputs.structured_output == ''
@@ -339,7 +363,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.28
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.29
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].

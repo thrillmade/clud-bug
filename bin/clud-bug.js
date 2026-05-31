@@ -84,12 +84,18 @@ Commands:
                         \`.claude/skills/.clud-bug.json\` usage block + renders
                         archive-candidate / stale / new / healthy status per skill.
                         Read-only — no automation acts on the output. Humans
-                        decide which skills to prune. Workflow integration ships
-                        in v0.6.29; today this command surfaces whatever data
-                        has been written manually or by future runs.
+                        decide which skills to prune. v0.6.29 wires the workflow
+                        post-step that auto-writes per-review deltas; v0.6.30
+                        will aggregate across runs into the dashboard read path.
   eval                  Run the golden-set regression gate against the rendered review
                         prompt (must-contain / must-not-contain / byte-budget). Same as
                         \`node --test test/prompts.eval.test.js\` but works from any cwd.
+  update-skill-usage    Update the .claude/skills/.clud-bug.json usage block from
+                        a structured-output JSON payload (the action's
+                        \`outputs.structured_output\`). Called as a workflow
+                        post-step alongside \`render\` (v0.6.29 / Component 4).
+                        Pipe the JSON to stdin. Idempotent + atomic write.
+                        Silent no-op on empty stdin (parity with \`render\`).
   render --stdin        Render a structured-output JSON payload (the action's
                         \`outputs.structured_output\`, piped via stdin) to the
                         GitHub-markdown summary comment shape. Invoked by the
@@ -147,6 +153,7 @@ async function main() {
     case 'usage':   return runUsage(args);
     case 'eval':    return runEval();
     case 'render':  return runRender(args);
+    case 'update-skill-usage': return runUpdateSkillUsage(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
@@ -192,6 +199,104 @@ async function runRender(args) {
     process.exit(2);
   }
 }
+
+// v0.6.29 — Component 4. Pipe the action's structured_output through
+// the skill-usage data layer (v0.6.28) + write the merged result back
+// to .claude/skills/.clud-bug.json atomically.
+//
+// Workflow integration (post-step in workflow.yml.tmpl):
+//
+//     echo "${{ steps.review.outputs.structured_output }}" \
+//       | npx clud-bug@latest update-skill-usage --stdin
+//
+// Runs AFTER the render post-step. Silent no-op on empty stdin
+// (same contract as `render` — preserves the workflow's existing
+// "skip both if empty" branch). Idempotent: running on the same JSON
+// twice produces the same result.
+async function runUpdateSkillUsage(args) {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const {
+    computeSkillUsageDelta,
+    mergeSkillUsage,
+  } = await import('../lib/skill-usage.js');
+
+  if (!args.stdin) {
+    process.stderr.write('clud-bug update-skill-usage: --stdin is required.\n');
+    process.exit(2);
+  }
+
+  let raw = '';
+  for await (const chunk of process.stdin) raw += chunk;
+  raw = raw.trim();
+  if (!raw) {
+    // Empty structured_output → render is also skipped → nothing to
+    // update. Match the render contract: exit 0 with a stderr note.
+    process.stderr.write('clud-bug update-skill-usage: stdin empty — no usage update.\n');
+    return;
+  }
+
+  let reviewJson;
+  try {
+    reviewJson = JSON.parse(raw);
+  } catch (e) {
+    process.stderr.write(`clud-bug update-skill-usage: invalid JSON: ${e.message}\n`);
+    process.exit(2);
+  }
+  if (!reviewJson || typeof reviewJson !== 'object') {
+    process.stderr.write('clud-bug update-skill-usage: payload must be a JSON object.\n');
+    process.exit(2);
+  }
+
+  // Compute per-review delta. Empty delta is fine — just means no
+  // skills loaded or cited (workflow-only PRs, e.g.).
+  const delta = computeSkillUsageDelta(reviewJson);
+  if (Object.keys(delta).length === 0) {
+    process.stderr.write('clud-bug update-skill-usage: no skills in payload — nothing to record.\n');
+    return;
+  }
+
+  // Read existing .clud-bug.json. The path is canonical:
+  // .claude/skills/.clud-bug.json relative to cwd (the workflow runs
+  // from the repo root).
+  const jsonPath = path.resolve(process.cwd(), '.claude', 'skills', '.clud-bug.json');
+  let parsed;
+  try {
+    const existingRaw = await fs.readFile(jsonPath, 'utf-8');
+    parsed = JSON.parse(existingRaw);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      process.stderr.write(
+        `clud-bug update-skill-usage: no .clud-bug.json at ${jsonPath} — skipping. ` +
+        `Run \`npx clud-bug init\` first.\n`
+      );
+      return;
+    }
+    process.stderr.write(`clud-bug update-skill-usage: parse failed: ${err.message}\n`);
+    process.exit(2);
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    process.stderr.write('clud-bug update-skill-usage: .clud-bug.json malformed.\n');
+    process.exit(2);
+  }
+
+  const existingUsage = parsed.usage || {};
+  const timestamp = new Date().toISOString();
+  const mergedUsage = mergeSkillUsage(existingUsage, delta, timestamp);
+  parsed.usage = mergedUsage;
+
+  // Write back ATOMICALLY: temp file + rename. Guards against a
+  // crashed write leaving the JSON half-written + unparseable on next
+  // read (which would brick the entire skill catalog).
+  const tmpPath = jsonPath + '.tmp';
+  const serialized = JSON.stringify(parsed, null, 2) + '\n';
+  await fs.writeFile(tmpPath, serialized, 'utf-8');
+  await fs.rename(tmpPath, jsonPath);
+
+  const skillCount = Object.keys(delta).length;
+  ok(`update-skill-usage: merged ${skillCount} skill${skillCount === 1 ? '' : 's'} from review`);
+}
+
 
 // 0.0.E (v0.6.17): thin wrapper around the golden-set test file. Devs
 // who follow the README invoke `clud-bug eval` — this routes to the
