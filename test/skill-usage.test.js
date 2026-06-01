@@ -214,7 +214,9 @@ test('assessSkillHealth: empty input returns []', () => {
 test('formatHealthDashboard: empty rows shows structural placeholder', () => {
   const out = formatHealthDashboard([]);
   assert.match(out, /no usage data yet/i);
-  assert.match(out, /v0\.6\.29/, 'mentions when workflow integration ships');
+  // v0.6.32: placeholder no longer cites a specific version (v0.6.29-30
+  // were stale post-ship). Now points the user at what to do next.
+  assert.match(out, /substantive PR/i, 'guides reader on when artifacts arrive');
 });
 
 test('formatHealthDashboard: non-empty includes header + threshold legend', () => {
