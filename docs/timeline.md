@@ -13,8 +13,8 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-05 (106 decisions)
+## 2026-05 (108 decisions)
 
-- **2026-05-31** — chore: self-propagate v0.6.29 (skill-usage workflow integration eats its own dogfood) *(chore/self-propagate-v0.6.29)* — [decisions-branches/chore__self-propagate-v0.6.29.md](decisions-branches/chore__self-propagate-v0.6.29.md)
-- *... 104 more decisions ...*
+- **2026-05-31** — v0.6.30 fix: drop --paginate, use ?per_page=100 (clud-bug-review PR #127) *(feat/v0.6.30-cross-review-aggregation)* — [decisions-branches/feat__v0.6.30-cross-review-aggregation.md](decisions-branches/feat__v0.6.30-cross-review-aggregation.md)
+- *... 106 more decisions ...*
 - **2026-05-15** — Initialize logmind decision tracking *(feat/logmind-redo)* — [decisions-branches/feat__logmind-redo.md](decisions-branches/feat__logmind-redo.md)
