@@ -4,6 +4,47 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.33] — 2026-06-01
+
+### Added — `clud-bug init --with-skdd` (unified install, Node entry)
+
+Symmetric mirror of logmind v0.6.8's `--with-skdd` flag. Node-first
+users who run `npx clud-bug init` can pull in logmind in the same
+breath:
+
+```bash
+npx clud-bug init --with-skdd   # clud-bug + logmind, one command
+```
+
+Same one-command bootstrap as the Python entry point, just from the
+other ecosystem. Whichever side of the toolchain a user starts on,
+the unified install brings them to the same end state.
+
+#### Behavior
+
+- Default (no flag): `clud-bug init` unchanged.
+- With `--with-skdd` + pip available: subprocesses to
+  `pip install logmind && logmind init`. Tries `pip`, `pip3`, `python -m pip`,
+  `python3 -m pip` in order — first one that responds to `--version` wins.
+- With `--with-skdd` + no pip: clear warning with recovery command,
+  exit code unchanged (clud-bug init still succeeds).
+- Subprocess failure: warning surfaced; clud-bug side unaffected.
+
+#### Anti-loop guarantee
+
+Invokes `logmind init` (NOT `logmind init --with-skdd`). Mirror of
+v0.6.8's same guarantee. Each opt-in flag only goes one level —
+mutual recursion impossible.
+
+#### Implementation
+
+- `bin/clud-bug.js`: new `--with-skdd` opt-in flag (parseArgs entry +
+  switch case + handler) + `installLogmindViaPip()` + `findPipCommand()`
+  helpers. Pip command resolution mirrors the Node side's `which npx`
+  check with broader fallback chain since Python install names vary.
+- `test/init-with-skdd.test.js`: new tests covering flag parsing,
+  help-text inclusion, and graceful no-Python warning path.
+
 ## [0.6.32] — 2026-06-01
 
 ### Added — release-discipline guard locks in v0.6.31's upload fix

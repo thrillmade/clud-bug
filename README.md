@@ -17,6 +17,9 @@ npx clud-bug init
 git add .claude .github/workflows/clud-bug-review.yml
 git commit -m "Add clud-bug PR review"
 git push
+
+# OR — install the full SkDD toolchain (clud-bug + logmind) in one go:
+npx clud-bug init --with-skdd   # subprocesses to `pip install logmind && logmind init`
 ```
 
 Then in your repo on GitHub:
