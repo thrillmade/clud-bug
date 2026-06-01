@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-06
 
+- **2026-06-01** — clud-bug v0.6.31: hotfix — upload-artifact excludes hidden files (v0.6.29-30 silent breakage) *(fix/v0.6.31-upload-include-hidden)* — [decisions-branches/fix__v0.6.31-upload-include-hidden.md](decisions-branches/fix__v0.6.31-upload-include-hidden.md)
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)

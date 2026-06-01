@@ -4,6 +4,48 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.31] — 2026-06-01
+
+### Fixed — workflow upload step silently dropped every artifact
+
+Critical hotfix. v0.6.29's `Upload skill-usage artifact` workflow
+step has been silently dropping **every** artifact across the entire
+org since 2026-05-31. Root cause: `actions/upload-artifact@v4`
+excludes hidden files by default, and both `.claude/` and
+`.clud-bug.json` are dot-prefixed.
+
+The step reported `success` (because no files were found is a
+warning, not an error). The CLI's `update-skill-usage` ran
+successfully, wrote a usage block to `.claude/skills/.clud-bug.json`,
+and the upload step then **uploaded nothing**.
+
+Verified by inspecting v0.6.30 propagation cycle artifacts via
+`gh api repos/THRILLMADE/$repo/actions/artifacts` — every workflow
+that should have produced a `clud-bug-skill-usage-pr-N` artifact
+returned an empty list. Run logs confirm:
+
+> `##[warning]No files were found with the provided path:
+> .claude/skills/.clud-bug.json. No artifacts will be uploaded.`
+
+### Fix
+
+Add `include-hidden-files: true` to the upload step in all three
+workflow templates (`workflow.yml.tmpl`, `workflow-ts.yml.tmpl`,
+`workflow-py.yml.tmpl`). The flag opts the artifact upload into
+including dot-prefixed paths.
+
+Composite-action pin bumped 0.6.30 → 0.6.31 + `package.json`
+version bump + CHANGELOG. Propagation cycle to follow so the
+hotfix reaches every consumer's workflow.
+
+### Lesson
+
+`continue-on-error: true` + a step that warns-but-succeeds is a
+silent-failure pattern. The next dashboard run surfaced the issue
+when artifacts didn't materialize. v0.6.30's aggregation dashboard
+made the problem observable — without it the breakage would have
+gone unnoticed indefinitely.
+
 ## [0.6.30] — 2026-05-31
 
 ### Added — cross-review aggregation closes the SkDD usage loop
