@@ -13,6 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-06
+
+- **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
+
 ## 2026-05 (108 decisions)
 
 - **2026-05-31** — v0.6.30 fix: drop --paginate, use ?per_page=100 (clud-bug-review PR #127) *(feat/v0.6.30-cross-review-aggregation)* — [decisions-branches/feat__v0.6.30-cross-review-aggregation.md](decisions-branches/feat__v0.6.30-cross-review-aggregation.md)
