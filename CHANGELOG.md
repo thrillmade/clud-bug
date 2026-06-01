@@ -4,6 +4,37 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.32] — 2026-06-01
+
+### Added — release-discipline guard locks in v0.6.31's upload fix
+
+The v0.6.31 hotfix added `include-hidden-files: true` to the upload
+step in all 3 workflow templates. That flag is a single line easy
+to lose during a future template edit — and if it's lost, we go back
+to silent artifact-drop with no error surface (per the v0.6.31
+incident report).
+
+This release adds a release-discipline test that asserts the flag is
+present in every template. Any future edit that removes it fails CI
+with a message pointing back to v0.6.31's CHANGELOG entry. The fix
+is now self-policing.
+
+### Changed — dashboard placeholder text post-v0.6.30
+
+`formatHealthDashboard` previously read "v0.6.30 will add cross-review
+aggregation" when no data was available. v0.6.30 has shipped + v0.6.31
+fixed the upload — text is stale. New message tells the user
+artifacts accumulate from the next substantive PR review (workflow-only
+PRs auto-skip via 0.0.W²).
+
+### Tests
+
+`test/release-discipline.test.js` gains one new assertion
+(release discipline: Upload skill-usage artifact step must set
+`include-hidden-files: true`). Smoke-tested by temporarily removing
+the flag — test fails with the citation message. No other behavior
+changes.
+
 ## [0.6.31] — 2026-06-01
 
 ### Fixed — workflow upload step silently dropped every artifact
