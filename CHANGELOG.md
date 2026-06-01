@@ -4,6 +4,56 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.30] — 2026-05-31
+
+### Added — cross-review aggregation closes the SkDD usage loop
+
+`clud-bug usage --health` now reads accumulated org-wide data from the
+per-PR artifacts uploaded by v0.6.29's workflow post-step. The
+deterministic dashboard goes from "placeholder waiting for data" to
+"live signal for which skills earn their place."
+
+#### `lib/skill-usage.js` additions
+
+- `fetchUsageArtifacts({owner, repo, since?, ghRunner?})` — lists
+  `clud-bug-skill-usage-pr-*` artifacts via `gh api repos/owner/repo/actions/artifacts`,
+  downloads each to a tmp dir via `gh run download`, parses the
+  `.clud-bug.json` payload, returns `{prNumber, artifactId, usage, fetchedAt}`
+  records. Filters expired artifacts + non-matching names. Tmp dirs
+  cleaned up after every artifact (no disk leak).
+- `aggregateUsageStream(artifacts)` — left-fold via `mergeSkillUsage`,
+  ordered by `fetchedAt` ascending so `last_cited` reflects the most
+  recent citing artifact. Pure function; commutative for `loads` +
+  `citations` counts, so out-of-order input produces identical output.
+- `DEFAULT_GH_RUNNER` — exported runner contract (`{json, run}`) that
+  tests can inject a mock against. Spawns local `gh` by default.
+
+#### `bin/clud-bug.js` wiring
+
+- `runUsageHealth` now picks read source in this priority:
+  1. `--no-artifacts` flag → force local `.clud-bug.json` (v0.6.28 behavior).
+  2. `--repo owner/name` flag → use artifacts from that repo.
+  3. Otherwise infer `owner/name` from `gh repo view` of the current dir.
+  4. Fall back to local file if artifact path returns nothing.
+- New `--no-artifacts` arg; existing `--repo` reused.
+- The `ok` line now reports the source so users see whether the
+  dashboard is showing local or org-wide data.
+
+#### Tests
+
+`test/skill-usage-aggregation.test.js` (new, 16 tests):
+- `aggregateUsageStream` — empty / single / multi-artifact / out-of-order /
+  partial-skill-overlap / `last_cited` timestamp semantics.
+- `fetchUsageArtifacts` — required-args / empty-list / null-runner /
+  malformed-name skip / valid-record / failed-download skip / since-filter /
+  malformed-json skip / missing-usage-field default-empty.
+- `ghRunner` is injected; no `gh` binary or `GH_TOKEN` required.
+
+#### Version bumps
+
+`package.json` 0.6.29 → 0.6.30 + composite-action pin in 3 templates +
+strict-mode-gate action header. Release-discipline test enforces.
+
 ## [0.6.29] — 2026-05-31
 
 ### Added — Component 4 of the pragmatic SkDD pivot (workflow integration)

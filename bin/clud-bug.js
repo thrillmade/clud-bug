@@ -33,6 +33,10 @@ function parseArgs(argv) {
     repo: null, pr: null, limit: null, json: false,
     // 0.0.O (v0.6.22): `clud-bug render` reads its payload from stdin.
     stdin: false,
+    // v0.6.30: cross-review aggregation read source for `usage --health`.
+    // Defaults to true (artifact mode); `--no-artifacts` forces local
+    // .clud-bug.json read (matches v0.6.28 behavior).
+    artifacts: true,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -53,6 +57,7 @@ function parseArgs(argv) {
     else if (a === '--json') args.json = true;
     else if (a === '--stdin') args.stdin = true;
     else if (a === '--health') args.health = true;
+    else if (a === '--no-artifacts') args.artifacts = false;
     else args._.push(a);
   }
   return args;
@@ -80,13 +85,18 @@ Commands:
                         rate, 30-day rolling \$/LOC trend, per-repo/per-model
                         distributions, and outliers (> 2x org median).
                         Use --pr / --repo / --since / --limit / --json to filter.
-  usage --health        Deterministic skill-health dashboard (v0.6.28). Reads
-                        \`.claude/skills/.clud-bug.json\` usage block + renders
-                        archive-candidate / stale / new / healthy status per skill.
-                        Read-only — no automation acts on the output. Humans
-                        decide which skills to prune. v0.6.29 wires the workflow
-                        post-step that auto-writes per-review deltas; v0.6.30
-                        will aggregate across runs into the dashboard read path.
+  usage --health        Deterministic skill-health dashboard. Renders archive-
+                        candidate / stale / new / healthy status per skill, applying
+                        the v0.6.28 thresholds (citations==0 + loads>=5 → archive
+                        candidate; last cited >60d → stale; etc.). Read-only —
+                        humans decide what to prune.
+                        Read source (v0.6.30): by default, walks
+                        \`clud-bug-skill-usage-pr-*\` workflow artifacts uploaded
+                        by every clud-bug-review run and accumulates them into
+                        one org-level snapshot. Pass \`--repo owner/name\` to
+                        target a specific repo; otherwise infers from the local
+                        git remote. \`--no-artifacts\` falls back to reading the
+                        local \`.claude/skills/.clud-bug.json\` (v0.6.28 behavior).
   eval                  Run the golden-set regression gate against the rendered review
                         prompt (must-contain / must-not-contain / byte-budget). Same as
                         \`node --test test/prompts.eval.test.js\` but works from any cwd.
@@ -985,39 +995,119 @@ async function runUsage(args) {
 // v0.6.28 — `clud-bug usage --health` implementation. Reads the local
 // .claude/skills/.clud-bug.json usage block, applies deterministic
 // thresholds, renders a read-only dashboard. No I/O beyond the JSON
-// read. Workflow integration that POPULATES the usage block ships in
-// v0.6.29; today this command is the consumer half of the contract.
-async function runUsageHealth(_args) {
-  const fs = await import('node:fs/promises');
-  const path = await import('node:path');
+// read.
+//
+// v0.6.30 — read accumulated usage from workflow artifacts (uploaded
+// by v0.6.29's post-step). Defaults to artifact mode when --repo is
+// passed OR an `owner/name` can be inferred from `git remote`. Falls
+// back to the local-file path otherwise. The `--no-artifacts` flag
+// forces the v0.6.28 local-only behavior (handy for tests + offline).
+async function runUsageHealth(args) {
   const { assessSkillHealth, formatHealthDashboard } = await import('../lib/skill-usage.js');
 
-  const jsonPath = path.resolve(process.cwd(), '.claude', 'skills', '.clud-bug.json');
-
-  let parsed;
-  try {
-    const raw = await fs.readFile(jsonPath, 'utf-8');
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      process.stderr.write(
-        `clud-bug usage --health: no .claude/skills/.clud-bug.json found in ${process.cwd()}.\n` +
-        `Run \`npx clud-bug init\` first to install the catalog state.\n`
-      );
-      process.exit(1);
-    }
-    process.stderr.write(`clud-bug usage --health: failed to parse .clud-bug.json: ${err.message}\n`);
-    process.exit(1);
+  // Decide read source. Priority: explicit --no-artifacts → local;
+  // explicit --repo OR inferred owner/repo → artifacts; else local.
+  const wantArtifacts = args.artifacts !== false;
+  let ownerRepo = null;
+  if (wantArtifacts) {
+    ownerRepo = args.repo || await inferOwnerRepoFromGit();
   }
 
-  const usage = parsed && parsed.usage ? parsed.usage : {};
+  let usage;
+  let source;
+  if (wantArtifacts && ownerRepo) {
+    const result = await loadUsageFromArtifacts(ownerRepo, args);
+    if (result) {
+      usage = result.usage;
+      source = `${result.artifactCount} artifact${result.artifactCount === 1 ? '' : 's'} from ${ownerRepo}`;
+    }
+  }
+
+  // Fallback to local .clud-bug.json (v0.6.28 behavior).
+  if (usage == null) {
+    const localResult = await loadUsageFromLocalFile();
+    if (localResult == null) {
+      // Both paths failed. The local helper has already written its
+      // own stderr explanation; we just exit.
+      process.exit(1);
+    }
+    usage = localResult;
+    source = `local .clud-bug.json`;
+  }
+
   const rows = assessSkillHealth(usage, new Date());
   process.stdout.write(formatHealthDashboard(rows) + '\n');
 
   // Exit code semantics: 0 (informational). The dashboard is read-only;
   // archive-candidates being present is NOT a failure mode — humans
   // decide. CI gates should NOT block on this.
-  ok(`skill health: ${rows.length} skill${rows.length === 1 ? '' : 's'} tracked`);
+  ok(`skill health: ${rows.length} skill${rows.length === 1 ? '' : 's'} tracked (source: ${source})`);
+}
+
+// Helpers split out from runUsageHealth so the two read paths are
+// independently testable + composable in future commands.
+
+async function loadUsageFromArtifacts(ownerRepo, args) {
+  const { fetchUsageArtifacts, aggregateUsageStream } = await import('../lib/skill-usage.js');
+  const [owner, repo] = ownerRepo.split('/');
+  if (!owner || !repo) {
+    process.stderr.write(`clud-bug usage --health: --repo must be in owner/name form, got "${ownerRepo}".\n`);
+    return null;
+  }
+  const since = parseSinceArg(args.since);
+  let artifacts;
+  try {
+    artifacts = await fetchUsageArtifacts({ owner, repo, since });
+  } catch (err) {
+    process.stderr.write(`::notice::clud-bug usage --health: artifact fetch failed (${err.message}) — falling back to local .clud-bug.json\n`);
+    return null;
+  }
+  if (artifacts.length === 0) {
+    process.stderr.write(`::notice::clud-bug usage --health: no skill-usage artifacts found in ${ownerRepo} — falling back to local .clud-bug.json\n`);
+    return null;
+  }
+  return {
+    usage: aggregateUsageStream(artifacts),
+    artifactCount: artifacts.length,
+  };
+}
+
+async function loadUsageFromLocalFile() {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const jsonPath = path.resolve(process.cwd(), '.claude', 'skills', '.clud-bug.json');
+  try {
+    const raw = await fs.readFile(jsonPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return (parsed && parsed.usage) ? parsed.usage : {};
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      process.stderr.write(
+        `clud-bug usage --health: no .claude/skills/.clud-bug.json found in ${process.cwd()}.\n` +
+        `Run \`npx clud-bug init\` first OR pass --repo owner/name to read from workflow artifacts.\n`
+      );
+      return null;
+    }
+    process.stderr.write(`clud-bug usage --health: failed to parse .clud-bug.json: ${err.message}\n`);
+    return null;
+  }
+}
+
+async function inferOwnerRepoFromGit() {
+  // `gh repo view --json nameWithOwner` reads the current dir's git
+  // remote AND respects gh's config. Returns null on non-git dirs.
+  const result = await ghJson(['repo', 'view', '--json', 'nameWithOwner']);
+  return result && result.nameWithOwner ? result.nameWithOwner : null;
+}
+
+function parseSinceArg(since) {
+  if (!since) return null;
+  if (since instanceof Date) return since;
+  const m = String(since).match(/^(\d+)([dwmy])$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const unitMs = { d: 86400e3, w: 7 * 86400e3, m: 30 * 86400e3, y: 365 * 86400e3 }[m[2]];
+  return new Date(Date.now() - n * unitMs);
 }
 
 // limit to 100 to avoid pagination explosions.
