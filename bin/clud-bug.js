@@ -37,6 +37,11 @@ function parseArgs(argv) {
     // Defaults to true (artifact mode); `--no-artifacts` forces local
     // .clud-bug.json read (matches v0.6.28 behavior).
     artifacts: true,
+    // v0.6.33: unified-install mirror — `clud-bug init --with-skdd` also
+    // subprocesses to `pip install logmind && logmind init` so Node-first
+    // users get the same one-command bootstrap as Python-first users
+    // (logmind v0.6.8's --with-skdd is the symmetric counterpart).
+    withSkdd: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -58,6 +63,7 @@ function parseArgs(argv) {
     else if (a === '--stdin') args.stdin = true;
     else if (a === '--health') args.health = true;
     else if (a === '--no-artifacts') args.artifacts = false;
+    else if (a === '--with-skdd') args.withSkdd = true;
     else args._.push(a);
   }
   return args;
@@ -70,6 +76,7 @@ Usage:
 
 Commands:
   init                  Open field season: survey the repo, pin baseline specimens, write the workflows.
+                        Pass \`--with-skdd\` to also install logmind in one go (requires Python + pip).
   list                  Show your collection (baseline / from skills.sh / custom).
   add <source/name>     Pin one new specimen from skills.sh (e.g. vercel-labs/skills/next-best-practices).
   remove <slug>         Unpin a clud-bug-managed specimen (refuses to touch your custom ones).
@@ -496,9 +503,93 @@ async function runInit(args) {
   log('  • Add `clud-bug-review` to your branch protection required checks for full enforcement.');
   log('  • Opt out by setting "strictMode": false in .claude/skills/.clud-bug.json.');
 
+  // v0.6.33 — opt-in unified install (mirror of logmind v0.6.8). When
+  // --with-skdd is passed, subprocess to `pip install logmind` + `logmind init`
+  // so Node-first users get the same one-command bootstrap as Python-first
+  // users do via `logmind init --with-skdd`.
+  // ANTI-LOOP: invoke `logmind init` (NOT `logmind init --with-skdd`).
+  // Each opt-in flag only goes one level — no mutual recursion possible.
+  if (args.withSkdd) {
+    await installLogmindViaPip();
+  }
+
   // Final agent-friendly summary line (always emitted, even with --quiet).
   const version = await readPkgVersion();
   ok(`initialized: .claude/skills/ ${chosen.length} specimens, workflow @v${version}`);
+}
+
+async function installLogmindViaPip() {
+  // `spawn` is already imported at module top (line 5). No dynamic
+  // re-import needed.
+  //
+  // Warnings use process.stderr.write directly (always emitted, even
+  // under CLUD_BUG_QUIET=1) — recovery hints MUST surface to the user.
+  // The standard `log()` is for progress chatter which quiet suppresses.
+
+  // Find pip via fallback chain (pip → pip3 → python -m pip).
+  const pipCmd = await findPipCommand();
+  if (!pipCmd) {
+    process.stderr.write(
+      '\nWarning: --with-skdd requested but no `pip`/`pip3`/`python` found on PATH.\n' +
+      '  Install Python 3.10+ (https://python.org), then run:\n' +
+      '    pip install logmind && logmind init\n' +
+      '  Or skip this flag if you only want clud-bug standalone.\n'
+    );
+    return;
+  }
+
+  log('');
+  log(`→ --with-skdd: installing logmind (${pipCmd.join(' ')} install logmind)`);
+
+  const installCode = await new Promise((resolve) => {
+    const child = spawn(pipCmd[0], [...pipCmd.slice(1), 'install', 'logmind'], { stdio: 'inherit' });
+    child.on('error', () => resolve(127));
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+  if (installCode !== 0) {
+    process.stderr.write(
+      `Warning: \`pip install logmind\` exited ${installCode}.\n` +
+      '  clud-bug side succeeded; logmind install is incomplete.\n' +
+      '  Inspect output above and re-run manually if needed.\n'
+    );
+    return;
+  }
+
+  log(`→ --with-skdd: running \`logmind init\` to scaffold the logmind side`);
+  const initCode = await new Promise((resolve) => {
+    const child = spawn('logmind', ['init'], { stdio: 'inherit' });
+    child.on('error', () => resolve(127));
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+  if (initCode !== 0) {
+    process.stderr.write(
+      `Warning: \`logmind init\` exited ${initCode}. logmind install completed `
+      + `but init scaffolding is incomplete. Re-run manually to finish.\n`
+    );
+    return;
+  }
+  log('✓ logmind installed via --with-skdd');
+}
+
+async function findPipCommand() {
+  // Try pip → pip3 → python -m pip → python3 -m pip in order. First one
+  // that responds to --version wins. Returns array form for spawn().
+  // `spawn` is already imported at module top.
+  const candidates = [
+    ['pip'],
+    ['pip3'],
+    ['python', '-m', 'pip'],
+    ['python3', '-m', 'pip'],
+  ];
+  for (const cmd of candidates) {
+    const ok = await new Promise((resolve) => {
+      const child = spawn(cmd[0], [...cmd.slice(1), '--version'], { stdio: ['ignore', 'ignore', 'ignore'] });
+      child.on('error', () => resolve(false));
+      child.on('close', (code) => resolve(code === 0));
+    });
+    if (ok) return cmd;
+  }
+  return null;
 }
 
 async function promptForSkills(recommended) {

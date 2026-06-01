@@ -63,6 +63,7 @@ clud-bug
 │   ├── cli.test.js
 │   ├── detect.test.js
 │   ├── edit-workflow.test.js
+│   ├── init-with-skdd.test.js
 │   ├── prompts.eval.test.js
 │   ├── prompts.test.js
 │   ├── release-discipline.test.js
