@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (8 decisions)
+## 2026-06 (9 decisions)
 
-- **2026-06-01** — chore: refresh logmind v0.5.13 → v0.6.9 *(chore/logmind-v0.6.9)* — [decisions-branches/chore__logmind-v0.6.9.md](decisions-branches/chore__logmind-v0.6.9.md)
-- *... 6 more decisions ...*
+- **2026-06-01** — chore: refresh logmind v0.6.9 → v0.6.11 *(chore/logmind-v0.6.11)* — [decisions-branches/chore__logmind-v0.6.11.md](decisions-branches/chore__logmind-v0.6.11.md)
+- *... 7 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
