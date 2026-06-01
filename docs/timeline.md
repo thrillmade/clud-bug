@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (7 decisions)
+## 2026-06 (8 decisions)
 
-- **2026-06-01** — v0.6.33 fix: dead-code removal + drop redundant dynamic spawn imports + tighten vacuous test (PR #133) *(feat/v0.6.33-with-skdd-flag)* — [decisions-branches/feat__v0.6.33-with-skdd-flag.md](decisions-branches/feat__v0.6.33-with-skdd-flag.md)
-- *... 5 more decisions ...*
+- **2026-06-01** — chore: refresh logmind v0.5.13 → v0.6.9 *(chore/logmind-v0.6.9)* — [decisions-branches/chore__logmind-v0.6.9.md](decisions-branches/chore__logmind-v0.6.9.md)
+- *... 6 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
