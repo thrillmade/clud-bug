@@ -145,6 +145,31 @@ function makeMockRunner({ artifactList = [], onDownload = null } = {}) {
   };
 }
 
+test('fetchUsageArtifacts: uses per_page=100 (NOT --paginate, which breaks JSON parse across pages)', async () => {
+  // Regression guard for the clud-bug-review finding on PR #127:
+  // `gh api --paginate --jq <expr>` applies the jq filter to each
+  // page independently, producing `[...]\n[...]` — invalid as a
+  // single JSON document. `JSON.parse` returns null and the
+  // dashboard silently shows empty for repos with >30 artifacts.
+  let capturedArgs = null;
+  const runner = {
+    async json(args) {
+      capturedArgs = args;
+      return [];
+    },
+    async run() { return { code: 0, stdout: '', stderr: '' }; },
+  };
+  await fetchUsageArtifacts({ owner: 't', repo: 'r', ghRunner: runner });
+  assert.ok(capturedArgs, 'json runner should have been called');
+  assert.ok(
+    !capturedArgs.includes('--paginate'),
+    '--paginate must NOT be passed (breaks --jq across pages)',
+  );
+  const urlArg = capturedArgs.find((a) => a.includes('/actions/artifacts'));
+  assert.ok(urlArg, 'should call the artifacts endpoint');
+  assert.match(urlArg, /per_page=100/, 'URL must include per_page=100 to cover up to 100 artifacts in one call');
+});
+
 test('fetchUsageArtifacts: requires owner + repo', async () => {
   await assert.rejects(
     () => fetchUsageArtifacts({ owner: null, repo: 'logmind' }),

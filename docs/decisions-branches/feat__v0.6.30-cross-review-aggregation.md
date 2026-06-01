@@ -10,3 +10,14 @@
 - Artifact retention is 90 days, so the dashboard covers a rolling 3-month window without needing a separate retention policy
 
 ---
+## 2026-05-31 23:59 - v0.6.30 fix: drop --paginate, use ?per_page=100 (clud-bug-review PR #127)
+
+**Reasoning:** clud-bug-review caught a silent-failure bug on PR #127: gh api --paginate --jq <expr> applies the jq filter to each page independently, producing concatenated [...] [...] which is not valid JSON. JSON.parse returns null and the dashboard silently shows empty for repos with >30 artifacts (default page size). Fixing by switching to a single ?per_page=100 call.
+
+**Alternatives considered:** Manual pagination loop with explicit ?page=N (rejected as overkill for v0.6.30 — most repos won't exceed 100 artifacts in the 90-day window; per_page=100 is the smaller fix, scale up later if needed), Server-side aggregation via separate API (rejected: GitHub artifacts API has no aggregate endpoint)
+
+**Implications:**
+- Repos with >100 active artifacts in the 90-day window won't see older ones in the dashboard. Document this limitation; revisit in v0.6.31+ if a consumer saturates
+- Added regression guard test that asserts the URL contains per_page=100 AND --paginate is not in args. Prevents future re-introduction
+
+---
