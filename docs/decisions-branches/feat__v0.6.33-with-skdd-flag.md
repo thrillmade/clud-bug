@@ -9,3 +9,12 @@
 - Anti-loop: invokes logmind init (NOT logmind init --with-skdd). Mirror of v0.6.8's same guarantee. No mutual recursion
 
 ---
+## 2026-06-01 14:07 - v0.6.33 fix: dead-code removal + drop redundant dynamic spawn imports + tighten vacuous test (PR #133)
+
+**Reasoning:** clud-bug-review caught 3 real findings: (1) vacuous test asserting assert.ok(true) in both branches; (2) redundant 'await import' for spawn when already top-level imported; (3) dead parseArgsModule helper. Also surfaced via test: warnings used log() which CLUD_BUG_QUIET suppresses, hiding recovery hints — moved warnings to process.stderr.write so they always surface
+
+**Implications:**
+- Warnings via process.stderr.write follow existing codebase convention (see render/update-skill-usage handlers). Recovery hints must NEVER be suppressed by quiet mode
+- Tightened test asserts the warning text actually appears when init succeeds (status 0). If --with-skdd handler runs without firing the no-pip warning, the test now fails loudly instead of silently passing
+
+---

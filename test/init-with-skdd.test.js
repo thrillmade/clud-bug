@@ -15,14 +15,6 @@ import { fileURLToPath } from 'node:url';
 
 const CLI = join(dirname(dirname(fileURLToPath(import.meta.url))), 'bin', 'clud-bug.js');
 
-function parseArgsModule() {
-  // Load the script + extract parseArgs via dynamic require by reading source.
-  // Simpler: just spawn the CLI with the flag and check exit + output shape.
-  // For unit-level assertions on parseArgs we'd need to refactor; for now
-  // exercise the public surface only.
-  return null;
-}
-
 test('--with-skdd flag is parsed without error', () => {
   // Smoke: just running `--help` confirms --with-skdd mention in init line.
   const r = spawnSync(process.execPath, [CLI, '--help'], {
@@ -51,22 +43,29 @@ test('init --with-skdd: graceful no-Python warning', async () => {
     [CLI, 'init', '--accept-all', '--with-skdd', '--no-set-protection'],
     { cwd: dir, env, encoding: 'utf8', timeout: 30000 },
   );
-  // We don't strictly need exit code 0 here — many things can fail in an
-  // isolated dir without git remote etc. The KEY assertion: when --with-skdd
-  // runs without pip available, it emits the warning + recovery hint,
-  // doesn't crash with an unhandled exception.
+  // The KEY assertion: when --with-skdd runs without pip available,
+  // it emits the warning + recovery hint, doesn't crash with an
+  // unhandled exception. If init bailed before reaching --with-skdd
+  // (pre-handler step failed in the isolated env), that's a different
+  // failure mode — but no crash either way.
   const combined = r.stdout + r.stderr;
-  // Either the no-pip warning fired, OR the init failed earlier in
-  // pre-skdd steps (also acceptable — we just need NO unhandled crash).
   const sawWarning = /no `pip`\/`pip3`\/`python` found/.test(combined)
       || /pip install logmind/.test(combined);
-  // Acceptable to skip the assertion if init bailed before reaching --with-skdd.
-  // The unit-level coverage of parseArgs above proves the flag is wired.
-  if (sawWarning) {
-    assert.ok(true, 'graceful no-pip warning surfaced as expected');
-  } else {
-    // Init bailed before our handler; that's not a flag-handling problem.
-    assert.ok(true, 'init bailed before --with-skdd handler reached (acceptable)');
+  // No stack trace / unhandled rejection should appear in either case.
+  assert.doesNotMatch(
+    combined,
+    /UnhandledPromiseRejection|TypeError:.*spawn|ReferenceError/,
+    "no unhandled exception should surface",
+  );
+  // If init reached the --with-skdd handler (the typical case), the
+  // warning text MUST appear — otherwise we have silent failure (the
+  // exact pattern v0.6.31 burned us with). Only allow the warning-
+  // absent path when init clearly failed earlier.
+  if (r.status === 0) {
+    assert.ok(
+      sawWarning,
+      `init succeeded but --with-skdd warning did not surface. Output:\n${combined}`,
+    );
   }
 });
 

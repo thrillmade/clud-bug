@@ -519,16 +519,22 @@ async function runInit(args) {
 }
 
 async function installLogmindViaPip() {
-  const { spawn } = await import('node:child_process');
+  // `spawn` is already imported at module top (line 5). No dynamic
+  // re-import needed.
+  //
+  // Warnings use process.stderr.write directly (always emitted, even
+  // under CLUD_BUG_QUIET=1) — recovery hints MUST surface to the user.
+  // The standard `log()` is for progress chatter which quiet suppresses.
 
   // Find pip via fallback chain (pip → pip3 → python -m pip).
   const pipCmd = await findPipCommand();
   if (!pipCmd) {
-    log('');
-    log('Warning: --with-skdd requested but no `pip`/`pip3`/`python` found on PATH.');
-    log('  Install Python 3.10+ (https://python.org), then run:');
-    log('    pip install logmind && logmind init');
-    log('  Or skip this flag if you only want clud-bug standalone.');
+    process.stderr.write(
+      '\nWarning: --with-skdd requested but no `pip`/`pip3`/`python` found on PATH.\n' +
+      '  Install Python 3.10+ (https://python.org), then run:\n' +
+      '    pip install logmind && logmind init\n' +
+      '  Or skip this flag if you only want clud-bug standalone.\n'
+    );
     return;
   }
 
@@ -541,9 +547,11 @@ async function installLogmindViaPip() {
     child.on('close', (code) => resolve(code ?? 1));
   });
   if (installCode !== 0) {
-    log(`Warning: \`pip install logmind\` exited ${installCode}.`);
-    log('  clud-bug side succeeded; logmind install is incomplete.');
-    log('  Inspect output above and re-run manually if needed.');
+    process.stderr.write(
+      `Warning: \`pip install logmind\` exited ${installCode}.\n` +
+      '  clud-bug side succeeded; logmind install is incomplete.\n' +
+      '  Inspect output above and re-run manually if needed.\n'
+    );
     return;
   }
 
@@ -554,8 +562,10 @@ async function installLogmindViaPip() {
     child.on('close', (code) => resolve(code ?? 1));
   });
   if (initCode !== 0) {
-    log(`Warning: \`logmind init\` exited ${initCode}. logmind install completed but `
-        + `init scaffolding is incomplete. Re-run manually to finish.`);
+    process.stderr.write(
+      `Warning: \`logmind init\` exited ${initCode}. logmind install completed `
+      + `but init scaffolding is incomplete. Re-run manually to finish.\n`
+    );
     return;
   }
   log('✓ logmind installed via --with-skdd');
@@ -564,7 +574,7 @@ async function installLogmindViaPip() {
 async function findPipCommand() {
   // Try pip → pip3 → python -m pip → python3 -m pip in order. First one
   // that responds to --version wins. Returns array form for spawn().
-  const { spawn } = await import('node:child_process');
+  // `spawn` is already imported at module top.
   const candidates = [
     ['pip'],
     ['pip3'],
