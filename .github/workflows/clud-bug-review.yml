@@ -795,16 +795,9 @@ jobs:
           fi
 
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
-      # Pinned one release BEHIND package.json: this canonical workflow runs on
-      # the v0.6.34 PR itself, but the v0.6.34 tag doesn't exist until AFTER
-      # this PR merges. Bumping to @v0.6.34 happens in a follow-up
-      # "chore: self-propagate v0.6.34" PR — matches the pattern in #93,
-      # #115, #119, #126, #128, #130, #132. Templates + action.yml header
-      # carry the new version (consumer-facing forward state); only this
-      # one canonical self-reference lags by one release.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.33
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.34
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].
