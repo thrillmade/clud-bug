@@ -655,7 +655,22 @@ jobs:
           PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          BODY=$(printf '## 🐛 Clud Bug — transient tool error\n\nThe Claude review step did not complete (no structured output produced). This is almost always a transient Anthropic API hiccup, not a content concern. The check is set to `neutral` so this PR is not blocked by the required-checks gate.\n\nRetry by:\n- Pushing a new commit (will re-trigger the review), or\n- Running the workflow manually from the Actions tab → "Clud Bug 🐛 Crawls Your Code" → "Run workflow" with the PR number.\n\nIf the failure persists across retries, the underlying error will be visible in the failed step logs.\n')
+          # heredoc avoids shellcheck SC2016 on the printf-with-single-quotes
+          # idiom; same result. v0.6.34: the BODY content is literal markdown
+          # with intentional `${VAR}`-style placeholders that should NOT
+          # expand — heredoc with quoted delimiter preserves them.
+          BODY=$(cat <<'EOF'
+          ## 🐛 Clud Bug — transient tool error
+
+          The Claude review step did not complete (no structured output produced). This is almost always a transient Anthropic API hiccup, not a content concern. The check is set to `neutral` so this PR is not blocked by the required-checks gate.
+
+          Retry by:
+          - Pushing a new commit (will re-trigger the review), or
+          - Running the workflow manually from the Actions tab → "Clud Bug 🐛 Crawls Your Code" → "Run workflow" with the PR number.
+
+          If the failure persists across retries, the underlying error will be visible in the failed step logs.
+          EOF
+          )
           gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST \
             -f name="clud-bug-review" \
             -f head_sha="${PR_SHA}" \
@@ -782,7 +797,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.32
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.34
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].

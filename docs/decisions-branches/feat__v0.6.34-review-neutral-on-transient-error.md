@@ -10,3 +10,14 @@
 - When the GitHub App (D.2.5+) replaces the workflow, the same neutral-vs-failure distinction needs to live in lib/orchestrator.ts or lib/review-vote.ts
 
 ---
+## 2026-06-02 13:42 - fix(v0.6.34): bump strict-mode-gate pins + heredoc in neutral-checkrun body
+
+**Reasoning:** CI on PR #140 surfaced two issues: (1) release discipline tests 116/149/150 — strict-mode-gate@v0.6.33 pins in workflow templates weren't bumped alongside package.json 0.6.34; (2) actionlint SC2016 — printf with single-quoted multi-line body flagged because shellcheck mistakes the single-quoted literal for an unexpanded expression
+
+**Alternatives considered:** suppress SC2016 via shellcheck disable directive — rejected: heredoc is cleaner + signals intent better, use double-quoted printf with explicit \n escapes — rejected: every ${VAR}-style placeholder in BODY would need escaping
+
+**Implications:**
+- PR #140 CI should now go green; auto-merge will fire once clud-bug-review re-evaluates the diff
+- strict-mode-gate pin bump pattern is now exercised — next release cycle will catch missed pin updates via the same test
+
+---
