@@ -10,28 +10,9 @@ clud-bug
 │   └── workflow.yml
 ├── .claude
 │   └── skills
-│       ├── clud-bug-collaboration
-│       │   └── SKILL.md
-│       ├── critical-issues-only
-│       │   └── SKILL.md
-│       ├── evidence-based-review
-│       │   └── SKILL.md
-│       ├── respect-existing-conventions
-│       │   └── SKILL.md
-│       └── .clud-bug.json
 ├── .github
 │   ├── actions
-│   │   └── strict-mode-gate
-│   │       └── action.yml
 │   ├── workflows
-│   │   ├── check-decisions.yml
-│   │   ├── check-doc-links.yml
-│   │   ├── ci.yml
-│   │   ├── claude-code-review.yml
-│   │   ├── clud-bug-review.yml
-│   │   ├── logmind-self-update.yml
-│   │   ├── npm-publish.yml
-│   │   └── regen-timeline.yml
 │   └── dependabot.yml
 ├── .logmind
 │   └── config.yml
@@ -39,94 +20,6 @@ clud-bug
 │   └── clud-bug.js
 ├── docs
 │   ├── decisions-branches
-│   │   ├── ceremony__self-mod-bump-to-v0.5.12.md
-│   │   ├── ceremony__self-mod-bump-to-v0.5.14.md
-│   │   ├── ceremony__self-mod-bump-to-v0.5.15.md
-│   │   ├── ceremony__self-mod-v0.6.0.md
-│   │   ├── ceremony__self-mod-v0.6.1.md
-│   │   ├── chore__agents-md-import.md
-│   │   ├── chore__bump-logmind-pin-0.3.3.md
-│   │   ├── chore__empty-strictskills-v2.md
-│   │   ├── chore__logmind-v0.2.10-propagation.md
-│   │   ├── chore__logmind-v0.6.11.md
-│   │   ├── chore__logmind-v0.6.9.md
-│   │   ├── chore__migrate-to-thrillmade.md
-│   │   ├── chore__refresh-self-update-v5.md
-│   │   ├── chore__regen-derived-docs.md
-│   │   ├── chore__self-propagate-v0.6.29.md
-│   │   ├── chore__self-propagate-v0.6.30.md
-│   │   ├── chore__self-propagate-v0.6.31.md
-│   │   ├── chore__self-propagate-v0.6.32.md
-│   │   ├── chore__self-upgrade-to-v0.6.22.md
-│   │   ├── chore__self-upgrade-v0.6.25.md
-│   │   ├── chore__strict-skills-opt-in-baselines.md
-│   │   ├── chore__vercel-ignore-and-site-refs.md
-│   │   ├── ci__npm-dist-tag-promote.md
-│   │   ├── ci__npm-publish-trusted.md
-│   │   ├── ci__unify-publish-and-promote.md
-│   │   ├── docs__skill-first-marketing-bb4.md
-│   │   ├── feat__0.0.E-golden-eval-harness.md
-│   │   ├── feat__0.0.I.1-skip-block-with-import.md
-│   │   ├── feat__0.0.K-skill-loading-minimization.md
-│   │   ├── feat__0.0.M.1-usage-dashboard.md
-│   │   ├── feat__0.0.O-json-schema.md
-│   │   ├── feat__0.0.P-prompt-trim.md
-│   │   ├── feat__0.0.R-model-routing-trivial.md
-│   │   ├── feat__0.0.T-rtk-inspired-clud-bug.md
-│   │   ├── feat__0.0.W-workflow-pr-skip.md
-│   │   ├── feat__0.0.X-output-token-directive.md
-│   │   ├── feat__0.5-S5-adaptive-max-turns.md
-│   │   ├── feat__0.A.1-extract-prompts.md
-│   │   ├── feat__0.A.10-incremental-diff-review.md
-│   │   ├── feat__0.A.11-fix-self-update-yaml-literal.md
-│   │   ├── feat__0.A.2-prompt-caching.md
-│   │   ├── feat__0.A.3-prompt-budgets.md
-│   │   ├── feat__0.A.4-comment-compression.md
-│   │   ├── feat__0.A.5-agents-md-trim.md
-│   │   ├── feat__0.A.6-ok-cli-output.md
-│   │   ├── feat__0.A.7-max-turns-thinking-tokens.md
-│   │   ├── feat__0.A.8-pin-sonnet-model.md
-│   │   ├── feat__agent-collab.md
-│   │   ├── feat__agent-skills-sha-bump.md
-│   │   ├── feat__cca-version-pinning.md
-│   │   ├── feat__checkout-v6-templates.md
-│   │   ├── feat__classifier-relax-v0.5.16.md
-│   │   ├── feat__composite-pin-lockstep-test-v0.5.15.md
-│   │   ├── feat__composite-strict-mode-gate.md
-│   │   ├── feat__excluded-baselines.md
-│   │   ├── feat__init-branch-protection.md
-│   │   ├── feat__inline-review-threads-v0.5.13.md
-│   │   ├── feat__logmind-0.1.4.md
-│   │   ├── feat__logmind-0.2.0.md
-│   │   ├── feat__logmind-0.2.1.md
-│   │   ├── feat__logmind-redo.md
-│   │   ├── feat__per-skill-check-runs-v0.5.10.md
-│   │   ├── feat__refresh-to-v4-templates-self-mod.md
-│   │   ├── feat__render-v2-templates-self-mod.md
-│   │   ├── feat__review-status-block.md
-│   │   ├── feat__skill-routing-v0.5.9.md
-│   │   ├── feat__update-refresh-mode.md
-│   │   ├── feat__v0.6.25-smart-budget-phase-1.md
-│   │   ├── feat__v0.6.26-smart-budget-phase-2.md
-│   │   ├── feat__v0.6.27-L3-mid-review-check-in.md
-│   │   ├── feat__v0.6.29-skill-usage-workflow-integration.md
-│   │   ├── feat__v0.6.30-cross-review-aggregation.md
-│   │   ├── feat__v0.6.32-include-hidden-files-guard.md
-│   │   ├── feat__v0.6.33-with-skdd-flag.md
-│   │   ├── feat__v0.6.34-review-neutral-on-transient-error.md
-│   │   ├── fix__baseline-review-skip-dependabot.md
-│   │   ├── fix__composite-pin-v0.5.14.md
-│   │   ├── fix__strict-mode-gate-preamble-v0.5.12.md
-│   │   ├── fix__v0.6.31-upload-include-hidden.md
-│   │   ├── fix__vercel-ignore-bad-sha.md
-│   │   ├── fix__vercel-skip-when-no-site-changes.md
-│   │   ├── hotfix__v0.6.24-drop-actions-read.md
-│   │   ├── site__docs-polish-p2-p5.md
-│   │   ├── site__polish-round-2.md
-│   │   ├── site__skills-as-the-moat.md
-│   │   ├── site__smart-budget-and-drop-in-propagation.md
-│   │   ├── workflow__checkout-v6-claude-baseline.md
-│   │   └── workflow__checkout-v6-repo.md
 │   ├── decisions-archive.md
 │   ├── decisions.md
 │   ├── file-structure.md
@@ -146,19 +39,8 @@ clud-bug
 │   ├── update.js
 │   └── usage.js
 ├── site
-│   ├── .vercel
-│   │   ├── project.json
-│   │   └── README.txt
 │   ├── app
-│   │   ├── apple-icon.tsx
-│   │   ├── globals.css
-│   │   ├── icon.tsx
-│   │   ├── layout.tsx
-│   │   ├── opengraph-image.tsx
-│   │   ├── page.tsx
-│   │   └── twitter-image.tsx
 │   ├── lib
-│   │   └── data.ts
 │   ├── .gitignore
 │   ├── next.config.ts
 │   ├── package-lock.json
@@ -167,11 +49,6 @@ clud-bug
 │   └── vercel.json
 ├── templates
 │   ├── skills
-│   │   └── baseline
-│   │       ├── clud-bug-collaboration.md
-│   │       ├── critical-issues-only.md
-│   │       ├── evidence-based-review.md
-│   │       └── respect-existing-conventions.md
 │   ├── audit.yml.tmpl
 │   ├── self-update.yml.tmpl
 │   ├── workflow-py.yml.tmpl
@@ -179,10 +56,6 @@ clud-bug
 │   └── workflow.yml.tmpl
 ├── test
 │   ├── golden
-│   │   ├── byte-budget.json
-│   │   ├── must-contain.json
-│   │   ├── must-not-contain.json
-│   │   └── README.md
 │   ├── agents-md.test.js
 │   ├── audit.test.js
 │   ├── branch-protection.test.js
@@ -213,3 +86,7 @@ clud-bug
 ├── README.md
 └── vercel.json
 ```
+
+_Truncated at depth 2 (logmind v0.5.0+ default). For a deeper view, run
+`logmind file-structure --write docs/file-structure.md --max-depth N` or
+`logmind tree --max-depth 0` for the full tree._
