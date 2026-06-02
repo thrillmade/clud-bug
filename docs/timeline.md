@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (10 decisions)
+## 2026-06 (13 decisions)
 
-- **2026-06-01** — chore: refresh logmind-self-update.yml to v5 (bootstrap PAT-based workflow push) *(chore/refresh-self-update-v5)* — [decisions-branches/chore__refresh-self-update-v5.md](decisions-branches/chore__refresh-self-update-v5.md)
-- *... 8 more decisions ...*
+- **2026-06-02** — fix(v0.6.34): keep canonical workflow self-pin one release behind *(feat/v0.6.34-review-neutral-on-transient-error)* — [decisions-branches/feat__v0.6.34-review-neutral-on-transient-error.md](decisions-branches/feat__v0.6.34-review-neutral-on-transient-error.md)
+- *... 11 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
