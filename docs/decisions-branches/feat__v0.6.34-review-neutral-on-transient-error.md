@@ -21,3 +21,14 @@
 - strict-mode-gate pin bump pattern is now exercised — next release cycle will catch missed pin updates via the same test
 
 ---
+## 2026-06-02 14:12 - fix(v0.6.34): keep canonical workflow self-pin one release behind
+
+**Reasoning:** PR #140 CI failed because .github/workflows/clud-bug-review.yml self-pinned at strict-mode-gate@v0.6.34, but that tag doesn't exist until after this PR merges. Historical pattern (#93, #115, #119, #126, #128, #130, #132): canonical self-pin lags by one release and gets bumped in a follow-up 'chore: self-propagate' PR after the tag exists. Templates + action.yml header carry forward to v0.6.34 (consumer-facing future state, no chicken-and-egg). Release-discipline tests only check templates + action.yml, not the canonical workflow, so this is correct
+
+**Alternatives considered:** admin-merge as-is and let the next push self-heal — rejected: admin-merge as a routine release mechanism is fragile; should be reserved for emergencies, use @main for self-references — rejected: supply-chain risk, audit-trail loss, and diverges from the established pattern
+
+**Implications:**
+- after v0.6.16 merges + v0.6.34 tag is created, open a follow-up 'chore: self-propagate v0.6.34' PR to bump line 800 back to @v0.6.34
+- added an explanatory comment in the workflow so future contributors see the convention without git-archaeology
+
+---

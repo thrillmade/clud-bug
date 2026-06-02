@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (12 decisions)
+## 2026-06 (13 decisions)
 
-- **2026-06-02** — fix(v0.6.34): bump strict-mode-gate pins + heredoc in neutral-checkrun body *(feat/v0.6.34-review-neutral-on-transient-error)* — [decisions-branches/feat__v0.6.34-review-neutral-on-transient-error.md](decisions-branches/feat__v0.6.34-review-neutral-on-transient-error.md)
-- *... 10 more decisions ...*
+- **2026-06-02** — fix(v0.6.34): keep canonical workflow self-pin one release behind *(feat/v0.6.34-review-neutral-on-transient-error)* — [decisions-branches/feat__v0.6.34-review-neutral-on-transient-error.md](decisions-branches/feat__v0.6.34-review-neutral-on-transient-error.md)
+- *... 11 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)

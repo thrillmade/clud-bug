@@ -39,6 +39,7 @@ clud-bug
 │   ├── update.js
 │   └── usage.js
 ├── site
+│   ├── .vercel
 │   ├── app
 │   ├── lib
 │   ├── .gitignore
