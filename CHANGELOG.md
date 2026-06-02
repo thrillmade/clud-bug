@@ -4,6 +4,30 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.6.34] — 2026-06-02
+
+### Fixed — `clud-bug-review` emits `neutral` on transient Anthropic API errors (Concern 2 from tokenomics-agent v0.6.14 verification report)
+
+Until now, a transient Anthropic API hiccup (`Claude encountered an error after 1m 45s`) during `clud-bug-review` exited the workflow with `failure` conclusion, blocking the PR's required-checks gate with no remediation path the reviewer could take other than waiting for someone with admin rights to bypass. The merge was effectively held hostage by a tool failure that produced no content concerns.
+
+v0.6.34 fix:
+- `anthropics/claude-code-action` step now sets `continue-on-error: true`. The action's failure no longer kills the job.
+- NEW step `Emit neutral check-run on transient tool failure` fires when `steps.clud-bug-review.outcome == 'failure' && steps.clud-bug-review.outputs.structured_output == ''`. It creates a `clud-bug-review` check-run with `conclusion: neutral` via `gh api repos/.../check-runs -X POST`. GitHub treats `neutral` as passing for required-status-checks, so the PR is no longer blocked.
+- A PR comment is also posted (de-duplicated by SHA to avoid spam on webhook redeliveries) explaining the transient nature + retry options.
+- The Layer-6 fallback step's guard tightened to skip when the action's outcome was failure — avoids double-emit on top of the neutral notice.
+
+**Critical-findings path unchanged**: when the action succeeds with critical content, `structured_output` is non-empty, the renderer posts the review comment, and the existing `strict-mode-gate` composite action reads the comment + emits its own check-run failure if strict mode is on. PRs with genuine critical content still block as designed.
+
+Re-run mechanism: GitHub's built-in "Re-run failed jobs" button on every workflow run covers manual retry. No `workflow_dispatch` trigger added.
+
+Files:
+- `.github/workflows/clud-bug-review.yml` — bump `# clud-bug-template-version: v12 → v13`; add `continue-on-error` + neutral-emit step + fallback-guard tightening
+- Existing strict-mode-gate composite (`.github/actions/strict-mode-gate/`) — unchanged; its critical-findings detection runs on the latest review comment which the neutral path doesn't post, so it correctly passes when the tool errored
+
+### Propagation
+
+Standard `clud-bug self-update` cycle picks up v13 template in consumer repos. The 5 thrillmade consumers (tokenomics, agent-skills, logmind, reporulez, rezgen) refresh on next release window.
+
 ## [0.6.33] — 2026-06-01
 
 ### Added — `clud-bug init --with-skdd` (unified install, Node entry)

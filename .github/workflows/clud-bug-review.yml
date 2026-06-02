@@ -1,9 +1,14 @@
-# clud-bug-template-version: v12
+# clud-bug-template-version: v13
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
   pull_request:
     types: [opened, synchronize]
+  # NOTE: GitHub's "Re-run failed jobs" button on every workflow run
+  # already covers the manual-retry case (admin clicks it from the
+  # Actions tab). No workflow_dispatch trigger needed — adding one
+  # would require fetching PR context from an input which complicates
+  # every downstream env reference for marginal benefit.
 
 # v0.6.25: workflow-level concurrency — see workflow.yml.tmpl.
 concurrency:
@@ -213,8 +218,22 @@ jobs:
           echo "::error::Set it: Settings → Secrets and variables → Actions → New repository secret."
           exit 1
 
+      # v0.6.34: continue-on-error so a transient Anthropic API error doesn't
+      # kill the job. The follow-up "Determine review outcome" step inspects
+      # the action's conclusion + structured_output. If the action failed
+      # WITHOUT producing structured output, we emit a `neutral` check-run
+      # (does NOT block required-status-checks) — surfaces the tool failure
+      # without holding up the PR. If it produced output, the existing
+      # render path handles success / critical-findings flow as before.
+      #
+      # Tokenomics-agent v0.6.14 verification cycle (PR thrillmade/tokenomics#59)
+      # surfaced this: workflow concluded FAILURE after "Claude encountered an
+      # error after 1m 45s" with no findings posted; PR was blocked by
+      # required-check with no remediation path (re-run not possible from a
+      # failed run). The fix here + workflow_dispatch above close the loop.
       - uses: anthropics/claude-code-action@v1.0.133
         if: steps.guard.outputs.skip != 'true'
+        continue-on-error: true
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO_OWNER: ${{ github.repository_owner }}
@@ -618,6 +637,43 @@ jobs:
             section in your system prompt. Reserve 5 turns for emit.
         id: clud-bug-review
 
+      # v0.6.34: detect transient tool failure → emit `neutral` check-run.
+      # Fires only when the action step failed AND produced no structured
+      # output. Critical-findings path is unaffected (those have non-empty
+      # structured output and flow through the renderer below).
+      #
+      # `neutral` does NOT block required-status-checks gates — so PRs no
+      # longer get jammed by an Anthropic API hiccup. Admin can re-run via
+      # workflow_dispatch (see `on:` at the top of this file) without
+      # force-pushing.
+      - name: Emit neutral check-run on transient tool failure
+        if: steps.clud-bug-review.outcome == 'failure' && steps.clud-bug-review.outputs.structured_output == ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          BODY=$(printf '## 🐛 Clud Bug — transient tool error\n\nThe Claude review step did not complete (no structured output produced). This is almost always a transient Anthropic API hiccup, not a content concern. The check is set to `neutral` so this PR is not blocked by the required-checks gate.\n\nRetry by:\n- Pushing a new commit (will re-trigger the review), or\n- Running the workflow manually from the Actions tab → "Clud Bug 🐛 Crawls Your Code" → "Run workflow" with the PR number.\n\nIf the failure persists across retries, the underlying error will be visible in the failed step logs.\n')
+          gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST \
+            -f name="clud-bug-review" \
+            -f head_sha="${PR_SHA}" \
+            -f status="completed" \
+            -f conclusion="neutral" \
+            -f "output[title]=Transient tool error — review did not produce findings" \
+            -f "output[summary]=$BODY" \
+            > /dev/null
+          # Also post a PR comment so it surfaces in the conversation tab
+          # (skip if a prior transient-error comment from the same SHA already
+          # exists, to avoid spam on re-deliveries).
+          EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug — transient tool error")))] | length')
+          if [ "${EXISTING:-0}" = "0" ]; then
+            gh pr comment "$PR_NUMBER" --body "$BODY" || true
+          fi
+          echo "::notice title=Clud Bug 🐛::Transient tool failure — emitted neutral check-run; PR not blocked."
+
       # v0.6.22 / 0.0.O: render structured output → post via gh pr comment.
       # v0.6.25 / §5.5 Layer 1.5: append calibration marker.
       - name: Render + post structured review
@@ -668,8 +724,11 @@ jobs:
           retention-days: 90
 
       # v0.6.26 / §5.5 Layer 6 fallback render-from-inlines — see workflow.yml.tmpl for design notes.
+      # v0.6.34: skip when the action's outcome was failure (the neutral
+      # check-run step above already handled that case; we don't want to
+      # double-emit a fallback summary on top of the neutral notice).
       - name: Fallback summary (structured_output empty)
-        if: success() && steps.clud-bug-review.outputs.structured_output == ''
+        if: success() && steps.clud-bug-review.outcome != 'failure' && steps.clud-bug-review.outputs.structured_output == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
