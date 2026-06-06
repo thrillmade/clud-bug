@@ -29,3 +29,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      thrillmade:
+        patterns:
+          - "thrillmade/*"
