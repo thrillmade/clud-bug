@@ -13,7 +13,8 @@ import {
   SkillsClient, rankAndCap, writeSkills, writeSkill, loadBaseline,
   readManifest, writeManifest, removeSkill, listInstalled, diffManifest,
 } from '../lib/skills.js';
-import { computeAuditFileSet, renderAuditHeader } from '../lib/audit.js';
+import { computeAuditFileSet } from '../dist/cli/audit.js';
+import { renderAuditHeader } from '../dist/core/audit.js';
 import { runUpdate } from '../lib/update.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from '../lib/edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from '../lib/agents-md.js';

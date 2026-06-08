@@ -1,37 +1,55 @@
-import { spawnSync } from 'node:child_process';
+// CLI audit helpers — these shell out to git and walk the working tree.
+//
+// Split from lib/audit.js during the v0.7.0 TS migration. Pure helpers
+// (durationToGitSince, renderAuditHeader) live in src/core/audit.ts so the
+// App-side (clud-bug-app) can consume them without dragging child_process
+// in. computeAuditFileSet stays CLI-only — it is only meaningful when run
+// in a checked-out repo.
 
-// Convert a duration like "7d", "2w", "1mo", "3mo", "1y" to a git --since arg.
-// Returns null if the input is empty/undefined; throws on malformed input.
-export function durationToGitSince(input) {
-  if (!input) return null;
-  const m = String(input).trim().match(/^(\d+)\s*(d|w|mo|m|y)$/i);
-  if (!m) {
-    throw new Error(`Unrecognized duration "${input}". Examples: 7d, 2w, 1mo, 1y.`);
-  }
-  const n = Number(m[1]);
-  const unit = m[2].toLowerCase();
-  const map = { d: 'day', w: 'week', mo: 'month', m: 'month', y: 'year' };
-  return `${n} ${map[unit]}${n === 1 ? '' : 's'} ago`;
+import { spawnSync } from 'node:child_process';
+import { durationToGitSince } from '../core/audit.js';
+
+export interface GitLinesOptions {
+  // `cwd?: string | undefined` (vs `cwd?: string`) is required by
+  // exactOptionalPropertyTypes: true — callers freely pass an inline
+  // object that may have `cwd` typed as `string | undefined`.
+  cwd?: string | undefined;
+  allowFail?: boolean | undefined;
 }
 
 // Run a git command, return stdout lines split by \n. Throws on non-zero exit
 // unless { allowFail: true }, in which case returns [].
-export function gitLines(args, opts = {}) {
+// Note: under noUncheckedIndexedAccess: true, array element reads are typed
+// `string | undefined`. The return type stays `string[]` (we filter falsy
+// strings out), but callers indexing into the result must keep that in mind.
+export function gitLines(args: string[], opts: GitLinesOptions = {}): string[] {
   const r = spawnSync('git', args, { encoding: 'utf8', cwd: opts.cwd || process.cwd() });
   if (r.status !== 0) {
     if (opts.allowFail) return [];
-    throw new Error(`git ${args.join(' ')} failed (${r.status}): ${r.stderr.trim()}`);
+    // spawnSync with encoding:'utf8' makes stderr `string | null`; the null
+    // path only happens when the child can't be spawned at all (a different
+    // error path). When status is non-zero we have stderr.
+    const stderr = (r.stderr ?? '').toString().trim();
+    throw new Error(`git ${args.join(' ')} failed (${r.status}): ${stderr}`);
   }
-  return r.stdout.split('\n').filter(Boolean);
+  const stdout = (r.stdout ?? '').toString();
+  return stdout.split('\n').filter(Boolean);
+}
+
+export interface AuditFileSetOptions {
+  since?: string | null;
+  changedIn?: string | null;
+  scopes?: string[];
+  cwd?: string;
 }
 
 // Returns the file set the audit should consider, in repo-relative paths.
 // Filters: optional --since (git date), optional --changed-in (duration string),
 // optional --scope globs (one or more, repeatable).
-export function computeAuditFileSet({ since, changedIn, scopes = [], cwd } = {}) {
+export function computeAuditFileSet({ since, changedIn, scopes = [], cwd }: AuditFileSetOptions = {}): string[] {
   const sinceArg = since || (changedIn ? durationToGitSince(changedIn) : null);
 
-  let files;
+  let files: string[];
   if (sinceArg) {
     // Files touched in any commit within the window.
     files = [...new Set(gitLines(['log', `--since=${sinceArg}`, '--name-only', '--pretty=format:'], { cwd }))];
@@ -57,7 +75,7 @@ export function computeAuditFileSet({ since, changedIn, scopes = [], cwd } = {})
 
 // Minimal glob → RegExp. Supports **, *, ?. Anchors at both ends so that
 // 'src/**/*.ts' matches 'src/lib/foo.ts' but not 'app/src/lib/foo.ts'.
-function globToRegex(glob) {
+function globToRegex(glob: string): RegExp {
   let rx = '';
   let i = 0;
   while (i < glob.length) {
@@ -74,7 +92,7 @@ function globToRegex(glob) {
     } else if (ch === '?') {
       rx += '[^/]';
       i++;
-    } else if (/[.+^$|()\[\]{}\\]/.test(ch)) {
+    } else if (ch !== undefined && /[.+^$|()\[\]{}\\]/.test(ch)) {
       rx += '\\' + ch;
       i++;
     } else {
@@ -83,29 +101,4 @@ function globToRegex(glob) {
     }
   }
   return new RegExp(`^${rx}$`);
-}
-
-// Render the audit report's initial markdown body. The Action's Claude run
-// will append findings under a "## Findings" section after this header.
-export function renderAuditHeader({ date, scopeLabel, files }) {
-  const head = `# 🐛 Clud Bug audit — ${date}
-
-A scheduled walk through the habitat. Scope: ${scopeLabel}.
-Files surveyed: **${files.length}**.
-
-<details>
-<summary>File manifest (${files.length})</summary>
-
-\`\`\`
-${files.join('\n')}
-\`\`\`
-
-</details>
-
----
-
-## Findings
-
-`;
-  return head;
 }
