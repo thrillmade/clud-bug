@@ -66,3 +66,14 @@
 
 ---
 
+## 2026-06-08 18:08 - Phase 2: port lib/detect.js to src/core/detect.ts (+ _internal anti-pattern fix)
+
+**Reasoning:** Fourth of 5 zero-dep core conversions. Removed the _internal namespace anti-pattern per architect guidance: EXT_TO_LANG, DEP_TO_TERM, PY_DEP_TO_TERM are now direct top-level exports, and fileHistogram + firstParagraph are individually named exports (no more _internal.fileHistogram calls — tests import directly). Each constant table is typed `as const satisfies Record<string, string>` so consumers see the literal-string narrowing AND the safety check that all keys are strings. Used structural types: DetectedSignals interface (the public detect return shape: name, description, languages, histogram, searchTerms, primaryLanguage) and DescriptionLineSignals (the wider input shape buildDescriptionLine accepts). Helper-type DetectorResult kept module-private. readJsonSafe made generic so detectFromPackageJson PackageJson narrows correctly. Type-guard `(r): r is DetectorResult => r !== null` lets TS narrow results to non-null. noUncheckedIndexedAccess: line.split(...)[0] returns string | undefined, used `?? ` and trim. Dep-table lookups cast via TABLE as Record to allow runtime variable keys. test/detect.test.js imports fileHistogram directly + drops _internal. 361/361 tests pass.
+
+**Alternatives considered:** Keep _internal namespace for back-compat (rejected: architect explicitly called this an anti-pattern; the fix is part of the migration value), Tight readonly Records (rejected: would force readonly propagation onto every caller; const satisfies gives the narrowing without the readonly contagion)
+
+**Implications:**
+- src/core/index.ts now exports detect, buildDescriptionLine, all three dep-tables, fileHistogram, firstParagraph, plus DetectedSignals/DescriptionLineSignals — clud-bug-app can call detect(root) without dragging in any CLI logic
+
+---
+

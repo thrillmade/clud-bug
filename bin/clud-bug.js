@@ -6,7 +6,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
-import { detect, buildDescriptionLine } from '../lib/detect.js';
+import { detect, buildDescriptionLine } from '../dist/core/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../lib/render.js';
 import { reviewPrompt } from '../dist/core/prompts.js';
 import { SkillsClient, rankAndCap } from '../dist/core/skills.js';

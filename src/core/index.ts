@@ -18,3 +18,14 @@ export {
   type DedicatedSection,
 } from './review-schema.js';
 export { renderReview, SEVERITY_LABEL } from './render-review.js';
+export {
+  detect,
+  buildDescriptionLine,
+  EXT_TO_LANG,
+  DEP_TO_TERM,
+  PY_DEP_TO_TERM,
+  fileHistogram,
+  firstParagraph,
+  type DetectedSignals,
+  type DescriptionLineSignals,
+} from './detect.js';

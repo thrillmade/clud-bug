@@ -3,7 +3,11 @@ import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { detect, buildDescriptionLine, _internal } from '../lib/detect.js';
+import {
+  detect,
+  buildDescriptionLine,
+  fileHistogram,
+} from '../src/core/detect.js';
 
 async function makeRepo(files) {
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-detect-'));
@@ -102,7 +106,7 @@ test('fileHistogram skips node_modules and dist', async () => {
     'dist/bundle.js': '',
   });
   try {
-    const histo = await _internal.fileHistogram(dir);
+    const histo = await fileHistogram(dir);
     assert.equal(histo.typescript, 1);
     assert.equal(histo.javascript, undefined);
   } finally {
