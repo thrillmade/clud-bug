@@ -154,3 +154,14 @@
 
 ---
 
+## 2026-06-08 18:30 - Phase 2 (W3 final): bin/clud-bug.js to 3-line shim importing dist/cli/index.js
+
+**Reasoning:** Architect Risk R7 deferral: avoid 3-4h of type-annotation churn on the 59KB readline-heavy bin file. Path chosen — copy the 1359-LOC command dispatch verbatim to src/cli/main.ts under @ts-nocheck (preserves zero-semantic-drift), re-export main through src/cli/index.ts, then make bin/clud-bug.js a 14-line invocation shim. Future cleanup PRs can strip @ts-nocheck and annotate piece-by-piece — every function takes the args record from parseArgs whose shape is stable. Dynamic imports inside main.ts switched from '../dist/...' to relative './' and '../core/' so the compiled dist/cli/main.js resolves correctly. PKG_ROOT now climbs three dirnames (dist/cli/main.js to package root) instead of the prior two (bin/clud-bug.js to package root).
+
+**Alternatives considered:** Convert bin/clud-bug.js to strict-mode TS without @ts-nocheck (rejected per architect — type-annotation churn outweighs near-term benefit). Annotate main.ts incrementally now (rejected — splits the merge boundary; better as separate follow-up PRs scoped per-function).
+
+**Implications:**
+- lib/ directory removed entirely (was empty after file 6). All production code lives under src/ (compiled to dist/), served via bin/clud-bug.js shim. src/cli/ contains 10 .ts files: audit + skills (Wave 2) + agents-md + branch-protection + edit-workflow + skill-usage + update + usage (Wave 3) + index + main. main() is also re-exported from the package barrel so library consumers could programmatically drive the CLI if desired.
+
+---
+

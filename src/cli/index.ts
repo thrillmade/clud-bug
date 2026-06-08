@@ -5,6 +5,12 @@
 // added incrementally as the v0.7.0 TypeScript migration converts each
 // lib/* JS file.
 
+// The top-level dispatcher main() lives in main.ts; bin/clud-bug.js
+// imports it through this barrel and runs it. Keeping main() out of
+// this file avoids accidental side effects when consumers
+// `import { ... } from 'clud-bug'`.
+export { main } from './main.js';
+
 export {
   detectRepo,
   detectDefaultBranch,
