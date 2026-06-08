@@ -143,3 +143,14 @@
 
 ---
 
+## 2026-06-08 18:26 - Phase 2 (W3): port lib/update.js to src/cli/update.ts (lib/ is now empty)
+
+**Reasoning:** 204 LOC, the trickiest file because it sits at the import center: pulls from core/{render,prompts,detect}, cli/{skills,agents-md}. All those imports switched from temp dist/ paths to clean source-level relative ./ and ../core. Manifest extension fields (excludedBaselines, strictMode, lastUpdate, lastUpdateVersion) accessed via bracket index against the Manifest [key: string]: unknown index signature with narrowing — matches the pattern Wave 2 established. UpdateChangeRecord/UpdateSkippedRecord/RunUpdateResult give the helpers tight types. RunUpdateResult.missing is the discriminator the bin uses to detect a fresh-init repo.
+
+**Alternatives considered:** Switch from optional `from`/`to` on UpdateChangeRecord to a discriminated union (rejected — every caller checks them defensively today; flattening forces a wider refactor of the bin formatting).
+
+**Implications:**
+- src/cli/index.ts now exports runUpdate + 4 types. bin/clud-bug.js runUpdate import switched to dist/cli/update.js. lib/ directory is empty — only bin/clud-bug.js shim cleanup remains for W3 final.
+
+---
+

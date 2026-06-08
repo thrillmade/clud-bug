@@ -16,7 +16,7 @@ import {
 } from '../dist/cli/skills.js';
 import { computeAuditFileSet } from '../dist/cli/audit.js';
 import { renderAuditHeader } from '../dist/core/audit.js';
-import { runUpdate } from '../lib/update.js';
+import { runUpdate } from '../dist/cli/update.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from '../dist/cli/edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from '../dist/cli/agents-md.js';
 import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from '../dist/cli/branch-protection.js';

@@ -85,3 +85,11 @@ export {
   type Rollup,
   type FormatRollupOptions,
 } from './usage.js';
+
+export {
+  runUpdate,
+  type RunUpdateOptions,
+  type UpdateChangeRecord,
+  type UpdateSkippedRecord,
+  type RunUpdateResult,
+} from './update.js';
