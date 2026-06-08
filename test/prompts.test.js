@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reviewPrompt } from '../src/core/prompts.js';
-import { renderFile, templateLanguage } from '../lib/render.js';
+import { renderFile, templateLanguage } from '../src/core/render.js';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(PKG_ROOT, 'templates');
@@ -845,7 +845,7 @@ test('render preserves indentation for multi-line values', async () => {
   // Without indent-aware substitution, continuation lines would lose
   // their YAML indent and corrupt the `prompt: |` block. This is the
   // load-bearing test for render.js's multi-line handling.
-  const { render } = await import('../lib/render.js');
+  const { render } = await import('../src/core/render.js');
   const tmpl = '          prompt: |\n            {{BODY}}\n';
   const out = render(tmpl, { BODY: 'line1\nline2\nline3' });
   assert.equal(out, '          prompt: |\n            line1\n            line2\n            line3\n');
@@ -855,7 +855,7 @@ test('render preserves blank lines without trailing whitespace in multi-line val
   // Blank lines in the substituted value stay blank (no indent applied).
   // Keeps YAML output clean (no trailing whitespace on otherwise-blank
   // lines) which is also git-friendly.
-  const { render } = await import('../lib/render.js');
+  const { render } = await import('../src/core/render.js');
   const tmpl = '            {{BODY}}\n';
   const out = render(tmpl, { BODY: 'line1\n\nline2' });
   assert.equal(out, '            line1\n\n            line2\n');

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
-import { render, pickTemplate, DEFAULTS } from '../lib/render.js';
+import { render, pickTemplate, DEFAULTS } from '../src/core/render.js';
 
 test('render fills single placeholder', () => {
   const out = render('hello {{NAME}}', { NAME: 'world' });

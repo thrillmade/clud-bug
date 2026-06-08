@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runUpdate } from '../lib/update.js';
-import { DEFAULTS } from '../lib/render.js';
+import { DEFAULTS } from '../src/core/render.js';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(REPO_ROOT, 'templates');

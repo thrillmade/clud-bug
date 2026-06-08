@@ -77,3 +77,14 @@
 
 ---
 
+## 2026-06-08 18:11 - Phase 2: port lib/render.js to src/core/render.ts (+ package.json path fix for dist depth)
+
+**Reasoning:** Fifth and final of 5 zero-dep core conversions. KEY RISK addressed: lib/render.js used join(__dirname, ..., package.json) which assumed __dirname was lib/ (one level deep). After compile to dist/core/render.js, __dirname is dist/core/ (two levels deep), so the path must walk up TWO levels: join(__dirname, .., .., package.json). Verified at runtime via node -e import dist/core/render.js then DEFAULTS.CLUD_BUG_VERSION → 0.6.35. Types added: RenderDefaults interface (CCA_VERSION, CLUD_BUG_VERSION, REVIEW_SCHEMA — the schema-string forwarded from review-schema.ts), RenderVars = Partial<RenderDefaults> & Record<string, unknown> (callers freely pass non-default tokens like REVIEW_PROMPT), TemplateLanguage union ts | py | generic for templateLanguage() return. PKG_VERSION typed as string via JSON.parse cast. render() callback params explicitly typed: (_match, key: string, offset: number). noUncheckedIndexedAccess effect: leadingWhitespaceMatch[1] gets the ?? guard. lib/update.js + bin/clud-bug.js redirected to ../dist/core/render.js. test/render.test.js, test/prompts.test.js, test/update.test.js, test/cli.test.js all imports updated. 361/361 tests pass. 5/5 conversions complete; reading next from src/core/index.ts barrel.
+
+**Alternatives considered:** Embed __dirname computation in DEFAULTS literal instead of module scope (rejected: loses module-load semantic — DEFAULTS becomes a getter call ratio of runtime cost), Pass package.json path via an env override (rejected: silently hides the depth mismatch — better to fail loudly with the fixed path so a future relocation surfaces fast)
+
+**Implications:**
+- src/core/index.ts now exports the full render API (render, renderFile, pickTemplate, templateLanguage, DEFAULTS) + 3 types. 5 of 5 core files converted. lib/ has only the impure CLI helpers left: agents-md.js, branch-protection.js, edit-workflow.js, skill-usage.js, update.js, usage.js. clud-bug-app can pull the entire core/ surface through dist/core/ now: prompts, schema, renderer, detector, template-render — every step of the review flow except the CLI/app glue.
+
+---
+

@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 import { detect, buildDescriptionLine } from '../dist/core/detect.js';
-import { renderFile, pickTemplate, templateLanguage } from '../lib/render.js';
+import { renderFile, pickTemplate, templateLanguage } from '../dist/core/render.js';
 import { reviewPrompt } from '../dist/core/prompts.js';
 import { SkillsClient, rankAndCap } from '../dist/core/skills.js';
 import {

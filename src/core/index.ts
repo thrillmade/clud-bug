@@ -29,3 +29,13 @@ export {
   type DetectedSignals,
   type DescriptionLineSignals,
 } from './detect.js';
+export {
+  render,
+  renderFile,
+  pickTemplate,
+  templateLanguage,
+  DEFAULTS,
+  type RenderDefaults,
+  type RenderVars,
+  type TemplateLanguage,
+} from './render.js';
