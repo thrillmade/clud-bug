@@ -55,3 +55,14 @@
 
 ---
 
+## 2026-06-08 18:04 - Phase 2: complete the render-review.ts conversion (commit 7909aa1 follow-up)
+
+**Reasoning:** Follow-up to 7909aa1, whose title was 'port lib/render-review.js' but whose body landed the other-agent's skills.js W2 split. The actual render-review work landed in this commit. Contents: src/core/render-review.ts (the converted file with Unicode escape literals for SPEC §6 emoji conformance, RenderReviewInput = Partial<ReviewData> & Record<string, unknown> typing on renderReview, type-guard nonEmpty<T>(): arr is T[]), src/core/index.ts gains renderReview + SEVERITY_LABEL exports, test/render-review.test.js imports from src/core/, bin/clud-bug.js runRender() redirected to ../dist/core/render-review.js, lib/render-review.js deleted. Byte-identical to JS source across 14 synthetic test inputs. 361/361 tests pass.
+
+**Alternatives considered:** Rewrite history to fix 7909aa1's misnamed body (rejected: branch is already pushed; rewriting would force-push and clobber the other agent's W2 commit on top)
+
+**Implications:**
+- src/core/index.ts now exports renderReview + SEVERITY_LABEL — clud-bug-app's review post-step can do renderReview(parsedJSON) via the clud-bug/core barrel without dragging the CLI bundle
+
+---
+

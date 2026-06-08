@@ -17,3 +17,4 @@ export {
   type PerSkillScanItem,
   type DedicatedSection,
 } from './review-schema.js';
+export { renderReview, SEVERITY_LABEL } from './render-review.js';

@@ -189,7 +189,7 @@ async function main() {
 // Usage: `clud-bug render --stdin` (only input source supported).
 // Exit code: 0 on success, 2 on JSON parse error or non-object payload.
 async function runRender(args) {
-  const { renderReview } = await import('../lib/render-review.js');
+  const { renderReview } = await import('../dist/core/render-review.js');
   if (!args.stdin) {
     process.stderr.write('clud-bug render: --stdin is required (the only supported input source).\n');
     process.exit(2);
