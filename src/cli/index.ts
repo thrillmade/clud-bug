@@ -31,3 +31,14 @@ export {
   type GitOptions,
   type GitResult,
 } from './edit-workflow.js';
+
+export {
+  renderBlock,
+  detectSkillRelPath,
+  upsertBlock,
+  hasAgentsMdImport,
+  removeBlock,
+  applyToRepo,
+  type RenderBlockOptions,
+  type ApplyToRepoResult,
+} from './agents-md.js';

@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { applyToRepo, detectSkillRelPath, hasAgentsMdImport, removeBlock, renderBlock, upsertBlock } from '../lib/agents-md.js';
+import { applyToRepo, detectSkillRelPath, hasAgentsMdImport, removeBlock, renderBlock, upsertBlock } from '../src/cli/agents-md.js';
 
 async function makeRepo(files = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-agents-md-'));

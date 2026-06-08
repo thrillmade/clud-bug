@@ -18,7 +18,7 @@ import { computeAuditFileSet } from '../dist/cli/audit.js';
 import { renderAuditHeader } from '../dist/core/audit.js';
 import { runUpdate } from '../lib/update.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from '../dist/cli/edit-workflow.js';
-import { applyToRepo as applyAgentDocs } from '../lib/agents-md.js';
+import { applyToRepo as applyAgentDocs } from '../dist/cli/agents-md.js';
 import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from '../dist/cli/branch-protection.js';
 import { computeReviewCost, costPerLOC, cacheHitRate, extractTokensFromLog, rollup, formatRollup } from '../lib/usage.js';
 

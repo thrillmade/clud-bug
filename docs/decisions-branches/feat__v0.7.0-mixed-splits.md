@@ -110,3 +110,14 @@
 
 ---
 
+## 2026-06-08 18:20 - Phase 2 (W3): port lib/agents-md.js to src/cli/agents-md.ts
+
+**Reasoning:** 230 LOC of markdown-block management (renderBlock, upsertBlock, removeBlock, applyToRepo). RenderBlockOptions all-optional with explicit undefined per exactOptionalPropertyTypes. hasAgentsMdImport keeps its unknown input type so call sites that flow data from JSON.parse do not have to assert at the boundary. lib/update.js temporarily imports from dist/cli/agents-md.js (will switch to relative src/cli when update.js converts in file 6).
+
+**Alternatives considered:** Make ALWAYS_TOUCH / TOUCH_IF_PRESENT exported readonly tuples (rejected, internal contract).
+
+**Implications:**
+- src/cli/index.ts now exports the agents-md surface (6 functions + 2 types). lib/update.js bridge updated to dist/cli/agents-md.js.
+
+---
+
