@@ -99,3 +99,14 @@
 
 ---
 
+## 2026-06-08 18:17 - Phase 2 (W3): port lib/edit-workflow.js to src/cli/edit-workflow.ts
+
+**Reasoning:** 47 LOC, smallest file in the wave. spawnSync.{stdout,stderr} are 'string | null' under strict NodeNext — coalesced with ?? '' at each call site to keep semantics identical. .pop() on array-of-string typed as possibly-undefined under noUncheckedIndexedAccess; coalesce + trim guards both.
+
+**Alternatives considered:** Switch to async spawn() and Promise-wrap like branch-protection (rejected — current sync semantics are intentional; getPendingWorkflowEdits is called inline before commit and parallel git status doesn't add value).
+
+**Implications:**
+- src/cli/index.ts now exports getPendingWorkflowEdits + isWorkflowFile + makeBranchName + git plus 3 types. bin/clud-bug.js switched to dist/cli/edit-workflow.js.
+
+---
+

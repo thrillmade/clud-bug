@@ -21,3 +21,13 @@ export {
   type EnableConversationResolutionOptions,
   type EnableResult,
 } from './branch-protection.js';
+
+export {
+  getPendingWorkflowEdits,
+  isWorkflowFile,
+  makeBranchName,
+  git,
+  type PendingWorkflowEdits,
+  type GitOptions,
+  type GitResult,
+} from './edit-workflow.js';
