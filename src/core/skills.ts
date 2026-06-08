@@ -1,34 +1,86 @@
-import { mkdir, writeFile, readdir, readFile, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { createHash } from 'node:crypto';
+// Pure skill helpers — no FS, only the network via injectable fetch.
+//
+// Split from lib/skills.js during the v0.7.0 TS migration. The App
+// (clud-bug-app) consumes these for review-time skill routing without
+// pulling node:fs into the serverless bundle. CLI-only install/update
+// helpers live in src/cli/skills.ts.
+//
+// The `_internal` debug-export pattern from lib/skills.js is removed
+// here: every helper that needed test access has been promoted to a
+// direct named export. Constants (`MAX_SKILLS`, `API_BASE`) and the
+// shape normaliser (`normalizeList`) are now first-class core exports.
 
-const API_BASE = 'https://skills.sh/api/v1';
-const MAX_SKILLS = 8;
-const MANIFEST_FILE = '.clud-bug.json';
-const MANIFEST_VERSION = 1;
+export const API_BASE = 'https://skills.sh/api/v1';
+export const MAX_SKILLS = 8;
 
-// Canonical home for clud-bug's baseline skills.
-// PINNED TO A COMMIT SHA, NOT `main`. This re-couples the trust boundary
-// to clud-bug releases: a compromised commit on agent-skills@main cannot
-// silently land in users' Claude review skills mid-cycle. To roll new
-// skill content, bump BASELINE_SKILLS_REF below in the same clud-bug PR
-// that ships the corresponding bundled fallback update.
-// See thrillmade/agent-skills — skills.sh `skills/<name>/SKILL.md` layout.
-const BASELINE_SKILLS_REF = '436963ed37cbd9c6a9b7a07e907d5a0a432fab59';
-const AGENT_SKILLS_BASE = process.env.CLUD_BUG_AGENT_SKILLS_BASE
-  ?? `https://raw.githubusercontent.com/thrillmade/agent-skills/${BASELINE_SKILLS_REF}/skills`;
-const SKILL_FETCH_TIMEOUT_MS = 5000;
-const SKILL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24h
+// Skill descriptors as returned by skills.sh after normaliseList()
+// massages the API shape. The CLI install path adds further fields
+// (`kind`, `content`) before passing to writeSkill — we type the
+// result loosely with optional fields so a single shape works for
+// both core (search results, ranking) and cli (write+manifest) sites.
+export interface SkillDescriptor {
+  source: string;
+  name: string;
+  description: string;
+  installs: number;
+  kind?: string;
+  content?: string;
+}
+
+// Raw shape coming back from skills.sh. Tolerant: some endpoints return
+// { skills: [...] }, some a bare array, some { results: [...] }, and
+// individual items may use `source` or `repo`, `name` or `slug`.
+type RawSkillItem = {
+  source?: string;
+  repo?: string;
+  name?: string;
+  slug?: string;
+  description?: string;
+  summary?: string;
+  installs?: number;
+  installCount?: number;
+};
+
+type RawSkillListResponse =
+  | RawSkillItem[]
+  | { skills?: RawSkillItem[]; results?: RawSkillItem[] }
+  | unknown;
+
+export function normalizeList(data: RawSkillListResponse): SkillDescriptor[] {
+  // Tolerate either { skills: [...] } or a bare array.
+  const list: RawSkillItem[] = Array.isArray(data)
+    ? data
+    : ((data as { skills?: RawSkillItem[]; results?: RawSkillItem[] } | null)?.skills
+        || (data as { results?: RawSkillItem[] } | null)?.results
+        || []);
+  return list
+    .map((item) => ({
+      source: item.source || item.repo || '',
+      name: item.name || item.slug || '',
+      description: item.description || item.summary || '',
+      installs: item.installs || item.installCount || 0,
+    }))
+    .filter((s) => s.source && s.name);
+}
+
+interface SkillsClientOptions {
+  fetch?: typeof globalThis.fetch;
+  base?: string;
+  userAgent?: string;
+}
 
 export class SkillsClient {
-  constructor({ fetch = globalThis.fetch, base, userAgent = 'clud-bug' } = {}) {
+  private readonly fetch: typeof globalThis.fetch;
+  private readonly base: string;
+  private readonly userAgent: string;
+
+  constructor({ fetch = globalThis.fetch, base, userAgent = 'clud-bug' }: SkillsClientOptions = {}) {
     this.fetch = fetch;
-    this.base = base ?? process.env.CLUD_BUG_SKILLS_SH_BASE ?? API_BASE;
+    this.base = base ?? process.env['CLUD_BUG_SKILLS_SH_BASE'] ?? API_BASE;
     this.userAgent = userAgent;
   }
 
-  async #json(path) {
+  async #json(path: string): Promise<unknown> {
     const res = await this.fetch(`${this.base}${path}`, {
       headers: { 'User-Agent': this.userAgent, accept: 'application/json' },
     });
@@ -38,45 +90,48 @@ export class SkillsClient {
     return res.json();
   }
 
-  async search(terms) {
+  async search(terms: string[]): Promise<SkillDescriptor[]> {
     const q = terms.filter(Boolean).join(' ').trim();
     if (!q) return [];
     const data = await this.#json(`/skills/search?q=${encodeURIComponent(q)}`);
     return normalizeList(data);
   }
 
-  async curated() {
+  async curated(): Promise<SkillDescriptor[]> {
     const data = await this.#json('/skills/curated');
     return normalizeList(data);
   }
 
-  async getContent(source, name) {
-    const data = await this.#json(`/skills/${encodeURIComponent(source)}/${encodeURIComponent(name)}`);
+  async getContent(source: string, name: string): Promise<string> {
+    const data = (await this.#json(
+      `/skills/${encodeURIComponent(source)}/${encodeURIComponent(name)}`,
+    )) as { content?: unknown; body?: unknown; files?: Array<{ content?: unknown }> } | null;
     // The API may return content as `body`, `content`, or under `files[0].content`.
     // Try the documented shapes in order; fail loudly if none match so we know
     // the API contract changed.
     if (typeof data?.content === 'string') return data.content;
     if (typeof data?.body === 'string') return data.body;
-    if (typeof data?.files?.[0]?.content === 'string') return data.files[0].content;
+    const first = data?.files?.[0]?.content;
+    if (typeof first === 'string') return first;
     throw new Error(`skills.sh response for ${source}/${name} had no content field`);
   }
 }
 
-function normalizeList(data) {
-  // Tolerate either { skills: [...] } or a bare array.
-  const list = Array.isArray(data) ? data : (data?.skills || data?.results || []);
-  return list.map(item => ({
-    source: item.source || item.repo || '',
-    name: item.name || item.slug || '',
-    description: item.description || item.summary || '',
-    installs: item.installs || item.installCount || 0,
-  })).filter(s => s.source && s.name);
+// Used by rankAndCap input. Allows mixing baseline skills (which carry a
+// `kind: 'baseline'`) with remote ones. Matches the cli-side shape too.
+export interface RankableSkill extends SkillDescriptor {
+  kind?: string;
 }
 
 // Deduplicates by source/name and caps at MAX_SKILLS, preferring curated then by install count.
-export function rankAndCap(curated, searched, baseline, cap = MAX_SKILLS) {
-  const seen = new Set(baseline.map(b => `local:${b.name}`));
-  const out = [...baseline];
+export function rankAndCap(
+  curated: RankableSkill[],
+  searched: RankableSkill[],
+  baseline: RankableSkill[],
+  cap: number = MAX_SKILLS,
+): RankableSkill[] {
+  const seen = new Set(baseline.map((b) => `local:${b.name}`));
+  const out: RankableSkill[] = [...baseline];
   const remaining = cap - baseline.length;
   if (remaining <= 0) return out.slice(0, cap);
 
@@ -91,261 +146,6 @@ export function rankAndCap(curated, searched, baseline, cap = MAX_SKILLS) {
     out.push({ ...skill, kind: skill.kind || 'remote' });
   }
   return out;
-}
-
-// Loads the baseline skills, preferring the pinned thrillmade/agent-skills
-// commit and falling back to the bundled npm-package copy on any fetch failure.
-// Returns the same shape as before, plus a `_source` of either 'agent-skills'
-// or 'bundled' so the CLI can report which path was used.
-//
-// Options:
-//   - fetch     — injectable for tests (defaults to globalThis.fetch)
-//   - cacheDir  — where to cache fetched SKILL.md files (defaults to
-//                 ~/.cache/clud-bug/skills/, skipped if null)
-export async function loadBaseline(baselineDir, opts = {}) {
-  const fetchImpl = opts.fetch ?? globalThis.fetch;
-  const cacheDir = opts.cacheDir === null ? null
-    : (opts.cacheDir ?? join(homedir(), '.cache', 'clud-bug', 'skills'));
-
-  // First, enumerate the bundled baseline skills (source of truth for which
-  // names exist). Then fetch each in parallel — sequential awaits would
-  // stack timeouts (3 baselines × 5s = 15s before fallback when offline).
-  const bundled = await readBundled(baselineDir);
-  const remotes = await Promise.all(
-    bundled.map((s) => tryFetchSkill(s.name, fetchImpl, cacheDir)),
-  );
-  return bundled.map((skill, i) => remotes[i]
-    ? { ...skill, content: remotes[i], _source: 'agent-skills' }
-    : { ...skill, _source: 'bundled' });
-}
-
-// Reads the bundled baseline from the npm-package directory.
-async function readBundled(baselineDir) {
-  const skills = [];
-  let entries;
-  try {
-    entries = await readdir(baselineDir, { withFileTypes: true });
-  } catch {
-    return skills;
-  }
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-    const content = await readFile(join(baselineDir, entry.name), 'utf8');
-    skills.push({
-      source: 'clud-bug-baseline',
-      name: entry.name.replace(/\.md$/, ''),
-      description: '(baseline)',
-      installs: 0,
-      kind: 'baseline',
-      content,
-    });
-  }
-  return skills;
-}
-
-// Try to read from cache, then fall back to network. Returns the SKILL.md
-// content string on success, null on any failure (caller falls back to bundled).
-async function tryFetchSkill(name, fetchImpl, cacheDir) {
-  // Cache lookup first.
-  if (cacheDir) {
-    const cached = await readFromCache(cacheDir, name);
-    if (cached !== null) return cached;
-  }
-
-  // Network fetch with timeout covering BOTH the connection AND the body
-  // read (clearTimeout in finally guarantees the timer doesn't keep the
-  // event loop alive for up to 5s past a failed CLI run).
-  const url = `${AGENT_SKILLS_BASE}/${encodeURIComponent(name)}/SKILL.md`;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), SKILL_FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetchImpl(url, { signal: ctrl.signal });
-    if (!res.ok) return null;
-    const content = await res.text();
-    if (!content || !content.trim()) return null;
-    if (cacheDir) await writeToCache(cacheDir, name, content);
-    return content;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function readFromCache(cacheDir, name) {
-  const path = cachePath(cacheDir, name);
-  try {
-    const st = await stat(path);
-    if (Date.now() - st.mtimeMs > SKILL_CACHE_TTL_MS) return null;
-    return await readFile(path, 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-async function writeToCache(cacheDir, name, content) {
-  try {
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(cachePath(cacheDir, name), content);
-  } catch {
-    // Cache write failures are non-fatal — we already have the content.
-  }
-}
-
-function cachePath(cacheDir, name) {
-  // Include AGENT_SKILLS_BASE in the hash so different upstream URLs (e.g.
-  // a fork via CLUD_BUG_AGENT_SKILLS_BASE, or a different pinned SHA after
-  // a clud-bug release) get different cache entries. Otherwise switching
-  // bases would silently return the previously-cached content from a
-  // different upstream — cross-base cache poisoning.
-  const hash = createHash('sha256').update(`${AGENT_SKILLS_BASE}\n${name}`).digest('hex').slice(0, 16);
-  return join(cacheDir, `${hash}.md`);
-}
-
-export async function writeSkills(targetDir, skills, client) {
-  await mkdir(targetDir, { recursive: true });
-  const written = [];
-  for (const skill of skills) {
-    const entry = await writeSkill(targetDir, skill, client);
-    written.push(entry);
-  }
-  await writeManifest(targetDir, mergeManifest(await readManifest(targetDir), written));
-  return written;
-}
-
-export async function writeSkill(targetDir, skill, client) {
-  await mkdir(targetDir, { recursive: true });
-  const slug = sanitizeSlug(skill.name);
-  const skillDir = join(targetDir, slug);
-  await mkdir(skillDir, { recursive: true });
-  const content = skill.content ?? await client.getContent(skill.source, skill.name);
-  await writeFile(join(skillDir, 'SKILL.md'), content);
-  return {
-    slug,
-    name: skill.name,
-    source: skill.source,
-    kind: skill.kind || 'remote',
-    description: skill.description || '',
-  };
-}
-
-export async function readManifest(targetDir) {
-  try {
-    const text = await readFile(join(targetDir, MANIFEST_FILE), 'utf8');
-    const data = JSON.parse(text);
-    return {
-      ...data,
-      version: data.version || MANIFEST_VERSION,
-      installed: Array.isArray(data.installed) ? data.installed : [],
-    };
-  } catch {
-    return { version: MANIFEST_VERSION, installed: [] };
-  }
-}
-
-export async function writeManifest(targetDir, manifest) {
-  await mkdir(targetDir, { recursive: true });
-  // Preserve any additional fields callers want to stamp (e.g. lastUpdate,
-  // lastUpdateVersion, pinVersion). Only `version` and `installed` are normalized.
-  const out = {
-    ...manifest,
-    version: manifest.version || MANIFEST_VERSION,
-    installed: manifest.installed || [],
-  };
-  await writeFile(join(targetDir, MANIFEST_FILE), JSON.stringify(out, null, 2) + '\n');
-}
-
-export function mergeManifest(existing, newEntries) {
-  const byKey = new Map();
-  for (const entry of existing.installed || []) {
-    byKey.set(entryKey(entry), entry);
-  }
-  for (const entry of newEntries) {
-    byKey.set(entryKey(entry), entry);
-  }
-  // Spread `existing` so caller-set fields (pinVersion, lastUpdate,
-  // lastUpdateVersion, etc.) survive merges performed by writeSkills /
-  // refresh / add. Only `installed` is rebuilt; everything else carries.
-  return { ...existing, version: MANIFEST_VERSION, installed: [...byKey.values()] };
-}
-
-function entryKey(entry) {
-  // Baseline skills have no source; key by slug. Remote skills key by source/name.
-  return entry.kind === 'baseline' ? `baseline:${entry.slug}` : `${entry.source}/${entry.name || entry.slug}`;
-}
-
-export async function removeSkill(targetDir, slug) {
-  const manifest = await readManifest(targetDir);
-  const entry = manifest.installed.find(e => e.slug === slug);
-  if (!entry) {
-    throw new Error(`'${slug}' is not in the clud-bug manifest. If it's a custom skill, delete it manually with: rm -rf .claude/skills/${slug}`);
-  }
-  await rm(join(targetDir, slug), { recursive: true, force: true });
-  manifest.installed = manifest.installed.filter(e => e.slug !== slug);
-  await writeManifest(targetDir, manifest);
-  return entry;
-}
-
-export async function listInstalled(targetDir) {
-  const manifest = await readManifest(targetDir);
-  const managedSlugs = new Set(manifest.installed.map(e => e.slug));
-  const groups = { baseline: [], remote: [], custom: [] };
-  for (const entry of manifest.installed) {
-    (groups[entry.kind === 'baseline' ? 'baseline' : 'remote']).push(entry);
-  }
-
-  let entries;
-  try {
-    entries = await readdir(targetDir, { withFileTypes: true });
-  } catch {
-    return groups;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (managedSlugs.has(entry.name)) continue;
-    const skillFile = join(targetDir, entry.name, 'SKILL.md');
-    let description = '';
-    try {
-      const text = await readFile(skillFile, 'utf8');
-      const m = text.match(/^description:\s*(.+)$/m);
-      description = m?.[1]?.trim() || '';
-    } catch {
-      continue; // not a skill dir
-    }
-    groups.custom.push({ slug: entry.name, kind: 'custom', description });
-  }
-  return groups;
-}
-
-// Diff a current manifest against a freshly-recommended skill set.
-// Returns { add: [], remove: [], unchanged: [] }. Custom skills are never affected.
-export function diffManifest(manifest, recommended) {
-  const recByKey = new Map(recommended.map(s => [
-    s.kind === 'baseline' ? `baseline:${sanitizeSlug(s.name)}` : `${s.source}/${s.name}`,
-    s,
-  ]));
-  const installedByKey = new Map(manifest.installed.map(e => [entryKey(e), e]));
-
-  const add = [];
-  const remove = [];
-  const unchanged = [];
-
-  for (const [key, skill] of recByKey) {
-    if (installedByKey.has(key)) {
-      unchanged.push(skill);
-    } else {
-      add.push(skill);
-    }
-  }
-  for (const [key, entry] of installedByKey) {
-    if (entry.kind === 'baseline') continue; // baseline always stays
-    if (!recByKey.has(key)) remove.push(entry);
-  }
-  return { add, remove, unchanged };
-}
-
-function sanitizeSlug(name) {
-  return name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 // Extract the `review_mode` field from a SKILL.md's frontmatter.
@@ -367,20 +167,25 @@ function sanitizeSlug(name) {
 // The CLI runtime (v0.5.9) honors this via prompt restructuring inside a
 // single claude-code-action call. The v0.6 GitHub App will use the same
 // field to route to literal parallel API calls. Single source of truth.
-export function readReviewMode(skillContent) {
+export function readReviewMode(skillContent: unknown): 'shared' | 'dedicated' {
   if (typeof skillContent !== 'string') return 'shared';
   // Scope to the YAML frontmatter block (between the first two `---` lines).
   // A `review_mode:` line in the body is documentation, not configuration.
   const fm = skillContent.match(/^---\n([\s\S]*?)\n---/);
   if (!fm) return 'shared';
-  const m = fm[1].match(/^review_mode:\s*(\S+)\s*$/m);
+  const m = (fm[1] as string).match(/^review_mode:\s*(\S+)\s*$/m);
   if (!m) return 'shared';
   // Strip optional YAML string-quotes — `review_mode: "dedicated"` and
   // `review_mode: 'dedicated'` are both valid YAML, but the (\S+) capture
   // grabs the quotes too. Without this, quoted forms silently fell back
   // to `shared` even though the author clearly meant dedicated.
-  const value = m[1].toLowerCase().replace(/^["']|["']$/g, '');
+  const value = (m[1] as string).toLowerCase().replace(/^["']|["']$/g, '');
   return value === 'dedicated' ? 'dedicated' : 'shared';
+}
+
+export interface AppliesToRule {
+  paths: string[];
+  extensions: string[];
 }
 
 // 0.0.K (v0.6.21): parse the optional `applies_to:` frontmatter block.
@@ -400,11 +205,11 @@ export function readReviewMode(skillContent) {
 // Hand-rolled YAML parser scoped to this exact shape. The frontmatter
 // is otherwise opaque (review_mode is parsed elsewhere with a similar
 // single-key regex), so pulling in a YAML dep would be overkill.
-export function readAppliesTo(skillContent) {
+export function readAppliesTo(skillContent: unknown): AppliesToRule | null {
   if (typeof skillContent !== 'string') return null;
   const fm = skillContent.match(/^---\n([\s\S]*?)\n---/);
   if (!fm) return null;
-  const block = fm[1];
+  const block = fm[1] as string;
   // Anchor on `applies_to:` at start of line (the body of a SKILL.md
   // could mention the term in prose; only the frontmatter key fires).
   const head = block.match(/^applies_to:\s*$/m);
@@ -412,7 +217,9 @@ export function readAppliesTo(skillContent) {
   // Slice from after the `applies_to:` line; the block ends at the
   // next top-level key (a line starting with a word character + `:`)
   // OR end-of-block.
-  const startIdx = head.index + head[0].length;
+  // `head.index` is defined here because String.prototype.match returns
+  // a RegExpMatchArray with `index` set when the regex is non-global.
+  const startIdx = (head.index as number) + head[0].length;
   const rest = block.slice(startIdx);
   const stop = rest.search(/^\w[\w-]*:/m);
   const scoped = stop === -1 ? rest : rest.slice(0, stop);
@@ -425,10 +232,10 @@ export function readAppliesTo(skillContent) {
 // Parse a YAML list under `<key>:`, handling both the inline-array
 // form (`extensions: [".tsx", ".jsx"]`) and the block form
 // (`paths:` followed by `  - "src/ui/**"` lines).
-function parseYamlList(block, key) {
+function parseYamlList(block: string, key: string): string[] {
   const inline = block.match(new RegExp(`^\\s{2}${key}:\\s*\\[(.*?)\\]\\s*$`, 'm'));
   if (inline) {
-    return inline[1]
+    return (inline[1] as string)
       .split(',')
       .map((s) => s.trim().replace(/^["']|["']$/g, ''))
       .filter(Boolean);
@@ -436,12 +243,12 @@ function parseYamlList(block, key) {
   const headerRe = new RegExp(`^\\s{2}${key}:\\s*$`, 'm');
   const head = block.match(headerRe);
   if (!head) return [];
-  const after = block.slice(head.index + head[0].length);
-  const items = [];
+  const after = block.slice((head.index as number) + head[0].length);
+  const items: string[] = [];
   for (const line of after.split('\n')) {
     const item = line.match(/^\s{4,}-\s*(.+?)\s*$/);
     if (item) {
-      items.push(item[1].replace(/^["']|["']$/g, ''));
+      items.push((item[1] as string).replace(/^["']|["']$/g, ''));
       continue;
     }
     // Anything that isn't a list item (or blank) ends the list.
@@ -462,10 +269,10 @@ function parseYamlList(block, key) {
 // Skill `paths` use the minimal glob set logmind already uses
 // (`*` matches non-slash, `**` matches across slashes, `?` single
 // char). Anything fancier would need a real glob lib.
-export function appliesToPr(skillContent, prPaths) {
+export function appliesToPr(skillContent: unknown, prPaths: unknown): boolean {
   const rule = readAppliesTo(skillContent);
-  if (rule === null) return true;  // back-compat: no rule → applies
-  if (!Array.isArray(prPaths)) return true;  // be permissive on bad input
+  if (rule === null) return true; // back-compat: no rule → applies
+  if (!Array.isArray(prPaths)) return true; // be permissive on bad input
   for (const path of prPaths) {
     if (typeof path !== 'string') continue;
     for (const ext of rule.extensions) {
@@ -480,7 +287,7 @@ export function appliesToPr(skillContent, prPaths) {
 
 // Minimal glob → regex: `**` → `.*`, `*` → `[^/]*`, `?` → `.`,
 // everything else escaped. Anchored full-string match.
-function globMatch(glob, path) {
+function globMatch(glob: string, path: string): boolean {
   const escaped = glob
     .replace(/([.+^${}()|[\]\\])/g, '\\$1')
     .replace(/\*\*/g, '__DOUBLESTAR__')
@@ -490,6 +297,13 @@ function globMatch(glob, path) {
   return new RegExp(`^${escaped}$`).test(path);
 }
 
+// Loose shape of a "skill" object as it flows through the runtime. Caller
+// may attach `content` (the SKILL.md text) for partitioning decisions.
+export interface SkillWithOptionalContent {
+  content?: unknown;
+  [key: string]: unknown;
+}
+
 // Partition a set of loaded skills into {shared, dedicated} buckets per
 // each skill's review_mode frontmatter. Expects skills with a `content`
 // field (SKILL.md text). Skills without content default to `shared`.
@@ -497,9 +311,11 @@ function globMatch(glob, path) {
 // Shape: input is the same skill objects produced by loadBaseline /
 // writeSkills / listInstalled. Output is two arrays of the same shape;
 // caller decides what to do with each bucket.
-export function partitionByReviewMode(skills) {
-  const shared = [];
-  const dedicated = [];
+export function partitionByReviewMode<T extends SkillWithOptionalContent>(
+  skills: T[],
+): { shared: T[]; dedicated: T[] } {
+  const shared: T[] = [];
+  const dedicated: T[] = [];
   for (const skill of skills) {
     const mode = readReviewMode(skill?.content);
     (mode === 'dedicated' ? dedicated : shared).push(skill);
@@ -521,7 +337,7 @@ export function partitionByReviewMode(skills) {
 //
 // The brackets in the line prefix anchor the match so a partial-name collision
 // (e.g. `brand-voice` finding `brand-voice-review`) is impossible.
-export function extractPerSkillLine(comment, skillName) {
+export function extractPerSkillLine(comment: unknown, skillName: unknown): string | null {
   if (typeof comment !== 'string' || !comment) return null;
   if (typeof skillName !== 'string' || !skillName) return null;
   // Escape regex metacharacters in the skill name. A skill name with a `.` or
@@ -532,7 +348,16 @@ export function extractPerSkillLine(comment, skillName) {
   // dash. The OUTCOME is everything from after `]:` to end-of-line.
   const re = new RegExp(`^\\s*-\\s*\\[${escaped}\\]:\\s*(.+?)\\s*$`, 'm');
   const m = comment.match(re);
-  return m ? m[1] : null;
+  return m ? (m[1] as string) : null;
+}
+
+// Minimal shape of a PR comment (subset of GitHub's REST schema) used by
+// selectReviewHeader / selectReviewBody. `body` and `user.login` are
+// the only fields we actually read; `created_at` is used for sorting.
+export interface PrComment {
+  body?: unknown;
+  user?: { login?: unknown };
+  created_at?: unknown;
 }
 
 // Find the latest clud-bug review header line from a list of PR comments.
@@ -561,7 +386,7 @@ export function extractPerSkillLine(comment, skillName) {
 // quoted sentinels in body text" property: a comment that mentions the
 // strict-mode header in prose (inline-code, blockquote) won't match
 // because the quoted version isn't at start-of-line.
-export function selectReviewHeader(comments, botLogin) {
+export function selectReviewHeader(comments: unknown, botLogin: unknown): string | null {
   if (!Array.isArray(comments)) return null;
   if (typeof botLogin !== 'string' || !botLogin) return null;
   // Sort newest-first by created_at. The composite passes the result of
@@ -572,9 +397,9 @@ export function selectReviewHeader(comments, botLogin) {
   // the newer "— clean" follow-up, so fix-push reviews that resolved
   // critical findings still failed the gate. Explicit sort here makes
   // selection deterministic regardless of upstream API quirks.
-  const sorted = [...comments].sort((a, b) => {
-    const ta = a?.created_at ? Date.parse(a.created_at) : 0;
-    const tb = b?.created_at ? Date.parse(b.created_at) : 0;
+  const sorted: PrComment[] = [...(comments as PrComment[])].sort((a, b) => {
+    const ta = typeof a?.created_at === 'string' ? Date.parse(a.created_at) : 0;
+    const tb = typeof b?.created_at === 'string' ? Date.parse(b.created_at) : 0;
     return tb - ta; // newest first
   });
   for (const c of sorted) {
@@ -591,7 +416,7 @@ export function selectReviewHeader(comments, botLogin) {
 // Pull the FIRST line of `body` that starts with the H2 sentinel.
 // Exported separately so callers can extract a header from a known body
 // without re-running the comment filter (useful in tests + the v0.6 App).
-export function extractFirstReviewHeaderLine(body) {
+export function extractFirstReviewHeaderLine(body: unknown): string | null {
   if (typeof body !== 'string') return null;
   const m = body.match(/^## 🐛 Clud Bug review[^\n]*/m);
   return m ? m[0] : null;
@@ -613,16 +438,16 @@ export function extractFirstReviewHeaderLine(body) {
 // of the composite still used the broken `.body | startswith(...)` jq
 // filter even after step 1 was refactored, leaving per-skill check-runs
 // silently disabled on every install with strictSkills since v0.5.10.
-export function selectReviewBody(comments, botLogin) {
+export function selectReviewBody(comments: unknown, botLogin: unknown): string | null {
   if (!Array.isArray(comments)) return null;
   if (typeof botLogin !== 'string' || !botLogin) return null;
   // Same explicit newest-first sort as selectReviewHeader — gh api
   // ignores direction=desc on issue-comments and returns ascending,
   // so without this BB.3 was parsing per-skill outcomes from the
   // OLDEST review comment, not the latest. See selectReviewHeader.
-  const sorted = [...comments].sort((a, b) => {
-    const ta = a?.created_at ? Date.parse(a.created_at) : 0;
-    const tb = b?.created_at ? Date.parse(b.created_at) : 0;
+  const sorted: PrComment[] = [...(comments as PrComment[])].sort((a, b) => {
+    const ta = typeof a?.created_at === 'string' ? Date.parse(a.created_at) : 0;
+    const tb = typeof b?.created_at === 'string' ? Date.parse(b.created_at) : 0;
     return tb - ta;
   });
   for (const c of sorted) {
@@ -635,15 +460,12 @@ export function selectReviewBody(comments, botLogin) {
   return null;
 }
 
-// Decide whether a review-header line is the strict-mode "critical findings"
-// verdict that should fail the gate. Mirrors the v0.5.x bash predicate
-// `grep -q "Clud Bug review — critical findings"`.
-//
-// Returns false for null/non-string input so a "no header found" path
-// (selectReviewHeader returning null) safely falls through to the gate
-// passing — which is the right posture: if the bot didn't post a review
-// with the strict-mode header, there's nothing for the gate to fail on.
-// "Loud failure for missing manifest" is handled upstream in the composite.
+export interface ReviewStatsHeader {
+  important: number;
+  nit: number;
+  preExisting: number;
+}
+
 // Extract the v0.6.5+ stats header line "Found: N 🔴 / N 🟡 / N 🟣"
 // from a review comment body. Returns {important, nit, preExisting} when
 // found, null otherwise. The header lets agents reading the comment on a
@@ -655,19 +477,28 @@ export function selectReviewBody(comments, botLogin) {
 // and tolerates 1+ digits for each count. Severity emoji are matched
 // literally — a future bot revision that changes the emoji would break
 // this parser loudly, which is the intended behavior (catches drift).
-export function extractStatsHeader(comment) {
+export function extractStatsHeader(comment: unknown): ReviewStatsHeader | null {
   if (typeof comment !== 'string' || !comment) return null;
   const re = /Found:\s*(\d+)\s*🔴\s*\/\s*(\d+)\s*🟡\s*\/\s*(\d+)\s*🟣/u;
   const m = comment.match(re);
   if (!m) return null;
   return {
-    important: parseInt(m[1], 10),
-    nit: parseInt(m[2], 10),
-    preExisting: parseInt(m[3], 10),
+    important: parseInt(m[1] as string, 10),
+    nit: parseInt(m[2] as string, 10),
+    preExisting: parseInt(m[3] as string, 10),
   };
 }
 
-export function isCriticalReviewHeader(headerLine) {
+// Decide whether a review-header line is the strict-mode "critical findings"
+// verdict that should fail the gate. Mirrors the v0.5.x bash predicate
+// `grep -q "Clud Bug review — critical findings"`.
+//
+// Returns false for null/non-string input so a "no header found" path
+// (selectReviewHeader returning null) safely falls through to the gate
+// passing — which is the right posture: if the bot didn't post a review
+// with the strict-mode header, there's nothing for the gate to fail on.
+// "Loud failure for missing manifest" is handled upstream in the composite.
+export function isCriticalReviewHeader(headerLine: unknown): boolean {
   if (typeof headerLine !== 'string') return false;
   return /Clud Bug review — critical findings/.test(headerLine);
 }
@@ -699,7 +530,7 @@ export function isCriticalReviewHeader(headerLine) {
 // findings" / "100 findings" don't substring-match to success — the exact
 // bug that v0.5.10's first revision had, caught by clud-bug-review + claude-
 // review on PR #57.
-export function classifyPerSkillOutcome(outcomeLine) {
+export function classifyPerSkillOutcome(outcomeLine: unknown): 'failure' | 'success' {
   if (outcomeLine == null) return 'failure';
   const text = String(outcomeLine);
 
@@ -745,5 +576,3 @@ export function classifyPerSkillOutcome(outcomeLine) {
   // this classifier doesn't need per-skill vocabulary knowledge.
   return 'failure';
 }
-
-export const _internal = { normalizeList, sanitizeSlug, entryKey, MAX_SKILLS, API_BASE, MANIFEST_FILE };

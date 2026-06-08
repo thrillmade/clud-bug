@@ -26,14 +26,21 @@ export default defineConfig({
       enforce: 'pre',
       async resolveId(source, importer) {
         if (!importer) return null;
-        if (!source.endsWith('.js')) return null;
-        if (!source.startsWith('.') && !source.startsWith('/')) return null;
-        const abs = pathResolve(dirname(importer), source);
+        // Strip query string (cache-busters like `?base-a`) before path
+        // checks; preserve it on the resolved id so vitest re-imports
+        // fresh state per query. skills.test.js uses this idiom to make
+        // module-top-level `process.env` reads happen twice in one run.
+        const qIdx = source.indexOf('?');
+        const bare = qIdx === -1 ? source : source.slice(0, qIdx);
+        const query = qIdx === -1 ? '' : source.slice(qIdx);
+        if (!bare.endsWith('.js')) return null;
+        if (!bare.startsWith('.') && !bare.startsWith('/')) return null;
+        const abs = pathResolve(dirname(importer), bare);
         if (!abs.includes(`${pathResolve(__dirname, 'src')}`)) return null;
         if (existsSync(abs) && statSync(abs).isFile()) return null;
         const tsCandidate = abs.replace(/\.js$/, '.ts');
         if (existsSync(tsCandidate) && statSync(tsCandidate).isFile()) {
-          return tsCandidate;
+          return tsCandidate + query;
         }
         return null;
       },

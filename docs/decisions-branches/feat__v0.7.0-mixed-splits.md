@@ -33,3 +33,14 @@
 
 ---
 
+## 2026-06-08 18:01 - Phase 2: port lib/render-review.js to src/core/render-review.ts
+
+**Reasoning:** Third of 5 zero-dep core conversions. SEVERITY_EMOJI uses Unicode escape literals (\u{1F534}/\u{1F7E1}/\u{1F7E3}/\u{1F41B}) for the byte-identical SPEC §6 contract — every step of the TS→JS toolchain preserves exact code points regardless of editor encoding. renderReview() typed as (data: RenderReviewInput | null | undefined): string where RenderReviewInput = Partial<ReviewData> & Record<string, unknown> — the renderer is the last line of defense against malformed JSON and degrades gracefully rather than throwing. Helper signatures locked: renderHeader, renderStatusLine, renderStatsHeader, renderPerSkillScan, renderDedicatedSection, renderFindings, renderSkillsReferenced, sanitizeCounts, numOrZero, locationAnchor, stripTrailingPunctuation. nonEmpty<T>() uses a type-guard return (arr is T[]) so downstream uses get narrowed array typing. SEVERITY_LABEL kept exported even though only SEVERITY_EMOJI is read internally — the JS source exposed the constant via module scope; preserve the public API. Byte-equivalence verified with /tmp/check-render-review.mjs across 14 synthetic ReviewData inputs (clean, critical, mixed, dedicated section, malformed counts, trailing-period summary, etc.) — all cases byte-identical to lib/render-review.js. bin/clud-bug.js runRender() redirected from ../lib/render-review.js to ../dist/core/render-review.js. 361/361 tests pass.
+
+**Alternatives considered:** Throw on malformed JSON (rejected: schema-strict mode catches that upstream; renderer is defensive last-line per the 0.0.O design), Tight Pick<> types for each helper (rejected: would couple internal helpers to ReviewData's exact shape and break under schema bump-without-renderer-update — the JS code's permissive style is intentional)
+
+**Implications:**
+- src/core/index.ts now exports renderReview + SEVERITY_LABEL; clud-bug-app can renderReview(parsedJSON) without dragging the CLI bundle
+
+---
+

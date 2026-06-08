@@ -4,20 +4,24 @@ import { mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  SkillsClient, rankAndCap, writeSkills, loadBaseline,
-  readManifest, writeManifest, mergeManifest,
-  removeSkill, listInstalled, diffManifest,
+  SkillsClient, rankAndCap,
   readReviewMode, partitionByReviewMode, readAppliesTo, appliesToPr,
   extractPerSkillLine, classifyPerSkillOutcome,
   selectReviewHeader, extractFirstReviewHeaderLine, isCriticalReviewHeader,
   selectReviewBody,
   extractStatsHeader,
-  _internal,
-} from '../lib/skills.js';
+  API_BASE,
+} from '../src/core/skills.js';
+import {
+  writeSkills, loadBaseline,
+  readManifest, writeManifest, mergeManifest,
+  removeSkill, listInstalled, diffManifest,
+  sanitizeSlug,
+} from '../src/cli/skills.js';
 
 function mockFetch(routes) {
   return async (url) => {
-    const path = url.replace(_internal.API_BASE, '');
+    const path = url.replace(API_BASE, '');
     if (!(path in routes)) {
       return { ok: false, status: 404, json: async () => ({}) };
     }
@@ -228,12 +232,12 @@ test('loadBaseline: cache key differs by upstream base — switching bases re-fe
       process.env.CLUD_BUG_AGENT_SKILLS_BASE = 'https://fork-a.example/skills';
       // Force re-import to pick up the env-driven AGENT_SKILLS_BASE.
       // (Tests use fresh import via dynamic specifier with cache-buster.)
-      const modA = await import('../lib/skills.js?base-a');
+      const modA = await import('../src/cli/skills.js?base-a');
       await modA.loadBaseline(dir, { cacheDir: cache, fetch });
       assert.equal(calls, 1, 'first base: 1 fetch');
 
       process.env.CLUD_BUG_AGENT_SKILLS_BASE = 'https://fork-b.example/skills';
-      const modB = await import('../lib/skills.js?base-b');
+      const modB = await import('../src/cli/skills.js?base-b');
       await modB.loadBaseline(dir, { cacheDir: cache, fetch });
       assert.equal(calls, 2, 'second base: cache key differs, must re-fetch');
     } finally {
@@ -271,8 +275,8 @@ test('loadBaseline: cache hit avoids network on second call', async () => {
 });
 
 test('sanitizeSlug normalizes names safely', () => {
-  assert.equal(_internal.sanitizeSlug('Foo Bar!'), 'foo-bar');
-  assert.equal(_internal.sanitizeSlug('--Already-OK--'), 'already-ok');
+  assert.equal(sanitizeSlug('Foo Bar!'), 'foo-bar');
+  assert.equal(sanitizeSlug('--Already-OK--'), 'already-ok');
 });
 
 test('writeSkills creates a manifest tracking what it installed', async () => {
@@ -388,7 +392,7 @@ test('writeSkill (single) writes one SKILL.md without touching manifest', async 
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-single-'));
   try {
     const client = new SkillsClient({ fetch: mockFetch({ '/skills/p/q': { content: 'single' } })});
-    const { writeSkill } = await import('../lib/skills.js');
+    const { writeSkill } = await import('../src/cli/skills.js');
     const entry = await writeSkill(dir, { source: 'p', name: 'q', kind: 'remote' }, client);
     assert.equal(entry.slug, 'q');
     assert.equal(await readFile(join(dir, 'q', 'SKILL.md'), 'utf8'), 'single');
