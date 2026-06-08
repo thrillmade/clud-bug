@@ -19,7 +19,7 @@ import { renderAuditHeader } from '../dist/core/audit.js';
 import { runUpdate } from '../lib/update.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from '../lib/edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from '../lib/agents-md.js';
-import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from '../lib/branch-protection.js';
+import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from '../dist/cli/branch-protection.js';
 import { computeReviewCost, costPerLOC, cacheHitRate, extractTokensFromLog, rollup, formatRollup } from '../lib/usage.js';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));

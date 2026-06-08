@@ -88,3 +88,14 @@
 
 ---
 
+## 2026-06-08 18:16 - Phase 2 (W3): port lib/branch-protection.js to src/cli/branch-protection.ts
+
+**Reasoning:** Wave 3 starts with the smallest CLI-only file (113 LOC, gh CLI helpers). Modeled types after the audit/skills wave: discriminated unions for ProtectionState and EnableResult give callers exhaustiveness on switch; GhInvoker is the pluggable shape both runtime and tests use. spawn() stdio streams asserted non-null since we configure 'pipe' for all three.
+
+**Alternatives considered:** Throwing on non-zero gh exit (rejected — existing code intentionally returns discriminated states so runInit can branch on user-facing copy).
+
+**Implications:**
+- src/cli/index.ts now exports the branch-protection surface (4 functions + 9 types). bin/clud-bug.js updated to import from dist/cli/branch-protection.js (matches the dist/ pattern audit/skills already use).
+
+---
+

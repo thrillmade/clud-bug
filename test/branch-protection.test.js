@@ -5,7 +5,7 @@ import {
   detectDefaultBranch,
   getProtectionState,
   enableConversationResolution,
-} from '../lib/branch-protection.js';
+} from '../src/cli/branch-protection.js';
 
 // Tiny mock factory for the injectable `gh` invoker. Returns a fn that
 // matches arg patterns to canned responses, so tests stay focused on
