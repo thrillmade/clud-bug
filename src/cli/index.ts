@@ -62,3 +62,26 @@ export {
   type FetchUsageArtifactsOptions,
   type UsageArtifactRecord,
 } from './skill-usage.js';
+
+export {
+  PRICING,
+  computeReviewCost,
+  costPerLOC,
+  cacheHitRate,
+  extractTokensFromLog,
+  rollup,
+  formatRollup,
+  type ModelPricing,
+  type TokenCounts,
+  type CostParts,
+  type ReviewCost,
+  type ExtractedTokens,
+  type ReviewRecord,
+  type RollupGroupStats,
+  type RollupTotal,
+  type RollupTrend,
+  type RollupOutlier,
+  type UnknownModelReview,
+  type Rollup,
+  type FormatRollupOptions,
+} from './usage.js';

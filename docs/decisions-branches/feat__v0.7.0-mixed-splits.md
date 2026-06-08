@@ -132,3 +132,14 @@
 
 ---
 
+## 2026-06-08 18:24 - Phase 2 (W3): port lib/usage.js to src/cli/usage.ts
+
+**Reasoning:** 401 LOC of pure cost-rollup math (Q7-clud-bug dashboard). Strong typing throughout: ReviewRecord/Rollup/RollupTrend make the data shape explicit; ModelPricing keys PRICING. Internal GroupAccumulator type carries the costPerLOCs/cacheRates arrays during build-up, finalized to RollupGroupStats on return (cleaner than the JS delete-then-mutate pattern, no shape-shifting). PRICING/sorted-median lookups use non-null assertions where the algorithm guarantees presence.
+
+**Alternatives considered:** Use unknown for ReviewRecord (rejected — bin call-site builds the records and benefits from compile-time field validation).
+
+**Implications:**
+- src/cli/index.ts now exports the usage surface (7 functions + 12 types). bin/clud-bug.js usage import switched to dist/cli/usage.js.
+
+---
+

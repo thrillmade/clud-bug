@@ -8,7 +8,7 @@ import {
   extractTokensFromLog,
   rollup,
   formatRollup,
-} from '../lib/usage.js';
+} from '../src/cli/usage.js';
 
 // --- PRICING table ---
 

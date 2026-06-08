@@ -20,7 +20,7 @@ import { runUpdate } from '../lib/update.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from '../dist/cli/edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from '../dist/cli/agents-md.js';
 import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from '../dist/cli/branch-protection.js';
-import { computeReviewCost, costPerLOC, cacheHitRate, extractTokensFromLog, rollup, formatRollup } from '../lib/usage.js';
+import { computeReviewCost, costPerLOC, cacheHitRate, extractTokensFromLog, rollup, formatRollup } from '../dist/cli/usage.js';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(PKG_ROOT, 'templates');
