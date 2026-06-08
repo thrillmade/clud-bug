@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (16 decisions)
+## 2026-06 (17 decisions)
 
-- **2026-06-08** — Dogfood clud-bug on itself + bump setup-logmind pins to v1.0.1 *(chore/dogfood-clud-bug-on-itself)* — [decisions-branches/chore__dogfood-clud-bug-on-itself.md](decisions-branches/chore__dogfood-clud-bug-on-itself.md)
-- *... 14 more decisions ...*
+- **2026-06-08** — Bump sibling templates workflow-py + workflow-ts to v13 (matches main JS template) *(chore/bump-sibling-templates-v13)* — [decisions-branches/chore__bump-sibling-templates-v13.md](decisions-branches/chore__bump-sibling-templates-v13.md)
+- *... 15 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
