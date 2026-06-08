@@ -31,6 +31,12 @@ const TOUCH_IF_PRESENT = [
   '.continuerules',
 ];
 
+export interface RenderBlockOptions {
+  version?: string | undefined;
+  strictMode?: boolean | undefined;
+  skillRelPath?: string | undefined;
+}
+
 // Render the clud-bug block. Bundled here rather than in a template file so
 // updates ship with the CLI itself.
 //
@@ -52,7 +58,7 @@ const TOUCH_IF_PRESENT = [
 // path `.claude/skills/...`), render the LOCAL repo path. Otherwise the
 // link is dead in the publisher repo (this used to require a manual fix
 // every v0.6.* propagation cycle on agent-skills).
-export function renderBlock({ version, strictMode, skillRelPath } = {}) {
+export function renderBlock({ version, strictMode, skillRelPath }: RenderBlockOptions = {}): string {
   const versionLine = version ? `_Installed at clud-bug v${version}._` : '';
   const strictNote = strictMode === true
     ? '**on** in this repo (workflow check fails on critical findings)'
@@ -85,7 +91,7 @@ ${END_MARKER}`;
 // in the working tree, the AGENTS.md link should point there, not at the
 // consumer-install `.claude/skills/...` path that doesn't exist in the
 // publisher repo.
-export async function detectSkillRelPath(cwd) {
+export async function detectSkillRelPath(cwd: string): Promise<string> {
   const publisherPath = 'skills/clud-bug-collaboration/SKILL.md';
   const consumerPath = '.claude/skills/clud-bug-collaboration/SKILL.md';
   if (await fileExists(join(cwd, publisherPath))) return publisherPath;
@@ -94,7 +100,7 @@ export async function detectSkillRelPath(cwd) {
 
 // Replace an existing clud-bug block in `content`, OR append if absent.
 // Idempotent: running multiple times leaves a single block.
-export function upsertBlock(content, block) {
+export function upsertBlock(content: string, block: string): string {
   const startRe = new RegExp(escapeRe(START_MARKER));
   const endRe   = new RegExp(escapeRe(END_MARKER));
   if (startRe.test(content) && endRe.test(content)) {
@@ -113,7 +119,7 @@ export function upsertBlock(content, block) {
 // Matches at start-of-line (a literal `@AGENTS.md` mentioned in prose
 // won't fire; only the import directive does). Allows trailing space
 // (some editors trim it; some don't) and optional newline terminator.
-export function hasAgentsMdImport(content) {
+export function hasAgentsMdImport(content: unknown): boolean {
   if (typeof content !== 'string') return false;
   return /^@AGENTS\.md\s*$/m.test(content);
 }
@@ -125,7 +131,7 @@ export function hasAgentsMdImport(content) {
 //
 // Returns the cleaned content. If no block exists, returns content
 // unchanged. Idempotent.
-export function removeBlock(content) {
+export function removeBlock(content: string): string {
   if (typeof content !== 'string') return content;
   // Strip the block. Match \n+ before the marker so we also eat the
   // preceding blank line — otherwise we'd leave a "stub line + blank
@@ -136,8 +142,13 @@ export function removeBlock(content) {
   return content.replace(re, '');
 }
 
-function escapeRe(s) {
+function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export interface ApplyToRepoResult {
+  touched: string[];
+  created: string[];
 }
 
 // Touches all relevant agent-instruction files in `cwd`.
@@ -146,15 +157,15 @@ function escapeRe(s) {
 // logmind or the user owns those creation decisions).
 //
 // Returns { touched: string[], created: string[] } for the caller to log.
-export async function applyToRepo(cwd, blockOpts = {}) {
+export async function applyToRepo(cwd: string, blockOpts: RenderBlockOptions = {}): Promise<ApplyToRepoResult> {
   // v0.6.25 / gotcha #2: detect publisher repo + render local skill path.
   // Pre-v0.6.25 always rendered the consumer install path → broke
   // agent-skills' check-links every propagation cycle. Detection runs
   // before block render so the path is correct from the first write.
   const skillRelPath = blockOpts.skillRelPath ?? await detectSkillRelPath(cwd);
   const block = renderBlock({ ...blockOpts, skillRelPath });
-  const touched = [];
-  const created = [];
+  const touched: string[] = [];
+  const created: string[] = [];
 
   for (const path of ALWAYS_TOUCH) {
     const full = join(cwd, path);
@@ -181,8 +192,8 @@ export async function applyToRepo(cwd, blockOpts = {}) {
   // .cursor/rules/*.md — append to every file that exists.
   const cursorRulesDir = join(cwd, '.cursor', 'rules');
   if (await fileExists(cursorRulesDir)) {
-    let entries = [];
-    try { entries = await readdir(cursorRulesDir); } catch {}
+    let entries: string[] = [];
+    try { entries = await readdir(cursorRulesDir); } catch { /* dir missing or unreadable */ }
     for (const name of entries) {
       if (!name.endsWith('.md')) continue;
       const full = join(cursorRulesDir, name);
@@ -206,11 +217,11 @@ export async function applyToRepo(cwd, blockOpts = {}) {
 //
 // AGENTS.md itself is NOT routed through here — it always gets the
 // block (it's the canonical source).
-function nextContentFor(prior, block) {
+function nextContentFor(prior: string, block: string): string {
   return hasAgentsMdImport(prior) ? removeBlock(prior) : upsertBlock(prior, block);
 }
 
-function seedFile(name) {
+function seedFile(name: string): string {
   // When AGENTS.md doesn't exist (no logmind, no prior tooling), seed with a
   // minimal canonical header so the clud-bug block has context.
   if (name === 'AGENTS.md') {
@@ -225,6 +236,6 @@ Claude Code, Cline, Continue, Aider, ...) read it directly.
   return '';
 }
 
-async function fileExists(path) {
+async function fileExists(path: string): Promise<boolean> {
   try { await stat(path); return true; } catch { return false; }
 }

@@ -13,6 +13,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
+          cache: 'npm'
+      # v0.7.0: vitest replaces node:test; needs install before npm test.
+      - run: npm ci
+      - run: npm run build
       - run: npm test
 
   actionlint:
@@ -22,9 +26,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '20'
+          cache: 'npm'
+      # v0.7.0: install + build so the template renderer (which imports from
+      # dist/core/) can resolve modules. Previously imported from lib/render.js
+      # and lib/prompts.js, but Phase 2 moved both under src/core/ → dist/core/.
+      - run: npm ci
+      - run: npm run build
       - name: Render templates with placeholder values
         run: |
           mkdir -p .ci-rendered
@@ -38,8 +45,8 @@ jobs:
             tmpl_name=$(basename "$tmpl")
             out=".ci-rendered/${tmpl_name%.tmpl}"
             node -e "
-              import('./lib/render.js').then(async ({renderFile, templateLanguage}) => {
-                const {reviewPrompt} = await import('./lib/prompts.js');
+              import('./dist/core/render.js').then(async ({renderFile, templateLanguage}) => {
+                const {reviewPrompt} = await import('./dist/core/prompts.js');
                 const out = await renderFile('$tmpl', {
                   REVIEW_PROMPT: reviewPrompt({
                     projectDescription: 'A test project.',

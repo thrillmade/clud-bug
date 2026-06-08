@@ -15,21 +15,52 @@
 // rendered shape is wrong). Centralising the markdown shape here means a
 // future format tweak edits one function rather than the prompt.
 
-const SEVERITY_EMOJI = { critical: '🔴', minor: '🟡', preexisting: '🟣' };
-const SEVERITY_LABEL = {
+import type {
+  DedicatedSection,
+  FindingSeverity,
+  PerSkillScanItem,
+  ReviewData,
+  ReviewFinding,
+  ReviewSummaryCounts,
+} from './review-schema.js';
+
+// Emoji constants: use explicit Unicode escape literals (`\u{HHHHH}`) so
+// every step of the TS→JS toolchain — tsc, vitest's transformer, the
+// publisher's tarball — emits the same byte sequence regardless of
+// editor encoding settings. Per SPEC §6 byte-identical contract:
+//   \u{1F534} = 🔴 (red circle, critical / "important")
+//   \u{1F7E1} = 🟡 (yellow circle, minor / "nit")
+//   \u{1F7E3} = 🟣 (purple circle, pre-existing)
+//   \u{1F41B} = 🐛 (bug, H2 anchor for `## 🐛 Clud Bug review`)
+const SEVERITY_EMOJI: Record<FindingSeverity, string> = {
+  critical: '\u{1F534}',
+  minor: '\u{1F7E1}',
+  preexisting: '\u{1F7E3}',
+};
+const SEVERITY_LABEL: Record<FindingSeverity, string> = {
   critical: 'important',
   minor: 'nit',
   preexisting: 'pre-existing',
 };
+// SEVERITY_LABEL is retained for callers that import the constant table
+// (the JS version exported it implicitly via module scope; keep the
+// export so future renderer extensions can reuse it).
+export { SEVERITY_LABEL };
+
+// Renderer input type — schema-aligned but defensively typed. The renderer
+// is the last line of defense against malformed JSON, so it accepts an
+// "unknown-ish" shape and degrades gracefully rather than throwing on
+// missing fields.
+type RenderReviewInput = Partial<ReviewData> & Record<string, unknown>;
 
 // Render the full summary comment markdown. `data` is the parsed JSON
-// matching the schema (see schema.js). Returns a string suitable for
-// `gh pr comment --body`.
-export function renderReview(data) {
+// matching the schema (see review-schema.ts). Returns a string suitable
+// for `gh pr comment --body`.
+export function renderReview(data: RenderReviewInput | null | undefined): string {
   if (!data || typeof data !== 'object') {
     throw new TypeError('renderReview: data must be an object');
   }
-  const out = [];
+  const out: string[] = [];
   out.push(renderHeader(data));
   out.push('');
   out.push(renderStatusLine(data.summary_counts));
@@ -77,9 +108,9 @@ export function renderReview(data) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
 }
 
-function renderHeader(data) {
+function renderHeader(data: RenderReviewInput): string {
   const verdict = data.status_header;
-  const base = '## 🐛 Clud Bug review';
+  const base = '## \u{1F41B} Clud Bug review';
   if (verdict === 'critical findings') return `${base} — critical findings`;
   if (verdict === 'clean') return `${base} — clean`;
   // 'bare' (non-strict-mode default) OR an unexpected verdict — render
@@ -87,7 +118,7 @@ function renderHeader(data) {
   return base;
 }
 
-function renderStatusLine(counts) {
+function renderStatusLine(counts: ReviewSummaryCounts | undefined): string {
   const c = sanitizeCounts(counts);
   return `**This round:** ${c.critical} critical · ${c.minor} minor · ${c.resolved_from_prior} resolved from prior · ${c.still_open} still open`;
 }
@@ -95,13 +126,13 @@ function renderStatusLine(counts) {
 // Severity-emoji stats header. Counts pre-existing in 🟣 even though
 // it's not in summary_counts (the prompt counts pre-existing separately
 // in preexisting_findings.length).
-function renderStatsHeader(counts) {
+function renderStatsHeader(counts: ReviewSummaryCounts | undefined): string {
   const c = sanitizeCounts(counts);
-  return `Found: ${c.critical} 🔴 / ${c.minor} 🟡 / ${c.preexisting} 🟣`;
+  return `Found: ${c.critical} \u{1F534} / ${c.minor} \u{1F7E1} / ${c.preexisting} \u{1F7E3}`;
 }
 
-function renderPerSkillScan(scan) {
-  const out = ['### Per-skill scan'];
+function renderPerSkillScan(scan: PerSkillScanItem[] | undefined): string[] {
+  const out: string[] = ['### Per-skill scan'];
   if (!Array.isArray(scan) || scan.length === 0) {
     out.push('- (no skills loaded — review proceeded against the baseline.)');
     return out;
@@ -116,14 +147,14 @@ function renderPerSkillScan(scan) {
   return out;
 }
 
-function renderDedicatedSection(section) {
+function renderDedicatedSection(section: DedicatedSection | undefined): string[] {
   if (!section || typeof section !== 'object') return [];
   const name = String(section.section_name || '').trim();
   const skill = String(section.skill || '').trim();
   const header = skill && name
     ? `### ${name} [${skill}]`
     : `### ${name || skill || 'Dedicated section'}`;
-  const out = [header, ''];
+  const out: string[] = [header, ''];
   if (Array.isArray(section.findings) && section.findings.length > 0) {
     // Dedicated-section findings use the same emoji-prefix block.
     // Default severity for dedicated sections is "critical" — they're
@@ -135,9 +166,10 @@ function renderDedicatedSection(section) {
   return out;
 }
 
-function renderFindings(findings, severity) {
-  const emoji = SEVERITY_EMOJI[severity] || '🔴';
-  const out = [];
+function renderFindings(findings: ReviewFinding[] | undefined, severity: FindingSeverity): string[] {
+  const emoji = SEVERITY_EMOJI[severity] || SEVERITY_EMOJI.critical;
+  const out: string[] = [];
+  if (!Array.isArray(findings)) return out;
   for (const f of findings) {
     if (!f || typeof f !== 'object') continue;
     const skill = String(f.skill || '').trim();
@@ -163,7 +195,7 @@ function renderFindings(findings, severity) {
   return out;
 }
 
-function renderSkillsReferenced(skills) {
+function renderSkillsReferenced(skills: string[] | undefined): string {
   if (!Array.isArray(skills) || skills.length === 0) {
     return 'Skills referenced: [none] — no installed skill applied to this diff.';
   }
@@ -172,12 +204,12 @@ function renderSkillsReferenced(skills) {
 
 // --- helpers ---
 
-function nonEmpty(arr) {
+function nonEmpty<T>(arr: T[] | undefined): arr is T[] {
   return Array.isArray(arr) && arr.length > 0;
 }
 
-function sanitizeCounts(counts) {
-  const c = counts && typeof counts === 'object' ? counts : {};
+function sanitizeCounts(counts: ReviewSummaryCounts | undefined): ReviewSummaryCounts {
+  const c = counts && typeof counts === 'object' ? counts : ({} as Partial<ReviewSummaryCounts>);
   return {
     critical: numOrZero(c.critical),
     minor: numOrZero(c.minor),
@@ -187,18 +219,18 @@ function sanitizeCounts(counts) {
   };
 }
 
-function numOrZero(v) {
+function numOrZero(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
 }
 
-function locationAnchor(f) {
+function locationAnchor(f: ReviewFinding): string | null {
   const file = String(f.file || '').trim();
   if (!file) return null;
   const line = Number(f.line);
   return Number.isFinite(line) && line > 0 ? `${file}:${line}` : file;
 }
 
-function stripTrailingPunctuation(s) {
+function stripTrailingPunctuation(s: string): string {
   return s.replace(/[.!?]+$/, '');
 }

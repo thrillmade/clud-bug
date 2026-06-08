@@ -4,7 +4,7 @@
 // `lib/skill-usage.js`. The fetch path is exercised against a mocked
 // gh-runner so tests don't shell out + don't require GH_TOKEN.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import {
   fetchUsageArtifacts,
   aggregateUsageStream,
-} from '../lib/skill-usage.js';
+} from '../src/cli/skill-usage.js';
 
 // ---------------------------------------------------------------------------
 // aggregateUsageStream (pure function — no I/O)

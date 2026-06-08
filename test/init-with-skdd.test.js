@@ -5,7 +5,7 @@
 // installed via pip + scaffolded via `logmind init`. Anti-loop: invokes
 // `logmind init` (NOT `logmind init --with-skdd`).
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir } from 'node:fs/promises';

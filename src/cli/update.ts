@@ -1,9 +1,9 @@
 import { readFile, writeFile, mkdir, stat, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { renderFile, pickTemplate, templateLanguage } from './render.js';
-import { reviewPrompt } from './prompts.js';
-import { detect, buildDescriptionLine } from './detect.js';
-import { loadBaseline, readManifest, writeManifest } from './skills.js';
+import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
+import { reviewPrompt } from '../core/prompts.js';
+import { detect, buildDescriptionLine } from '../core/detect.js';
+import { loadBaseline, readManifest, writeManifest, type LoadBaselineOptions } from './skills.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
 
 // Re-render the user's workflow + refresh baseline skills using the
@@ -19,16 +19,41 @@ import { applyToRepo as applyAgentDocs } from './agents-md.js';
 //     are treated as user-customized and left alone — the user gets a
 //     printed warning + the documented "delete + clud-bug init" recovery
 //     path. Mirrors logmind v0.2.1's refresh-mode pattern.
-//
+
+export interface RunUpdateOptions {
+  cwd: string;
+  templatesDir: string;
+  baselineDir: string;
+  ourVersion: string;
+  refreshRemote?: boolean | undefined;
+  // forwarded to loadBaseline (e.g. for tests: { fetch, cacheDir: null })
+  loadBaselineOpts?: LoadBaselineOptions | undefined;
+}
+
+export interface UpdateChangeRecord {
+  path: string;
+  label: string;
+  from?: string | undefined;
+  to?: string | undefined;
+}
+
+export interface UpdateSkippedRecord {
+  path: string;
+  label: string;
+  reason: string;
+}
+
+export interface RunUpdateResult {
+  changed: UpdateChangeRecord[];
+  unchanged: UpdateChangeRecord[];
+  skipped?: UpdateSkippedRecord[];
+  ourVersion?: string;
+  missing?: 'init';
+}
+
 // Returns { changed, unchanged, skipped, ourVersion }.
-export async function runUpdate({
-  cwd,
-  templatesDir,
-  baselineDir,
-  ourVersion,
-  refreshRemote = false,
-  loadBaselineOpts,    // forwarded to loadBaseline (e.g. for tests: { fetch, cacheDir: null })
-} = {}) {
+export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult> {
+  const { cwd, templatesDir, baselineDir, ourVersion, refreshRemote = false, loadBaselineOpts } = opts;
   if (!cwd || !templatesDir || !baselineDir || !ourVersion) {
     throw new Error('runUpdate requires cwd, templatesDir, baselineDir, ourVersion');
   }
@@ -38,9 +63,9 @@ export async function runUpdate({
     return { changed: [], unchanged: [], missing: 'init' };
   }
 
-  const changed = [];
-  const unchanged = [];
-  const skipped = [];
+  const changed: UpdateChangeRecord[] = [];
+  const unchanged: UpdateChangeRecord[] = [];
+  const skipped: UpdateSkippedRecord[] = [];
 
   // 1. Re-render review workflow with the latest template.
   const signals = await detect(cwd);
@@ -77,7 +102,8 @@ export async function runUpdate({
   //    existing .claude/skills/<slug>/ dir is removed if present, so a repo
   //    that opts out of a baseline doesn't end up regenerating it on every
   //    update (the original symptom this field exists to fix).
-  const excluded = new Set(Array.isArray(manifest.excludedBaselines) ? manifest.excludedBaselines : []);
+  const excludedRaw = manifest['excludedBaselines'];
+  const excluded = new Set<string>(Array.isArray(excludedRaw) ? (excludedRaw as string[]) : []);
   const baseline = await loadBaseline(baselineDir, loadBaselineOpts);
   for (const skill of baseline) {
     const slug = sanitize(skill.name);
@@ -112,20 +138,26 @@ export async function runUpdate({
   // default-on behavior of fresh v0.4+ installs.
   const agentDocs = await applyAgentDocs(cwd, {
     version: ourVersion,
-    strictMode: manifest.strictMode === true,
+    strictMode: manifest['strictMode'] === true,
   });
   for (const p of agentDocs.created) changed.push({ path: join(cwd, p), label: `agent docs: created ${p}` });
   for (const p of agentDocs.touched) changed.push({ path: join(cwd, p), label: `agent docs: ${p}` });
 
   // 6. Stamp the manifest with the version that ran the update.
-  manifest.lastUpdate = new Date().toISOString();
-  manifest.lastUpdateVersion = ourVersion;
+  manifest['lastUpdate'] = new Date().toISOString();
+  manifest['lastUpdateVersion'] = ourVersion;
   await writeManifest(skillsDir, manifest);
 
   return { changed, unchanged, skipped, ourVersion };
 }
 
-async function maybeWrite(path, contents, changed, unchanged, label) {
+async function maybeWrite(
+  path: string,
+  contents: string,
+  changed: UpdateChangeRecord[],
+  unchanged: UpdateChangeRecord[],
+  label: string,
+): Promise<void> {
   const prior = await readSafe(path);
   if (prior === contents) {
     unchanged.push({ path, label });
@@ -140,7 +172,14 @@ async function maybeWrite(path, contents, changed, unchanged, label) {
 // on line 1). If the installed file lacks that marker, treat it as
 // user-customized and leave it alone — recovery path is delete + `clud-bug init`.
 // Mirrors logmind v0.2.1's refresh-mode contract.
-async function maybeRefreshVersioned(path, contents, changed, unchanged, skipped, label) {
+async function maybeRefreshVersioned(
+  path: string,
+  contents: string,
+  changed: UpdateChangeRecord[],
+  unchanged: UpdateChangeRecord[],
+  skipped: UpdateSkippedRecord[],
+  label: string,
+): Promise<void> {
   const tmplVersion = extractTemplateVersion(contents);
   if (!tmplVersion) {
     // Defensive: every versioned template is supposed to carry a marker.
@@ -184,21 +223,23 @@ async function maybeRefreshVersioned(path, contents, changed, unchanged, skipped
 // Anchoring near the top means a stray `# clud-bug-template-version:` lower
 // in the file (in a comment inside a heredoc, say) can't be mistaken for the
 // authoritative marker. Returns null if not present.
-function extractTemplateVersion(text) {
+function extractTemplateVersion(text: string | null | undefined): string | null {
   if (!text) return null;
   const head = text.split('\n', 5).join('\n');
   const m = head.match(/^# clud-bug-template-version:\s*(\S+)/m);
-  return m ? m[1] : null;
+  // m[1] is `string | undefined` under noUncheckedIndexedAccess; coalesce
+  // to null to keep the return type tight.
+  return m ? (m[1] ?? null) : null;
 }
 
-async function readSafe(path) {
+async function readSafe(path: string): Promise<string | null> {
   try { return await readFile(path, 'utf8'); } catch { return null; }
 }
 
-async function pathExists(path) {
+async function pathExists(path: string): Promise<boolean> {
   try { await stat(path); return true; } catch { return false; }
 }
 
-function sanitize(name) {
+function sanitize(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
 }

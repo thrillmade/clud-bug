@@ -25,20 +25,8 @@ clud-bug
 │   ├── decisions.md
 │   ├── file-structure.md
 │   └── timeline.md
-├── lib
-│   ├── agents-md.js
-│   ├── audit.js
-│   ├── branch-protection.js
-│   ├── detect.js
-│   ├── edit-workflow.js
-│   ├── prompts.js
-│   ├── render-review.js
-│   ├── render.js
-│   ├── review-schema.js
-│   ├── skill-usage.js
-│   ├── skills.js
-│   ├── update.js
-│   └── usage.js
+├── scripts
+│   └── fixture-check.mjs
 ├── site
 │   ├── app
 │   ├── lib
@@ -48,6 +36,9 @@ clud-bug
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── vercel.json
+├── src
+│   ├── cli
+│   └── core
 ├── templates
 │   ├── skills
 │   ├── audit.yml.tmpl
@@ -83,9 +74,12 @@ clud-bug
 ├── CHANGELOG.md
 ├── CLAUDE.md
 ├── LICENSE
+├── package-lock.json
 ├── package.json
 ├── README.md
-└── vercel.json
+├── tsconfig.json
+├── vercel.json
+└── vitest.config.ts
 ```
 
 _Truncated at depth 2 (logmind v0.5.0+ default). For a deeper view, run

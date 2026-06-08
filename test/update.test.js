@@ -1,11 +1,11 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { runUpdate } from '../lib/update.js';
-import { DEFAULTS } from '../lib/render.js';
+import { runUpdate } from '../src/cli/update.js';
+import { DEFAULTS } from '../src/core/render.js';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(REPO_ROOT, 'templates');

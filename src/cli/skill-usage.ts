@@ -1,4 +1,4 @@
-// lib/skill-usage.js — Component 1+2 of the pragmatic SkDD pivot.
+// src/cli/skill-usage.ts — Component 1+2 of the pragmatic SkDD pivot.
 //
 // Pure functions for deterministic skill-usage tracking. Per the
 // strategic pivot (2026-05-30): replace Zak Elfassi's speculative
@@ -32,18 +32,48 @@
 // No automation acts on this output. It's a READ-ONLY dashboard.
 // Humans read; humans decide; humans act.
 
+import { spawn } from 'node:child_process';
+
+// Per-skill delta record (one review's contribution).
+export interface SkillDelta {
+  loads: number;
+  citations: number;
+}
+
+// Per-skill usage record (accumulated across reviews).
+export interface SkillUsageEntry {
+  loads: number;
+  citations: number;
+  last_cited: string | null;
+}
+
+// Map keyed by skill slug.
+export type SkillDeltaMap = Record<string, SkillDelta>;
+export type SkillUsageMap = Record<string, SkillUsageEntry>;
+
+// Shape of one finding entry the JSON delta extracts.
+interface FindingLike {
+  skill?: unknown;
+}
+
+interface PerSkillScanLike {
+  skill?: unknown;
+}
+
+interface DedicatedSectionLike {
+  findings?: FindingLike[] | null | undefined;
+}
+
+interface ReviewJsonShape {
+  per_skill_scan?: PerSkillScanLike[] | null | undefined;
+  critical_findings?: FindingLike[] | null | undefined;
+  minor_findings?: FindingLike[] | null | undefined;
+  preexisting_findings?: FindingLike[] | null | undefined;
+  dedicated_sections?: DedicatedSectionLike[] | null | undefined;
+}
+
 /**
  * Compute per-skill usage delta from a single review's structured JSON.
- *
- * @param {object} reviewJson - Parsed structured-output JSON from one
- *   clud-bug review. Expected shape (subset of review-schema.js):
- *     - per_skill_scan: [{ skill, outcome }, ...]
- *     - critical_findings: [{ skill, ... }, ...]
- *     - minor_findings: [{ skill, ... }, ...]
- *     - dedicated_sections: [{ skill, findings: [...] }, ...]
- *
- * @returns {object} - Per-skill delta:
- *     { "<slug>": { loads: 1, citations: 0|1 } }
  *
  * Rules:
  *   - loads = 1 for every skill in per_skill_scan (the skill was in
@@ -55,13 +85,14 @@
  *
  * Returns {} on missing / malformed input (defensive — never throws).
  */
-export function computeSkillUsageDelta(reviewJson) {
+export function computeSkillUsageDelta(reviewJson: unknown): SkillDeltaMap {
   if (!reviewJson || typeof reviewJson !== 'object') return {};
+  const review = reviewJson as ReviewJsonShape;
 
-  const delta = {};
+  const delta: SkillDeltaMap = {};
 
   // Loads — one per skill that scanned.
-  for (const entry of reviewJson.per_skill_scan || []) {
+  for (const entry of review.per_skill_scan || []) {
     if (!entry || typeof entry.skill !== 'string') continue;
     const slug = entry.skill;
     if (!delta[slug]) delta[slug] = { loads: 0, citations: 0 };
@@ -69,16 +100,16 @@ export function computeSkillUsageDelta(reviewJson) {
   }
 
   // Citations — collect unique skill slugs across all finding buckets.
-  const cited = new Set();
-  const collect = (findings) => {
+  const cited = new Set<string>();
+  const collect = (findings: FindingLike[] | null | undefined) => {
     for (const f of findings || []) {
       if (f && typeof f.skill === 'string') cited.add(f.skill);
     }
   };
-  collect(reviewJson.critical_findings);
-  collect(reviewJson.minor_findings);
-  collect(reviewJson.preexisting_findings);
-  for (const section of reviewJson.dedicated_sections || []) {
+  collect(review.critical_findings);
+  collect(review.minor_findings);
+  collect(review.preexisting_findings);
+  for (const section of review.dedicated_sections || []) {
     collect(section?.findings);
   }
 
@@ -93,16 +124,6 @@ export function computeSkillUsageDelta(reviewJson) {
 /**
  * Merge a per-review delta into a persistent usage block.
  *
- * @param {object} existing - Current usage block (may be empty/missing).
- *   Shape: { "<slug>": { loads: int, citations: int, last_cited: string|null } }
- * @param {object} delta - From computeSkillUsageDelta (above).
- * @param {string|null} timestamp - ISO 8601 timestamp of THIS review
- *   (e.g., "2026-05-30T16:22:26Z"). Used to update last_cited when the
- *   skill is cited in this review. Pass null to skip the timestamp
- *   update (rarely useful — tests primarily).
- *
- * @returns {object} - New merged usage block (does NOT mutate inputs).
- *
  * Semantics:
  *   - existing.loads + delta.loads → new.loads (accumulates forever)
  *   - existing.citations + delta.citations → new.citations
@@ -110,44 +131,57 @@ export function computeSkillUsageDelta(reviewJson) {
  *     in THIS review). Stays at the prior value otherwise.
  *   - New skills (not in existing) get initialized fresh.
  */
-export function mergeSkillUsage(existing, delta, timestamp) {
-  const safeExisting = (existing && typeof existing === 'object') ? existing : {};
-  const result = {};
+export function mergeSkillUsage(
+  existing: unknown,
+  delta: SkillDeltaMap | null | undefined,
+  timestamp: string | null,
+): SkillUsageMap {
+  const safeExisting: Record<string, unknown> =
+    (existing && typeof existing === 'object') ? (existing as Record<string, unknown>) : {};
+  const result: SkillUsageMap = {};
 
   // Copy all existing skills first (preserve skills NOT in this delta).
   for (const [slug, entry] of Object.entries(safeExisting)) {
     if (entry && typeof entry === 'object') {
+      const e = entry as { loads?: unknown; citations?: unknown; last_cited?: unknown };
       result[slug] = {
-        loads: Number(entry.loads) || 0,
-        citations: Number(entry.citations) || 0,
-        last_cited: entry.last_cited || null,
+        loads: Number(e.loads) || 0,
+        citations: Number(e.citations) || 0,
+        last_cited: typeof e.last_cited === 'string' ? e.last_cited : null,
       };
     }
   }
 
   // Merge delta.
   for (const [slug, d] of Object.entries(delta || {})) {
-    if (!result[slug]) {
-      result[slug] = { loads: 0, citations: 0, last_cited: null };
+    let row = result[slug];
+    if (!row) {
+      row = { loads: 0, citations: 0, last_cited: null };
+      result[slug] = row;
     }
-    result[slug].loads += Number(d.loads) || 0;
-    result[slug].citations += Number(d.citations) || 0;
+    row.loads += Number(d.loads) || 0;
+    row.citations += Number(d.citations) || 0;
     if ((Number(d.citations) || 0) > 0 && timestamp) {
-      result[slug].last_cited = timestamp;
+      row.last_cited = timestamp;
     }
   }
 
   return result;
 }
 
+export type SkillHealthStatus = 'archive-candidate' | 'stale' | 'new' | 'healthy';
+
+export interface SkillHealthRow {
+  slug: string;
+  status: SkillHealthStatus;
+  loads: number;
+  citations: number;
+  last_cited: string | null;
+  days_since_cited: number | null;
+}
+
 /**
  * Apply deterministic skill-health thresholds to a usage block.
- *
- * @param {object} usage - The usage block from mergeSkillUsage.
- * @param {Date} now - The current time (injected for testability).
- *
- * @returns {object[]} - Sorted array of:
- *     { slug, status, loads, citations, last_cited, days_since_cited }
  *
  * Status values:
  *   - "archive-candidate": citations == 0 AND loads >= 5
@@ -162,21 +196,23 @@ export function mergeSkillUsage(existing, delta, timestamp) {
  * Sorted by status priority (archive > stale > new > healthy), then
  * by loads desc within each group. Highest-noise skills surface first.
  */
-export function assessSkillHealth(usage, now) {
-  const safeUsage = (usage && typeof usage === 'object') ? usage : {};
+export function assessSkillHealth(usage: unknown, now: Date | null | undefined): SkillHealthRow[] {
+  const safeUsage: Record<string, unknown> =
+    (usage && typeof usage === 'object') ? (usage as Record<string, unknown>) : {};
   const safeNow = (now instanceof Date) ? now : new Date();
   const sixtyDaysAgoMs = safeNow.getTime() - (60 * 24 * 60 * 60 * 1000);
 
-  const rows = [];
+  const rows: SkillHealthRow[] = [];
   for (const [slug, entry] of Object.entries(safeUsage)) {
     if (!entry || typeof entry !== 'object') continue;
+    const e = entry as { loads?: unknown; citations?: unknown; last_cited?: unknown };
 
-    const loads = Number(entry.loads) || 0;
-    const citations = Number(entry.citations) || 0;
-    const last_cited = entry.last_cited || null;
+    const loads = Number(e.loads) || 0;
+    const citations = Number(e.citations) || 0;
+    const last_cited: string | null = typeof e.last_cited === 'string' ? e.last_cited : null;
 
-    let status;
-    let days_since_cited = null;
+    let status: SkillHealthStatus;
+    let days_since_cited: number | null = null;
 
     if (loads < 5) {
       status = 'new';
@@ -202,7 +238,12 @@ export function assessSkillHealth(usage, now) {
 
   // Sort: archive-candidates first, then stale, then new, then healthy.
   // Within each group, by loads descending (loudest first).
-  const statusOrder = { 'archive-candidate': 0, 'stale': 1, 'new': 2, 'healthy': 3 };
+  const statusOrder: Record<SkillHealthStatus, number> = {
+    'archive-candidate': 0,
+    'stale': 1,
+    'new': 2,
+    'healthy': 3,
+  };
   rows.sort((a, b) => {
     const da = statusOrder[a.status] ?? 99;
     const db = statusOrder[b.status] ?? 99;
@@ -216,11 +257,8 @@ export function assessSkillHealth(usage, now) {
 
 /**
  * Render the health dashboard as a 3-column table for the CLI.
- *
- * @param {object[]} rows - Output of assessSkillHealth.
- * @returns {string} - Multi-line markdown-ish table for stdout.
  */
-export function formatHealthDashboard(rows) {
+export function formatHealthDashboard(rows: SkillHealthRow[] | null | undefined): string {
   if (!rows || rows.length === 0) {
     return (
       'Skill health: no usage data yet.\n\n' +
@@ -231,14 +269,14 @@ export function formatHealthDashboard(rows) {
     );
   }
 
-  const STATUS_GLYPH = {
+  const STATUS_GLYPH: Record<SkillHealthStatus, string> = {
     'archive-candidate': '🟥 archive?',
     'stale': '🟨 stale',
     'new': '🟦 new',
     'healthy': '🟩 healthy',
   };
 
-  const lines = [];
+  const lines: string[] = [];
   lines.push('Skill health (deterministic — read-only; no automation acts on this)');
   lines.push('');
   lines.push('  STATUS            SLUG                              LOADS  CITES  LAST CITED');
@@ -275,6 +313,17 @@ export function formatHealthDashboard(rows) {
 // widening, zero commit noise. v0.6.30 reads them back here.
 // ---------------------------------------------------------------------------
 
+export interface GhRunResult {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export interface GhRunner {
+  json: (args: string[]) => Promise<unknown>;
+  run: (args: string[]) => Promise<GhRunResult>;
+}
+
 /**
  * Default `gh` runner — spawns the local gh CLI. Tests inject a mock.
  *
@@ -283,12 +332,11 @@ export function formatHealthDashboard(rows) {
  *   - run(args): returns {code, stdout, stderr}. For commands that
  *     download files etc. — no JSON parsing.
  */
-async function defaultGhJson(args) {
-  const { spawn } = await import('node:child_process');
-  return new Promise((resolve) => {
+async function defaultGhJson(args: string[]): Promise<unknown> {
+  return new Promise<unknown>((resolve) => {
     const child = spawn('gh', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
-    child.stdout.on('data', (d) => { stdout += d; });
+    child.stdout!.on('data', (d: Buffer | string) => { stdout += d; });
     child.on('error', () => resolve(null));
     child.on('close', (code) => {
       if (code !== 0) return resolve(null);
@@ -297,38 +345,53 @@ async function defaultGhJson(args) {
   });
 }
 
-async function defaultGhRun(args) {
-  const { spawn } = await import('node:child_process');
-  return new Promise((resolve) => {
+async function defaultGhRun(args: string[]): Promise<GhRunResult> {
+  return new Promise<GhRunResult>((resolve) => {
     const child = spawn('gh', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (d) => { stdout += d; });
-    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdout!.on('data', (d: Buffer | string) => { stdout += d; });
+    child.stderr!.on('data', (d: Buffer | string) => { stderr += d; });
     child.on('error', () => resolve({ code: 1, stdout: '', stderr: 'gh not on PATH' }));
     child.on('close', (code) => resolve({ code, stdout, stderr }));
   });
 }
 
-export const DEFAULT_GH_RUNNER = {
+export const DEFAULT_GH_RUNNER: GhRunner = {
   json: defaultGhJson,
   run: defaultGhRun,
 };
+
+export interface FetchUsageArtifactsOptions {
+  owner: string;
+  repo: string;
+  since?: Date | null | undefined;
+  ghRunner?: GhRunner | undefined;
+}
+
+export interface UsageArtifactRecord {
+  prNumber: number;
+  artifactId: number;
+  usage: SkillUsageMap;
+  fetchedAt: string;
+}
+
+// One entry returned by `gh api .../actions/artifacts --jq '[...]'`.
+interface ArtifactListItem {
+  id: number;
+  name: string;
+  workflow_run_id: number;
+  created_at: string;
+}
 
 /**
  * Fetch all per-PR skill-usage artifacts from a repo. Each artifact is
  * downloaded to a temp dir, its `.clud-bug.json` is parsed, and the
  * usage block is returned.
- *
- * @param {object} opts
- * @param {string} opts.owner - GitHub repo owner.
- * @param {string} opts.repo - GitHub repo name.
- * @param {Date|null} opts.since - Filter to artifacts created on/after this date.
- * @param {object} opts.ghRunner - Injected gh CLI runner (see DEFAULT_GH_RUNNER).
- *
- * @returns {Promise<{prNumber: number, artifactId: number, usage: object, fetchedAt: string}[]>}
  */
-export async function fetchUsageArtifacts({ owner, repo, since = null, ghRunner = DEFAULT_GH_RUNNER }) {
+export async function fetchUsageArtifacts(
+  { owner, repo, since = null, ghRunner = DEFAULT_GH_RUNNER }: FetchUsageArtifactsOptions,
+): Promise<UsageArtifactRecord[]> {
   if (!owner || !repo) {
     throw new Error('fetchUsageArtifacts: owner + repo are required');
   }
@@ -356,20 +419,23 @@ export async function fetchUsageArtifacts({ owner, repo, since = null, ghRunner 
   // `--jq '[...]'` wraps the stream into a single array. If the runner
   // returns null (404, no auth, etc.), bail to empty list.
   if (!Array.isArray(list)) return [];
+  const items = list as ArtifactListItem[];
 
   const filtered = since
-    ? list.filter((a) => new Date(a.created_at) >= since)
-    : list;
+    ? items.filter((a) => new Date(a.created_at) >= since)
+    : items;
 
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
   const os = await import('node:os');
 
-  const results = [];
+  const results: UsageArtifactRecord[] = [];
   for (const art of filtered) {
     const prMatch = art.name.match(/^clud-bug-skill-usage-pr-(\d+)$/);
     if (!prMatch) continue;
-    const prNumber = Number(prMatch[1]);
+    // prMatch[1] is `string | undefined` under noUncheckedIndexedAccess; the
+    // regex guarantees the capture exists when match succeeds.
+    const prNumber = Number(prMatch[1]!);
 
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'clud-bug-art-'));
     try {
@@ -385,14 +451,19 @@ export async function fetchUsageArtifacts({ owner, repo, since = null, ghRunner 
       // path key). `gh run download -D <dir>` writes it to the dest as
       // `<dir>/.clud-bug.json` (preserves the source path).
       const jsonPath = path.join(tmpDir, '.clud-bug.json');
-      let parsed;
+      let parsed: unknown;
       try {
         const raw = await fs.readFile(jsonPath, 'utf-8');
         parsed = JSON.parse(raw);
       } catch {
         continue; // artifact corrupted or layout unexpected
       }
-      const usage = parsed && parsed.usage ? parsed.usage : {};
+      const parsedObj = (parsed && typeof parsed === 'object')
+        ? (parsed as { usage?: unknown })
+        : {};
+      const usage: SkillUsageMap = (parsedObj.usage && typeof parsedObj.usage === 'object')
+        ? (parsedObj.usage as SkillUsageMap)
+        : {};
       results.push({
         prNumber,
         artifactId: art.id,
@@ -416,17 +487,20 @@ export async function fetchUsageArtifacts({ owner, repo, since = null, ghRunner 
  * AND keeps the LATEST timestamp it sees as last_cited (we sort
  * ascending so newest wins on the final pass), out-of-order input
  * produces an identical result.
- *
- * @param {{usage: object, fetchedAt: string}[]} artifacts
- * @returns {object} accumulated usage block, shape matches mergeSkillUsage output
  */
-export function aggregateUsageStream(artifacts) {
+export function aggregateUsageStream(
+  artifacts: Array<{ usage: SkillUsageMap | null | undefined; fetchedAt: string }> | null | undefined,
+): SkillUsageMap {
   if (!Array.isArray(artifacts) || artifacts.length === 0) return {};
   const sorted = [...artifacts].sort(
-    (a, b) => new Date(a.fetchedAt) - new Date(b.fetchedAt)
+    (a, b) => new Date(a.fetchedAt).getTime() - new Date(b.fetchedAt).getTime()
   );
-  return sorted.reduce(
-    (acc, art) => mergeSkillUsage(acc, art.usage || {}, art.fetchedAt),
+  return sorted.reduce<SkillUsageMap>(
+    // mergeSkillUsage expects SkillDeltaMap-shape for the delta arg; usage
+    // here is SkillUsageMap (loads/citations counts match — only last_cited
+    // is extra, which mergeSkillUsage ignores from the delta side). The
+    // type assertion is safe and matches the JS prior behavior exactly.
+    (acc, art) => mergeSkillUsage(acc, (art.usage || {}) as unknown as SkillDeltaMap, art.fetchedAt),
     {}
   );
 }

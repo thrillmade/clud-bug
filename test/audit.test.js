@@ -1,14 +1,11 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import {
-  durationToGitSince,
-  computeAuditFileSet,
-  renderAuditHeader,
-} from '../lib/audit.js';
+import { durationToGitSince, renderAuditHeader } from '../src/core/audit.js';
+import { computeAuditFileSet } from '../src/cli/audit.js';
 
 function git(cwd, ...args) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' });

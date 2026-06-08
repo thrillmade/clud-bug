@@ -10,11 +10,11 @@
 // deterministic, runs on every PR. See test/golden/README.md for the
 // fixture format + when to update.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { reviewPrompt } from '../lib/prompts.js';
+import { reviewPrompt } from '../src/core/prompts.js';
 
 const GOLDEN = join(import.meta.dirname, 'golden');
 

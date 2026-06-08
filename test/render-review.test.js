@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
-import { renderReview } from '../lib/render-review.js';
+import { renderReview } from '../src/core/render-review.js';
 
 // Minimum-shape input that matches the schema's required fields. Tests
 // build off this via {...MIN, override} to keep each test focused.

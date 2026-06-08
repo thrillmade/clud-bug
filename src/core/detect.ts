@@ -1,7 +1,11 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 
-const EXT_TO_LANG = {
+// Lookup tables for the project-shape detectors. Each map is `as const` so
+// downstream consumers can rely on the value types narrowing to the literal
+// strings rather than `string` — `_internal.EXT_TO_LANG['.ts']` resolves to
+// `'typescript'` for IDE navigation, not just `string`.
+export const EXT_TO_LANG = {
   '.ts': 'typescript', '.tsx': 'typescript',
   '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
   '.py': 'python',
@@ -14,12 +18,12 @@ const EXT_TO_LANG = {
   '.cs': 'csharp',
   '.c': 'c', '.h': 'c',
   '.cpp': 'cpp', '.cc': 'cpp', '.hpp': 'cpp',
-};
+} as const satisfies Record<string, string>;
 
 // Dependency name → search term hint passed to skills.sh.
 // Only well-known frameworks; obscure packages get filtered out so the
 // skills.sh query doesn't get drowned in noise.
-const DEP_TO_TERM = {
+export const DEP_TO_TERM = {
   'next': 'nextjs', 'react': 'react', 'vue': 'vue', 'svelte': 'svelte',
   '@angular/core': 'angular', 'solid-js': 'solid',
   'express': 'express', 'fastify': 'fastify', 'koa': 'koa', 'hono': 'hono',
@@ -29,16 +33,45 @@ const DEP_TO_TERM = {
   'vitest': 'vitest', 'jest': 'jest', 'playwright': 'playwright',
   '@playwright/test': 'playwright',
   'typescript': 'typescript',
-};
+} as const satisfies Record<string, string>;
 
-const PY_DEP_TO_TERM = {
+export const PY_DEP_TO_TERM = {
   'django': 'django', 'flask': 'flask', 'fastapi': 'fastapi',
   'click': 'click', 'typer': 'typer',
   'pytest': 'pytest', 'sqlalchemy': 'sqlalchemy',
   'pydantic': 'pydantic', 'numpy': 'numpy', 'pandas': 'pandas',
-};
+} as const satisfies Record<string, string>;
 
-async function fileExists(path) {
+// Result of running every detector + post-processing — the data shape callers
+// (bin/clud-bug.js, lib/update.js) read from. `description` is nullable
+// because the README fallback may not produce anything.
+export interface DetectedSignals {
+  name: string | null;
+  description: string | null;
+  languages: string[];
+  histogram: Record<string, number>;
+  searchTerms: string[];
+  primaryLanguage: string | null;
+}
+
+// Per-detector intermediate type — what each manifest-reader returns before
+// we aggregate. `languages` is the languages each manifest implies (e.g.
+// package.json implies ['javascript']) so we can union them in detect().
+interface DetectorResult {
+  name: string | null;
+  description: string | null;
+  languages: string[];
+  terms: string[];
+}
+
+interface PackageJson {
+  name?: string;
+  description?: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+async function fileExists(path: string): Promise<boolean> {
   try {
     await stat(path);
     return true;
@@ -47,15 +80,15 @@ async function fileExists(path) {
   }
 }
 
-async function readJsonSafe(path) {
+async function readJsonSafe<T = unknown>(path: string): Promise<T | null> {
   try {
-    return JSON.parse(await readFile(path, 'utf8'));
+    return JSON.parse(await readFile(path, 'utf8')) as T;
   } catch {
     return null;
   }
 }
 
-async function readTextSafe(path) {
+async function readTextSafe(path: string): Promise<string | null> {
   try {
     return await readFile(path, 'utf8');
   } catch {
@@ -63,26 +96,27 @@ async function readTextSafe(path) {
   }
 }
 
-async function detectFromPackageJson(root) {
-  const pkg = await readJsonSafe(join(root, 'package.json'));
+async function detectFromPackageJson(root: string): Promise<DetectorResult | null> {
+  const pkg = await readJsonSafe<PackageJson>(join(root, 'package.json'));
   if (!pkg) return null;
-  const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-  const terms = new Set();
+  const deps: Record<string, string> = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  const terms = new Set<string>();
   for (const dep of Object.keys(deps)) {
-    if (DEP_TO_TERM[dep]) terms.add(DEP_TO_TERM[dep]);
+    const term = (DEP_TO_TERM as Record<string, string>)[dep];
+    if (term) terms.add(term);
   }
   return {
-    name: pkg.name,
+    name: pkg.name ?? null,
     description: pkg.description || null,
     languages: ['javascript', ...(deps.typescript || pkg.devDependencies?.typescript ? ['typescript'] : [])],
     terms: [...terms],
   };
 }
 
-async function detectFromPyproject(root) {
+async function detectFromPyproject(root: string): Promise<DetectorResult | null> {
   const text = await readTextSafe(join(root, 'pyproject.toml'));
   if (!text) return null;
-  const terms = new Set();
+  const terms = new Set<string>();
   for (const [dep, term] of Object.entries(PY_DEP_TO_TERM)) {
     // crude but adequate match — full TOML parse would be overkill for the
     // dependency-name lookup we actually need
@@ -91,58 +125,59 @@ async function detectFromPyproject(root) {
   const nameMatch = text.match(/^\s*name\s*=\s*["']([^"']+)["']/m);
   const descMatch = text.match(/^\s*description\s*=\s*["']([^"']+)["']/m);
   return {
-    name: nameMatch?.[1] || null,
-    description: descMatch?.[1] || null,
+    name: nameMatch?.[1] ?? null,
+    description: descMatch?.[1] ?? null,
     languages: ['python'],
     terms: [...terms],
   };
 }
 
-async function detectFromRequirements(root) {
+async function detectFromRequirements(root: string): Promise<DetectorResult | null> {
   const text = await readTextSafe(join(root, 'requirements.txt'));
   if (!text) return null;
-  const terms = new Set();
+  const terms = new Set<string>();
   for (const line of text.split('\n')) {
-    const dep = line.split(/[<>=~ #]/)[0].trim().toLowerCase();
-    if (PY_DEP_TO_TERM[dep]) terms.add(PY_DEP_TO_TERM[dep]);
+    const dep = (line.split(/[<>=~ #]/)[0] ?? '').trim().toLowerCase();
+    const term = (PY_DEP_TO_TERM as Record<string, string>)[dep];
+    if (term) terms.add(term);
   }
   return { name: null, description: null, languages: ['python'], terms: [...terms] };
 }
 
-async function detectFromGoMod(root) {
+async function detectFromGoMod(root: string): Promise<DetectorResult | null> {
   const text = await readTextSafe(join(root, 'go.mod'));
   if (!text) return null;
   const moduleMatch = text.match(/^module\s+(\S+)/m);
   return {
-    name: moduleMatch?.[1]?.split('/').pop() || null,
+    name: moduleMatch?.[1]?.split('/').pop() ?? null,
     description: null,
     languages: ['go'],
     terms: [],
   };
 }
 
-async function detectFromCargo(root) {
+async function detectFromCargo(root: string): Promise<DetectorResult | null> {
   const text = await readTextSafe(join(root, 'Cargo.toml'));
   if (!text) return null;
   const nameMatch = text.match(/^\s*name\s*=\s*["']([^"']+)["']/m);
   const descMatch = text.match(/^\s*description\s*=\s*["']([^"']+)["']/m);
   return {
-    name: nameMatch?.[1] || null,
-    description: descMatch?.[1] || null,
+    name: nameMatch?.[1] ?? null,
+    description: descMatch?.[1] ?? null,
     languages: ['rust'],
     terms: [],
   };
 }
 
-async function detectFromGemfile(root) {
+async function detectFromGemfile(root: string): Promise<DetectorResult | null> {
   const text = await readTextSafe(join(root, 'Gemfile'));
   if (!text) return null;
   return { name: null, description: null, languages: ['ruby'], terms: [] };
 }
 
-async function fileHistogram(root) {
-  const counts = {};
-  async function walk(dir, depth) {
+async function fileHistogram(root: string): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  async function walk(dir: string, depth: number): Promise<void> {
     if (depth > 3) return;
     let entries;
     try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
@@ -154,7 +189,7 @@ async function fileHistogram(root) {
       if (entry.isDirectory()) {
         await walk(full, depth + 1);
       } else {
-        const lang = EXT_TO_LANG[extname(entry.name)];
+        const lang = (EXT_TO_LANG as Record<string, string>)[extname(entry.name)];
         if (lang) counts[lang] = (counts[lang] || 0) + 1;
       }
     }
@@ -163,7 +198,7 @@ async function fileHistogram(root) {
   return counts;
 }
 
-function firstParagraph(readme) {
+function firstParagraph(readme: string | null): string | null {
   if (!readme) return null;
   const lines = readme.split('\n').slice(0, 200);
   const paragraphs = lines.join('\n').split(/\n\s*\n/);
@@ -174,20 +209,22 @@ function firstParagraph(readme) {
   return null;
 }
 
-export async function detect(root) {
+export async function detect(root: string): Promise<DetectedSignals> {
   const detectors = [
     detectFromPackageJson, detectFromPyproject, detectFromRequirements,
     detectFromGoMod, detectFromCargo, detectFromGemfile,
   ];
-  const results = (await Promise.all(detectors.map(d => d(root)))).filter(Boolean);
+  const results = (await Promise.all(detectors.map(d => d(root)))).filter(
+    (r): r is DetectorResult => r !== null,
+  );
   const histogram = await fileHistogram(root);
   const readme = await readTextSafe(join(root, 'README.md'))
     || await readTextSafe(join(root, 'README'));
 
-  const languages = new Set();
-  const terms = new Set();
-  let name = null;
-  let description = null;
+  const languages = new Set<string>();
+  const terms = new Set<string>();
+  let name: string | null = null;
+  let description: string | null = null;
   for (const r of results) {
     for (const lang of r.languages) languages.add(lang);
     for (const term of r.terms) terms.add(term);
@@ -206,12 +243,22 @@ export async function detect(root) {
     languages: sortedLangs,
     histogram,
     searchTerms: [...new Set([...terms, ...sortedLangs.slice(0, 2)])],
-    primaryLanguage: sortedLangs[0] || null,
+    primaryLanguage: sortedLangs[0] ?? null,
   };
 }
 
-export function buildDescriptionLine(signals) {
-  const parts = [];
+// Input shape for buildDescriptionLine — a subset of DetectedSignals. We
+// don't reuse DetectedSignals directly because the callers (templates,
+// LLM-flow tests) often hand-build a subset rather than running detect().
+export interface DescriptionLineSignals {
+  name?: string | null;
+  description?: string | null;
+  primaryLanguage?: string | null;
+  searchTerms?: string[];
+}
+
+export function buildDescriptionLine(signals: DescriptionLineSignals): string {
+  const parts: string[] = [];
   if (signals.name) parts.push(`This project is "${signals.name}".`);
   if (signals.description) {
     // v0.6.25 / issue #89: when signals.description comes from a
@@ -226,7 +273,7 @@ export function buildDescriptionLine(signals) {
     parts.push(/[.!?]$/.test(desc) ? desc : `${desc}.`);
   }
   if (signals.primaryLanguage) {
-    const frameworks = [...new Set(signals.searchTerms)].filter(t =>
+    const frameworks = [...new Set(signals.searchTerms || [])].filter((t) =>
       !['typescript', 'javascript', 'python', 'go', 'rust', 'ruby'].includes(t));
     const frameworkPart = frameworks.length ? ` using ${frameworks.join(', ')}` : '';
     parts.push(`It's primarily ${signals.primaryLanguage}${frameworkPart}.`);
@@ -235,5 +282,11 @@ export function buildDescriptionLine(signals) {
   return parts.join(' ');
 }
 
-// Test seam: allow tests to inject the EXT_TO_LANG and DEP_TO_TERM tables
-export const _internal = { EXT_TO_LANG, DEP_TO_TERM, PY_DEP_TO_TERM, fileHistogram, firstParagraph };
+// Architect's anti-pattern fix (Phase 2): the JS source used a single
+// `export const _internal = { … }` namespace as a test seam. The TS port
+// promotes the table exports (EXT_TO_LANG, DEP_TO_TERM, PY_DEP_TO_TERM)
+// to direct top-level exports, and exposes the two helper functions
+// fileHistogram + firstParagraph as direct named exports too. Tests now
+// import each symbol by name. No `_internal` re-export — that pattern is
+// gone.
+export { fileHistogram, firstParagraph };

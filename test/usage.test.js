@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import {
   PRICING,
@@ -8,7 +8,7 @@ import {
   extractTokensFromLog,
   rollup,
   formatRollup,
-} from '../lib/usage.js';
+} from '../src/cli/usage.js';
 
 // --- PRICING table ---
 

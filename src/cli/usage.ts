@@ -1,4 +1,4 @@
-// lib/usage.js — Q7-clud-bug $/LOC compute.
+// src/cli/usage.ts — Q7-clud-bug $/LOC compute.
 //
 // Pure functions, no I/O. Driven from bin/clud-bug.js which fetches workflow
 // run JSON + PR metadata via gh CLI. Implementation of the 0.0.M.1 dashboard
@@ -20,9 +20,16 @@
 // Q7-clud-bug enforcement: dashboard reports the 30-day rolling trend; the
 // next Phase 0.5 PR ships when the trend stops declining.
 
+export interface ModelPricing {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
 // Anthropic pricing as of 2026-05 (per MTok). Cache write is 1.25× input
 // per Anthropic's published 5-min-TTL ephemeral cache rate.
-export const PRICING = {
+export const PRICING: Record<string, ModelPricing> = {
   'claude-sonnet-4-6': {
     input: 3.0, output: 15.0, cacheRead: 0.30, cacheWrite: 3.75,
   },
@@ -39,19 +46,32 @@ export const PRICING = {
 // update the table. The `unknown` flag in the result lets callers warn.
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
+export interface TokenCounts {
+  input_tokens?: number | undefined;
+  output_tokens?: number | undefined;
+  cache_read_input_tokens?: number | undefined;
+  cache_creation_input_tokens?: number | undefined;
+}
+
+export interface CostParts {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+export interface ReviewCost {
+  total: number;
+  parts: CostParts;
+  model: string;
+  unknownModel: boolean;
+}
+
 /**
  * Compute the USD cost of a single clud-bug review from token counts +
  * model. All four token classes are billed independently.
- *
- * Returns:
- *   {
- *     total: number  USD,
- *     parts: { input, output, cacheRead, cacheWrite } USD breakdown,
- *     model: string (normalized),
- *     unknownModel: boolean (true if we used DEFAULT_MODEL pricing),
- *   }
  */
-export function computeReviewCost(tokens, model) {
+export function computeReviewCost(tokens: TokenCounts, model: string | null | undefined): ReviewCost {
   const t = {
     input: tokens.input_tokens || 0,
     output: tokens.output_tokens || 0,
@@ -59,8 +79,11 @@ export function computeReviewCost(tokens, model) {
     cacheWrite: tokens.cache_creation_input_tokens || 0,
   };
   const normalized = model && PRICING[model] ? model : DEFAULT_MODEL;
-  const p = PRICING[normalized];
-  const parts = {
+  // PRICING[normalized] is guaranteed to exist (normalized is either a
+  // known key or DEFAULT_MODEL which is defined above). Non-null assert
+  // to satisfy noUncheckedIndexedAccess.
+  const p = PRICING[normalized]!;
+  const parts: CostParts = {
     input: (t.input / 1e6) * p.input,
     output: (t.output / 1e6) * p.output,
     cacheRead: (t.cacheRead / 1e6) * p.cacheRead,
@@ -83,7 +106,7 @@ export function computeReviewCost(tokens, model) {
  * docs-only / empty PRs); callers can filter zero-LOC reviews out of
  * trend lines as outliers.
  */
-export function costPerLOC(cost, additions, deletions) {
+export function costPerLOC(cost: number, additions: number | null | undefined, deletions: number | null | undefined): number {
   const loc = (additions || 0) + (deletions || 0);
   if (loc === 0) return 0;
   return cost / loc;
@@ -96,13 +119,19 @@ export function costPerLOC(cost, additions, deletions) {
  * High hit rate proves the v0.6.3 caching layer is firing on
  * re-reviews and fix-pushes.
  */
-export function cacheHitRate(tokens) {
+export function cacheHitRate(tokens: TokenCounts): number {
   const read = tokens.cache_read_input_tokens || 0;
   const write = tokens.cache_creation_input_tokens || 0;
   const input = tokens.input_tokens || 0;
   const denom = read + write + input;
   if (denom === 0) return 0;
   return read / denom;
+}
+
+export interface ExtractedTokens {
+  model: string | null;
+  tokens: Required<TokenCounts> | null;
+  ok: boolean;
 }
 
 /**
@@ -121,15 +150,8 @@ export function cacheHitRate(tokens) {
  * the same number Anthropic charges. If no result event exists, the
  * review didn't complete successfully — return ok:false so the caller
  * skips this run rather than trusting partial token data.
- *
- * Returns:
- *   {
- *     model: string | null,
- *     tokens: { input, output, cacheRead, cacheWrite } | null,
- *     ok: boolean (false if no result event — partial / errored job),
- *   }
  */
-export function extractTokensFromLog(logText) {
+export function extractTokensFromLog(logText: unknown): ExtractedTokens {
   if (typeof logText !== 'string' || logText.length === 0) {
     return { model: null, tokens: null, ok: false };
   }
@@ -138,15 +160,18 @@ export function extractTokensFromLog(logText) {
   // uses the same model throughout). Captured before the usage parse
   // so model is reported even when we can't find a result event.
   const modelMatches = [...logText.matchAll(/"model"\s*:\s*"([^"]+)"/g)];
-  const model = modelMatches.length > 0
-    ? modelMatches[modelMatches.length - 1][1]
+  // matchAll yields RegExpMatchArray entries; capture group 1 is the
+  // model string. Under noUncheckedIndexedAccess every index is typed
+  // possibly-undefined — coalesce so the return type stays string|null.
+  const model: string | null = modelMatches.length > 0
+    ? (modelMatches[modelMatches.length - 1]?.[1] ?? null)
     : null;
 
   // Locate the final result event. There may be multiple over the
   // life of a long-running session — take the LAST one.
   const resultMarkerRe = /"type"\s*:\s*"result"/g;
   let lastResultIdx = -1;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = resultMarkerRe.exec(logText)) !== null) {
     lastResultIdx = m.index;
   }
@@ -176,9 +201,9 @@ export function extractTokensFromLog(logText) {
     ? fromUsage.slice(0, iterationsIdx)
     : fromUsage;
 
-  const pluck = (re) => {
+  const pluck = (re: RegExp): number => {
     const match = usageOnly.match(re);
-    return match ? Number(match[1]) : 0;
+    return match && match[1] !== undefined ? Number(match[1]) : 0;
   };
 
   const input = pluck(/"input_tokens"\s*:\s*(\d+)/);
@@ -203,38 +228,88 @@ export function extractTokensFromLog(logText) {
   };
 }
 
+export interface ReviewRecord {
+  repo: string;
+  pr: number;
+  createdAt: string;
+  model: string;
+  tokens: TokenCounts;
+  additions: number;
+  deletions: number;
+  cost: number;
+  costPerLOC: number;
+  cacheRate: number;
+  unknownModel?: boolean | undefined;
+  modelObserved?: string | undefined;
+}
+
+export interface RollupGroupStats {
+  reviews: number;
+  cost: number;
+  loc: number;
+  costPerLOC: number;
+  cacheRate: number;
+}
+
+export interface RollupTotal {
+  reviews: number;
+  cost: number;
+  loc: number;
+  costPerLOC: number;
+  cacheRate: number;
+}
+
+export interface RollupTrend {
+  current: number;
+  previous: number | null;
+  slopePct: number | null;
+}
+
+export interface RollupOutlier {
+  repo: string;
+  pr: number;
+  costPerLOC: number;
+  multiple: number;
+  cost: number;
+  reason: string;
+}
+
+export interface UnknownModelReview {
+  repo: string;
+  pr: number;
+  modelObserved: string | undefined;
+}
+
+export interface Rollup {
+  total: RollupTotal;
+  perRepo: Record<string, RollupGroupStats>;
+  perModel: Record<string, RollupGroupStats>;
+  trend30d: RollupTrend;
+  outliers: RollupOutlier[];
+  unknownModelReviews: UnknownModelReview[];
+}
+
+// Internal mutable form used during group-by build-up — the *s arrays
+// disappear before return; we type the in-progress shape separately.
+interface GroupAccumulator {
+  reviews: number;
+  cost: number;
+  loc: number;
+  costPerLOCs: number[];
+  cacheRates: number[];
+  costPerLOC?: number;
+  cacheRate?: number;
+}
+
 /**
  * Roll up an array of per-review records into a structured summary.
  *
- * Each review record:
- *   {
- *     repo: "owner/name",
- *     pr: number,
- *     createdAt: ISO 8601,
- *     model: string,
- *     tokens: { ... },
- *     additions: number,
- *     deletions: number,
- *     cost: number (USD, total),
- *     costPerLOC: number,
- *     cacheRate: number (0..1),
- *   }
- *
- * Returns:
- *   {
- *     total: { reviews, cost, loc, costPerLOC (median), cacheRate (median) },
- *     perRepo: { [repo]: { ... } },
- *     perModel: { [model]: { ... } },
- *     trend30d: { dailyMedians: [...], slopePct (MoM) },
- *     outliers: [{ review, severity }],
- *   }
- *
  * Pre-conditions: callers should drop zero-LOC reviews before passing in.
  */
-export function rollup(reviews) {
+export function rollup(reviews: ReviewRecord[]): Rollup {
   const valid = reviews.filter((r) => r.costPerLOC > 0);
 
-  const total = {
+  const total: RollupTotal = {
     reviews: valid.length,
     cost: valid.reduce((a, r) => a + r.cost, 0),
     loc: valid.reduce((a, r) => a + (r.additions + r.deletions), 0),
@@ -242,34 +317,44 @@ export function rollup(reviews) {
     cacheRate: median(valid.map((r) => r.cacheRate)),
   };
 
-  const groupBy = (key) => {
-    const out = {};
+  const groupBy = (key: 'repo' | 'model'): Record<string, RollupGroupStats> => {
+    const out: Record<string, GroupAccumulator> = {};
     for (const r of valid) {
-      const k = r[key];
-      if (!out[k]) out[k] = { reviews: 0, cost: 0, loc: 0, costPerLOCs: [], cacheRates: [] };
-      out[k].reviews += 1;
-      out[k].cost += r.cost;
-      out[k].loc += r.additions + r.deletions;
-      out[k].costPerLOCs.push(r.costPerLOC);
-      out[k].cacheRates.push(r.cacheRate);
+      const k = String(r[key]);
+      let bucket = out[k];
+      if (!bucket) {
+        bucket = { reviews: 0, cost: 0, loc: 0, costPerLOCs: [], cacheRates: [] };
+        out[k] = bucket;
+      }
+      bucket.reviews += 1;
+      bucket.cost += r.cost;
+      bucket.loc += r.additions + r.deletions;
+      bucket.costPerLOCs.push(r.costPerLOC);
+      bucket.cacheRates.push(r.cacheRate);
     }
+    const finalized: Record<string, RollupGroupStats> = {};
     for (const k of Object.keys(out)) {
-      out[k].costPerLOC = median(out[k].costPerLOCs);
-      out[k].cacheRate = median(out[k].cacheRates);
-      delete out[k].costPerLOCs;
-      delete out[k].cacheRates;
+      const bucket = out[k]!;
+      finalized[k] = {
+        reviews: bucket.reviews,
+        cost: bucket.cost,
+        loc: bucket.loc,
+        costPerLOC: median(bucket.costPerLOCs),
+        cacheRate: median(bucket.cacheRates),
+      };
     }
-    return out;
+    return finalized;
   };
 
   const perRepo = groupBy('repo');
   const perModel = groupBy('model');
 
   // Outliers: > 2× total.costPerLOC.
-  const outliers = valid
+  const outliers: RollupOutlier[] = valid
     .filter((r) => r.costPerLOC > total.costPerLOC * 2)
     .map((r) => ({
-      repo: r.repo, pr: r.pr,
+      repo: r.repo,
+      pr: r.pr,
       costPerLOC: r.costPerLOC,
       multiple: r.costPerLOC / total.costPerLOC,
       cost: r.cost,
@@ -287,23 +372,25 @@ export function rollup(reviews) {
   // per-model table — exactly the false-good signal Q7 must NOT produce.
   // Caller renders this as a loud warning so the dashboard reader knows
   // to update the PRICING table.
-  const unknownModelReviews = valid
+  const unknownModelReviews: UnknownModelReview[] = valid
     .filter((r) => r.unknownModel === true)
     .map((r) => ({ repo: r.repo, pr: r.pr, modelObserved: r.modelObserved }));
 
   return { total, perRepo, perModel, trend30d, outliers, unknownModelReviews };
 }
 
-function median(nums) {
+function median(nums: number[]): number {
   if (nums.length === 0) return 0;
   const sorted = [...nums].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
+  // sorted is non-empty here so sorted[mid] is defined; the `!`
+  // satisfies noUncheckedIndexedAccess and matches JS semantics.
   return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
+    ? (sorted[mid - 1]! + sorted[mid]!) / 2
+    : sorted[mid]!;
 }
 
-function computeTrend(reviews) {
+function computeTrend(reviews: ReviewRecord[]): RollupTrend {
   // PR #104 fix: distinguish "no prior window" (previous bucket empty)
   // from "exactly flat trend" (current === previous > 0). The original
   // code returned slopePct=0 for both, which masked the dangerous case
@@ -331,6 +418,10 @@ function computeTrend(reviews) {
   return { current, previous, slopePct };
 }
 
+export interface FormatRollupOptions {
+  json?: boolean | undefined;
+}
+
 /**
  * Render the rollup as a human-readable table. Mirrors the sample output
  * from the Phase 0.5 plan.
@@ -338,11 +429,11 @@ function computeTrend(reviews) {
  * Pass `{ json: true }` for the machine-readable form (the same data
  * the rollup() function returns).
  */
-export function formatRollup(rollup, opts = {}) {
+export function formatRollup(rollup: Rollup, opts: FormatRollupOptions = {}): string {
   if (opts.json) {
     return JSON.stringify(rollup, null, 2);
   }
-  const lines = [];
+  const lines: string[] = [];
   const t = rollup.total;
   const trend = rollup.trend30d;
   // PR #104 fix: null slopePct = "no prior window" (prior 30d bucket

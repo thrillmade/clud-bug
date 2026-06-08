@@ -6,7 +6,20 @@
 // per-section budgets, comment format updates) by editing one function
 // instead of three templates.
 
-const LANGUAGE_HINT_BLOCKS = {
+export type ReviewPromptLanguage = 'generic' | 'ts' | 'py';
+
+export interface ReviewPromptOptions {
+  projectDescription: string;
+  language?: ReviewPromptLanguage;
+}
+
+// Internal input type: caller may pass a malformed object (e.g. missing
+// projectDescription) and we throw at runtime. Use Partial so the type
+// system tracks that all fields could be missing — the explicit `undefined`
+// check below recovers a meaningful error message.
+type ReviewPromptInput = Partial<ReviewPromptOptions>;
+
+const LANGUAGE_HINT_BLOCKS: Record<ReviewPromptLanguage, readonly string[]> = {
   generic: ['- Broken or missing test coverage for new code'],
   ts: [
     '- Broken or missing test coverage for new code',
@@ -33,7 +46,8 @@ const LANGUAGE_HINT_BLOCKS = {
 //   - 'generic' (default): just "test coverage"
 //   - 'ts': test coverage + 4 TypeScript-specific bullets
 //   - 'py': 4 Python-specific bullets (replaces "test coverage")
-export function reviewPrompt({ projectDescription, language = 'generic' } = {}) {
+export function reviewPrompt(options: ReviewPromptInput = {}): string {
+  const { projectDescription, language = 'generic' } = options;
   if (projectDescription === undefined) {
     throw new Error('reviewPrompt: projectDescription is required');
   }
