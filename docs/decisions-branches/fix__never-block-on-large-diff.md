@@ -13,3 +13,15 @@
 
 ---
 
+## 2026-06-08 15:20 - fix release discipline: bump strict-mode-gate refs + update prompts.test.js MAX_DIFF_BYTES expectation
+
+**Reasoning:** Three follow-on fixes for v0.6.35: (a) strict-mode-gate@v0.6.34 refs in action.yml + all 3 workflow templates → @v0.6.35 (release-discipline test enforces this), (b) prompts.test.js asserts MAX_DIFF_BYTES literal — bumped expectation to '5000000' to match the new template default.
+
+**Alternatives considered:** Revert template MAX_DIFF_BYTES change (rejected — that was the whole point of v0.6.35)
+
+**Implications:**
+- 361/361 tests pass
+- release-discipline guard now happy: package.json + every action.yml header + every workflow template all on v0.6.35
+
+---
+

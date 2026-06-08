@@ -105,7 +105,7 @@ test('rendered workflow.yml.tmpl sets the three budget env vars', async () => {
   const out = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
     REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
   });
-  assert.match(out, /MAX_DIFF_BYTES: '80000'/);
+  assert.match(out, /MAX_DIFF_BYTES: '5000000'/);
   assert.match(out, /MAX_COMMENT_BYTES: '20000'/);
   assert.match(out, /MAX_SKILL_BYTES: '4000'/);
   // REPO_OWNER and REPO_NAME are needed by the comment-fetch pattern.
@@ -145,7 +145,7 @@ test('rendered workflow-ts and workflow-py templates also set budget env vars', 
         language: tmpl.includes('-ts') ? 'ts' : 'py',
       }),
     });
-    assert.match(out, /MAX_DIFF_BYTES: '80000'/, `${tmpl} missing MAX_DIFF_BYTES`);
+    assert.match(out, /MAX_DIFF_BYTES: '5000000'/, `${tmpl} missing MAX_DIFF_BYTES`);
     assert.match(out, /Bash\(head:\*\)/, `${tmpl} missing Bash(head:*) in allowedTools`);
   }
 });
