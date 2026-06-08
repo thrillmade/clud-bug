@@ -8,7 +8,7 @@ import {
   mergeSkillUsage,
   assessSkillHealth,
   formatHealthDashboard,
-} from '../lib/skill-usage.js';
+} from '../src/cli/skill-usage.js';
 
 
 // ---------------------------------------------------------------------------

@@ -238,7 +238,7 @@ async function runUpdateSkillUsage(args) {
   const {
     computeSkillUsageDelta,
     mergeSkillUsage,
-  } = await import('../lib/skill-usage.js');
+  } = await import('../dist/cli/skill-usage.js');
 
   if (!args.stdin) {
     process.stderr.write('clud-bug update-skill-usage: --stdin is required.\n');
@@ -1096,7 +1096,7 @@ async function runUsage(args) {
 // back to the local-file path otherwise. The `--no-artifacts` flag
 // forces the v0.6.28 local-only behavior (handy for tests + offline).
 async function runUsageHealth(args) {
-  const { assessSkillHealth, formatHealthDashboard } = await import('../lib/skill-usage.js');
+  const { assessSkillHealth, formatHealthDashboard } = await import('../dist/cli/skill-usage.js');
 
   // Decide read source. Priority: explicit --no-artifacts → local;
   // explicit --repo OR inferred owner/repo → artifacts; else local.
@@ -1141,7 +1141,7 @@ async function runUsageHealth(args) {
 // independently testable + composable in future commands.
 
 async function loadUsageFromArtifacts(ownerRepo, args) {
-  const { fetchUsageArtifacts, aggregateUsageStream } = await import('../lib/skill-usage.js');
+  const { fetchUsageArtifacts, aggregateUsageStream } = await import('../dist/cli/skill-usage.js');
   const [owner, repo] = ownerRepo.split('/');
   if (!owner || !repo) {
     process.stderr.write(`clud-bug usage --health: --repo must be in owner/name form, got "${ownerRepo}".\n`);

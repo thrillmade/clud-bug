@@ -121,3 +121,14 @@
 
 ---
 
+## 2026-06-08 18:22 - Phase 2 (W3): port lib/skill-usage.js to src/cli/skill-usage.ts
+
+**Reasoning:** 432 LOC of pure data-layer functions (computeSkillUsageDelta, mergeSkillUsage, assessSkillHealth) plus gh-runner-driven artifact fetch (v0.6.30). Typed the discriminated union SkillHealthStatus exhaustively; statusOrder is Record<SkillHealthStatus, number> so future additions are caught at compile time. Input shapes use `unknown` + narrow guards (typeof === object/string) at the boundary to preserve the JS defensive semantics for malformed review JSON. GhRunner is a structural interface so DEFAULT_GH_RUNNER and test mocks share one type.
+
+**Alternatives considered:** Tighten reviewJson to a concrete schema type (rejected — current consumers feed raw structured-output JSON whose shape varies across review-schema versions; coercion at the boundary is the right place).
+
+**Implications:**
+- src/cli/index.ts now exports 7 functions + 9 types from skill-usage. bin/clud-bug.js dynamic imports updated to dist/cli/skill-usage.js at all 3 call sites (runUpdateSkillUsage, runUsageHealth, loadUsageFromArtifacts). All 3 test files updated to ../src/cli/skill-usage.js.
+
+---
+

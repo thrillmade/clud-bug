@@ -42,3 +42,23 @@ export {
   type RenderBlockOptions,
   type ApplyToRepoResult,
 } from './agents-md.js';
+
+export {
+  computeSkillUsageDelta,
+  mergeSkillUsage,
+  assessSkillHealth,
+  formatHealthDashboard,
+  DEFAULT_GH_RUNNER,
+  fetchUsageArtifacts,
+  aggregateUsageStream,
+  type SkillDelta,
+  type SkillUsageEntry,
+  type SkillDeltaMap,
+  type SkillUsageMap,
+  type SkillHealthStatus,
+  type SkillHealthRow,
+  type GhRunResult,
+  type GhRunner,
+  type FetchUsageArtifactsOptions,
+  type UsageArtifactRecord,
+} from './skill-usage.js';

@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import {
   fetchUsageArtifacts,
   aggregateUsageStream,
-} from '../lib/skill-usage.js';
+} from '../src/cli/skill-usage.js';
 
 // ---------------------------------------------------------------------------
 // aggregateUsageStream (pure function — no I/O)
