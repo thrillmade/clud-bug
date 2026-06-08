@@ -8,7 +8,7 @@ import { stdin as input, stdout as output } from 'node:process';
 
 import { detect, buildDescriptionLine } from '../lib/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../lib/render.js';
-import { reviewPrompt } from '../lib/prompts.js';
+import { reviewPrompt } from '../dist/core/prompts.js';
 import {
   SkillsClient, rankAndCap, writeSkills, writeSkill, loadBaseline,
   readManifest, writeManifest, removeSkill, listInstalled, diffManifest,

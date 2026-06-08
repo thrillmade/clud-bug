@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { reviewPrompt } from '../lib/prompts.js';
+import { reviewPrompt } from '../src/core/prompts.js';
 import { renderFile, templateLanguage } from '../lib/render.js';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));

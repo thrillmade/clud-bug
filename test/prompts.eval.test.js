@@ -14,7 +14,7 @@ import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { reviewPrompt } from '../lib/prompts.js';
+import { reviewPrompt } from '../src/core/prompts.js';
 
 const GOLDEN = join(import.meta.dirname, 'golden');
 

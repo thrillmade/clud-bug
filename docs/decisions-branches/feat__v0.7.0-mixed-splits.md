@@ -11,3 +11,14 @@
 
 ---
 
+## 2026-06-08 17:51 - Phase 2: port lib/prompts.js to src/core/prompts.ts
+
+**Reasoning:** First of 5 zero-dep core conversions. Added TypeScript types: ReviewPromptLanguage union ('generic'|'ts'|'py'), ReviewPromptOptions interface (projectDescription required, language optional), internal ReviewPromptInput = Partial<ReviewPromptOptions> so callers can pass {} (test contract preserved — throws 'projectDescription is required' at runtime). LANGUAGE_HINT_BLOCKS typed Record<ReviewPromptLanguage, readonly string[]>. Template literal body byte-identical to JS source. vitest.config.ts gained a pre-resolver plugin so .js tests can import '../src/core/<name>.js' per architect spec — Vite 5's built-in swap only fires when the importer is .ts. bin/clud-bug.js + lib/update.js redirected to '../dist/core/prompts.js' (lib/ is being eliminated). Commit uses --stage scoped to avoid sweeping up the parallel src/{cli,core}/skills.ts WIP from another agent that's currently uncommitted on this branch.
+
+**Alternatives considered:** Use .ts extension in test imports (rejected: deviates from architect's NodeNext-style .js-suffix spec), Keep lib/prompts.js as a re-export shim (rejected: architect's plan is to eliminate lib/ entirely)
+
+**Implications:**
+- src/core/index.ts now re-exports reviewPrompt + types; clud-bug/core consumers (via package.json exports map) can pull reviewPrompt from the dist barrel
+
+---
+
