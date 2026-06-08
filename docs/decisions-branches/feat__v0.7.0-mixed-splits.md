@@ -44,3 +44,14 @@
 
 ---
 
+## 2026-06-08 18:01 - Phase 2 (W2): split lib/skills.js -> src/core/skills.ts + src/cli/skills.ts (+ _internal promotion)
+
+**Reasoning:** Bug 9 wave 2 — split the 749 LOC mixed-domain skills module. Pure pieces (SkillsClient, rankAndCap, frontmatter parsing, comment-extraction helpers, classifier) live in src/core/ so clud-bug-app can ship them server-side without node:fs. CLI install/update helpers (loadBaseline, manifest read/write, removeSkill, listInstalled, diffManifest) stay in src/cli/.
+
+**Alternatives considered:** Keep loadBaseline in core (network only, no FS) — rejected because the cacheDir fallback to ~/.cache/clud-bug/skills uses homedir() + writeFile; lifting it would mean splitting one function into a core 'fetch' + cli 'cacheWrap' and that's more architecture than the App needs right now.
+
+**Implications:**
+- Lib/skills.js _internal debug-export removed: MAX_SKILLS + API_BASE + normalizeList are first-class core exports; sanitizeSlug + entryKey + MANIFEST_FILE are first-class cli exports. Tests import directly (no more _internal.X gymnastics). bin/clud-bug.js + lib/update.js point at dist/* (matches audit-split + Wave 1 prompts pattern). Vitest plugin extended to strip ?query cache-busters before .js→.ts resolution (skills.test.js uses '../src/cli/skills.js?base-a' for fresh-import tests).
+
+---
+
