@@ -6,3 +6,14 @@
 // lib/* JS file.
 
 export { reviewPrompt, type ReviewPromptOptions, type ReviewPromptLanguage } from './prompts.js';
+export {
+  REVIEW_SCHEMA,
+  serializedReviewSchema,
+  type ReviewData,
+  type ReviewFinding,
+  type ReviewSummaryCounts,
+  type ReviewStatusHeader,
+  type FindingSeverity,
+  type PerSkillScanItem,
+  type DedicatedSection,
+} from './review-schema.js';

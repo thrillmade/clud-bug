@@ -22,3 +22,14 @@
 
 ---
 
+## 2026-06-08 17:55 - Phase 2: port lib/review-schema.js to src/core/review-schema.ts
+
+**Reasoning:** Second of 5 zero-dep core conversions. Schema is a literal-typed JSON object (FINDING_ITEM, PER_SKILL_SCAN_ITEM, REVIEW_SCHEMA) consumed as raw JSON by the Agent SDK's --json-schema validator — typing every sub-shape would chain-couple downstream tests. Used a single structural alias JSONSchemaObject = Record<string, unknown> for the three constants. Added schema-derived runtime types (ReviewData, ReviewFinding, ReviewSummaryCounts, ReviewStatusHeader, FindingSeverity, PerSkillScanItem, DedicatedSection) that mirror the schema shape — these let render-review.ts type its renderReview(data: ReviewData) signature without re-deriving the types. serializedReviewSchema(): string return-type annotated. Byte-identical to JS source (verified by JSON.stringify diff). lib/render.js redirected to ../dist/core/review-schema.js. Build clean + 361/361 tests pass when other-agent WIP (src/cli/skills.ts) is stashed; --stage scoped commits only my files.
+
+**Alternatives considered:** Inline the schema runtime types into render-review.ts only (rejected: they belong at the schema boundary so callers consuming clud-bug/core get types alongside the schema), Tight literal type for REVIEW_SCHEMA — 'as const' deep-narrowed (rejected: would propagate as-const ripples to consumers, no runtime benefit since the SDK validator only inspects shape)
+
+**Implications:**
+- src/core/index.ts now exports REVIEW_SCHEMA + serializedReviewSchema + 7 runtime types; render-review.ts (next commit) can import ReviewData from same-module without re-defining the shape
+
+---
+

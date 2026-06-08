@@ -23,10 +23,21 @@
 //     keep the model from inventing fields.
 //
 // Bumped via deliberate edit; not derived from a TypeScript type. The
-// rendering side (lib/render-review.js) treats unknown fields permissively
+// rendering side (./render-review.ts) treats unknown fields permissively
 // — schema and renderer can drift up to one minor version safely.
 
-const FINDING_ITEM = {
+// The JSON Schema shape is structurally rich (oneOf, enum, conditional
+// required fields) and is consumed as a raw JSON object by Agent SDK
+// validators that have their own runtime semantics. Typing it as
+// `Record<string, unknown>` would erase the literal-property structure
+// callers rely on for IDE navigation; typing each sub-object exactly
+// would tightly couple every test that asserts a specific path. We use
+// a structural alias `JSONSchemaObject` here so the export keeps its
+// rich literal type (caller-visible field names) without forcing a
+// schema-spec round-trip.
+type JSONSchemaObject = Record<string, unknown>;
+
+const FINDING_ITEM: JSONSchemaObject = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -55,7 +66,7 @@ const FINDING_ITEM = {
   required: ['skill', 'summary'],
 };
 
-const PER_SKILL_SCAN_ITEM = {
+const PER_SKILL_SCAN_ITEM: JSONSchemaObject = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -68,7 +79,7 @@ const PER_SKILL_SCAN_ITEM = {
   required: ['skill', 'outcome'],
 };
 
-export const REVIEW_SCHEMA = {
+export const REVIEW_SCHEMA: JSONSchemaObject = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -154,6 +165,58 @@ export const REVIEW_SCHEMA = {
 // `--json-schema '<JSON>'` argument. Single-line (the workflow YAML uses
 // the pipe block; single-quoted JSON inside that needs to stay flat to
 // avoid YAML parser surprises with embedded newlines).
-export function serializedReviewSchema() {
+export function serializedReviewSchema(): string {
   return JSON.stringify(REVIEW_SCHEMA);
+}
+
+// --- Schema-derived runtime types for renderReview() input ---
+//
+// The TypeScript types below mirror the JSON Schema shape above so that
+// render-review.ts can consume the parsed JSON with structural typing.
+// They are intentionally permissive (every field optional except where
+// the schema's `required` list forces it) because the renderer is the
+// last line of defense — malformed JSON should degrade rather than throw.
+
+export type FindingSeverity = 'critical' | 'minor' | 'preexisting';
+
+export interface ReviewFinding {
+  skill: string;
+  summary: string;
+  file?: string;
+  line?: number;
+  reasoning?: string;
+}
+
+export interface PerSkillScanItem {
+  skill: string;
+  outcome: string;
+}
+
+export interface DedicatedSection {
+  section_name: string;
+  skill: string;
+  findings: ReviewFinding[];
+}
+
+export interface ReviewSummaryCounts {
+  critical: number;
+  minor: number;
+  preexisting: number;
+  resolved_from_prior: number;
+  still_open: number;
+}
+
+export type ReviewStatusHeader = 'critical findings' | 'clean' | 'bare';
+
+export interface ReviewData {
+  status_header: ReviewStatusHeader | string;
+  summary_counts: ReviewSummaryCounts;
+  per_skill_scan: PerSkillScanItem[];
+  critical_findings: ReviewFinding[];
+  minor_findings: ReviewFinding[];
+  preexisting_findings: ReviewFinding[];
+  skills_referenced: string[];
+  last_reviewed_sha: string;
+  dedicated_sections?: DedicatedSection[];
+  diagnostics?: string[];
 }
