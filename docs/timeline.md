@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (32 decisions)
+## 2026-06 (33 decisions)
 
-- **2026-06-08** — Phase 2 (W3 final): bin/clud-bug.js to 3-line shim importing dist/cli/index.js *(feat/v0.7.0-mixed-splits)* — [decisions-branches/feat__v0.7.0-mixed-splits.md](decisions-branches/feat__v0.7.0-mixed-splits.md)
-- *... 30 more decisions ...*
+- **2026-06-08** — Phase 2 fix: complete src/core/index.ts barrel with audit + skills re-exports *(feat/v0.7.0-mixed-splits)* — [decisions-branches/feat__v0.7.0-mixed-splits.md](decisions-branches/feat__v0.7.0-mixed-splits.md)
+- *... 31 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
