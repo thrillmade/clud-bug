@@ -1,4 +1,4 @@
-# clud-bug-template-version: v12
+# clud-bug-template-version: v13
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -396,12 +396,21 @@ jobs:
           # <prior_sha>..HEAD` (delta) when the SHA is still in HEAD's
           # ancestry. Fix-push reviews ingest only the new bytes.
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # Per-section byte budgets (v0.6.4). The system-prompt instructs
-          # Claude to cap each per-PR input fetch with `head -c`. Caching
-          # covers the stable system prefix; capping covers the variable
-          # suffix (diff, comments, skills). Override per-repo by setting
-          # these env vars in the consuming workflow if defaults don't fit.
-          MAX_DIFF_BYTES: '80000'
+          # Per-section byte budgets (v0.6.4, MAX_DIFF_BYTES bumped 2026-06-08).
+          # The system-prompt instructs Claude to cap each per-PR input fetch
+          # with `head -c`. Caching covers the stable system prefix; capping
+          # covers the variable suffix (diff, comments, skills). Override
+          # per-repo by setting these env vars in the consuming workflow if
+          # defaults don't fit.
+          #
+          # 2026-06-08 CEO directive (v0.6.35): MAX_DIFF_BYTES bumped from
+          # 80000 (80KB) → 5000000 (5MB). The old default silently truncated
+          # any PR diff > 80KB, leading to half-reviews on real-world PRs.
+          # CEO: "a large diff should NEVER be a blocker or guard." 5MB is
+          # far above realistic single-PR diff sizes but bounded enough that
+          # the runner doesn't OOM. Repos that want stricter discipline can
+          # still set lower values per-repo.
+          MAX_DIFF_BYTES: '5000000'
           MAX_COMMENT_BYTES: '20000'
           MAX_SKILL_BYTES: '4000'
           # MAX_THINKING_TOKENS caps Claude Code's extended-thinking budget per
