@@ -165,3 +165,15 @@
 
 ---
 
+## 2026-06-08 18:43 - Phase 2 fix: complete src/core/index.ts barrel with audit + skills re-exports
+
+**Reasoning:** PR #156 clud-bug-review critical finding: skills.ts and audit.ts had no entries in the core barrel — clud-bug-app's Phase 4 'import { SkillsClient } from clud-bug/core' would throw ESM named-export error at import time. Barrel now exports the full public API surface: 35 symbols across 7 core modules (prompts, review-schema, render-review, detect, render, audit, skills). The package.json exports map only exposes ./ + ./core, so the barrel IS the public API — missing entries here are missing entries on the public surface.
+
+**Alternatives considered:** Add per-module subpath exports for ./core/skills, ./core/audit (rejected: increases the public API maintenance burden + breaks the architect's 'single subpath' decision; the barrel pattern is intentional)
+
+**Implications:**
+- App's Phase 4 import-from-core works without surprises: SkillsClient, normalizeList, rankAndCap, partitionByReviewMode, extractStatsHeader, etc. all resolve
+- 35 symbols exported total — matches the audit's earlier App-needs-this list (12 from skills) plus 3 from audit
+
+---
+

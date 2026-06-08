@@ -39,3 +39,32 @@ export {
   type RenderVars,
   type TemplateLanguage,
 } from './render.js';
+export {
+  durationToGitSince,
+  renderAuditHeader,
+  type AuditHeaderInput,
+} from './audit.js';
+export {
+  API_BASE,
+  MAX_SKILLS,
+  SkillsClient,
+  normalizeList,
+  rankAndCap,
+  readReviewMode,
+  readAppliesTo,
+  appliesToPr,
+  partitionByReviewMode,
+  extractPerSkillLine,
+  selectReviewHeader,
+  extractFirstReviewHeaderLine,
+  selectReviewBody,
+  extractStatsHeader,
+  isCriticalReviewHeader,
+  classifyPerSkillOutcome,
+  type SkillDescriptor,
+  type RankableSkill,
+  type AppliesToRule,
+  type SkillWithOptionalContent,
+  type PrComment,
+  type ReviewStatsHeader,
+} from './skills.js';
