@@ -3,6 +3,11 @@ node_modules/
 *.log
 .DS_Store
 
+# TypeScript build output (v0.7.0+ — emitted by `npm run build` from src/).
+# Not checked in; recreated on every install via prepublishOnly.
+dist/
+*.tsbuildinfo
+
 # Site (Next.js)
 site/.next/
 site/out/

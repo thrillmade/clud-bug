@@ -1,6 +1,6 @@
 // Tests for lib/skill-usage.js — pure-function unit tests.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
 import {
