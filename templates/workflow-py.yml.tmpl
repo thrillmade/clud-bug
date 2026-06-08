@@ -222,7 +222,7 @@ jobs:
           # HEAD_SHA (v0.6.10+) — see workflow.yml.tmpl for design notes.
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           # Per-section byte budgets — see workflow.yml.tmpl for design notes.
-          MAX_DIFF_BYTES: '80000'
+          MAX_DIFF_BYTES: '5000000'
           MAX_COMMENT_BYTES: '20000'
           MAX_SKILL_BYTES: '4000'
           # Thinking-budget cap (v0.6.8) — see workflow.yml.tmpl for design notes.
@@ -366,7 +366,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.34
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.6.35
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].
