@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (33 decisions)
+## 2026-06 (34 decisions)
 
-- **2026-06-08** — Phase 2 fix: complete src/core/index.ts barrel with audit + skills re-exports *(feat/v0.7.0-mixed-splits)* — [decisions-branches/feat__v0.7.0-mixed-splits.md](decisions-branches/feat__v0.7.0-mixed-splits.md)
-- *... 31 more decisions ...*
+- **2026-06-09** — Release prep v0.7.0-rc.1: version bump + strict-mode-gate classifier vendor + sourcemap fix *(chore/v0.7.0-rc.1-release-prep)* — [decisions-branches/chore__v0.7.0-rc.1-release-prep.md](decisions-branches/chore__v0.7.0-rc.1-release-prep.md)
+- *... 32 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)

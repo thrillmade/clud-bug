@@ -63,6 +63,7 @@ clud-bug
 │   ├── skill-usage-aggregation.test.js
 │   ├── skill-usage.test.js
 │   ├── skills.test.js
+│   ├── strict-mode-gate-classifier.test.js
 │   ├── update-skill-usage.test.js
 │   ├── update.test.js
 │   └── usage.test.js
