@@ -39,7 +39,8 @@ test('--help prints usage including all subcommands', () => {
 test('--version prints package version', () => {
   const r = run(process.cwd(), ['--version']);
   assert.equal(r.status, 0);
-  assert.match(r.stdout.trim(), /^\d+\.\d+\.\d+$/);
+  // Accept semver with optional pre-release suffix (e.g. 0.7.0-rc.1).
+  assert.match(r.stdout.trim(), /^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$/);
 });
 
 test('unknown command exits 2 with help', () => {
