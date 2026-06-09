@@ -46,7 +46,7 @@ test('release discipline: composite pin in templates matches package.json versio
 
   for (const tmpl of templates) {
     const content = await readFile(join(REPO_ROOT, 'templates', tmpl), 'utf8');
-    const m = content.match(/strict-mode-gate@(v[0-9]+\.[0-9]+\.[0-9]+)/);
+    const m = content.match(/strict-mode-gate@(v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?)/);
     assert.ok(m, `${tmpl}: no strict-mode-gate composite ref found`);
     const actualRef = `strict-mode-gate@${m[1]}`;
     assert.equal(
@@ -84,7 +84,7 @@ test('release discipline: action.yml header docstring example matches package.js
     join(REPO_ROOT, '.github', 'actions', 'strict-mode-gate', 'action.yml'),
     'utf8',
   );
-  const m = actionYml.match(/strict-mode-gate@(v[0-9]+\.[0-9]+\.[0-9]+)/);
+  const m = actionYml.match(/strict-mode-gate@(v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?)/);
   assert.ok(m, 'action.yml has no strict-mode-gate ref in its header');
   assert.equal(
     `strict-mode-gate@${m[1]}`,
@@ -111,7 +111,7 @@ test('release discipline: composite pin matches across all 3 review templates', 
   const refs = await Promise.all(
     templates.map(async (tmpl) => {
       const content = await readFile(join(REPO_ROOT, 'templates', tmpl), 'utf8');
-      const m = content.match(/strict-mode-gate@(v[0-9]+\.[0-9]+\.[0-9]+)/);
+      const m = content.match(/strict-mode-gate@(v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?)/);
       return [tmpl, m ? m[1] : null];
     }),
   );
