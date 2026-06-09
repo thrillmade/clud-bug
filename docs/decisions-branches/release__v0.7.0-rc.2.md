@@ -25,3 +25,16 @@
 
 ---
 
+## 2026-06-09 17:32 - v0.7.0-rc.2: fix clud-bug-review #158 critical + 2 minor on first pass
+
+**Reasoning:** PR #158 clud-bug-review fired 1 critical + 2 minor. Per gate #8 (clud-bug-review CLEAN, non-negotiable) the critical must be fixed before merge. CRITICAL: buildReviewFromFindings defaulted to 'critical findings' for ANY non-empty list (minor-only and preexisting-only included) — wrong per SPEC §1.8.1. The App's original helper had the same bug; fixed on port to core (derive from severity, not emptiness). MINOR #1: UTF-8 byte-cap discrepancy (slice by code units, measure by bytes) in sliceUtf8Bytes (new helper) + truncatePatch (existing) + skill-body slicer. Extracted byte-correct slicer that uses Buffer.subarray then strict-decodes with replacement-char strip. MINOR #2: f.file is z.string().optional() so renderFinding + renderUnifiedFinding + renderPass1FindingsBlock would emit literal 'undefined' on findings without a file field — added (unknown file) fallback in all 3 sites.
+
+**Alternatives considered:** Wait for App swap and let the App-side review catch these (unacceptable — gate #8 is non-negotiable, and silent behavior divergence would surface as runtime regression instead of test failure), Skip the byte-cap fix because skill files are conventionally English ASCII (low-cost defensive fix, the cap contract should hold for arbitrary content, and the test now covers CJK + 4-byte emoji), Skip the f.file guard because the model is instructed to always provide it (the schema permits omission, so a single model slip yields user-visible 'undefined' in a committed docs/reviews/PR-N.md file)
+
+**Implications:**
+- buildReviewFromFindings is a TEST HELPER — the production AI-Gateway path constructs reviews directly from AI output. So the behavior fix is observable only in the equivalence test harness; production semantics unchanged. App's own test-helper had the same bug; App's swap inherits the fix.
+- sliceUtf8Bytes added to barrel for callers that need byte-correct slicing outside the prompt builder. 11 new tests cover ASCII-equivalence, CJK 3-byte content, 4-byte emoji, zero-cap, and the patch + skill-body call sites.
+- 470 tests pass (459 + 11 new). No workflow file changes. Template + action.yml pins still at v0.7.0-rc.2.
+
+---
+

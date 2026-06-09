@@ -149,7 +149,12 @@ function bucketBySeverity(findings: Finding[]): Record<
 }
 
 function renderFinding(f: Finding, includeReasoning: boolean): string {
-  const location = f.line ? `${f.file}:${f.line}` : f.file;
+  // findingItemSchema.file is z.string().optional() — the model is
+  // instructed to always provide it, but Zod doesn't enforce. Without
+  // the fallback an absent file would emit literal "undefined" in the
+  // committed SPEC §1.8.1 doc file. clud-bug-review #158 flagged this.
+  const fileLabel = f.file ?? '(unknown file)';
+  const location = f.line ? `${fileLabel}:${f.line}` : fileLabel;
   // Per SPEC §1.8.1: "**<file>:<line>** — <skill-name>: <one-line summary>".
   const head = `- **${location}** — ${f.skill}: ${f.summary}`;
   // Reasoning line is documented for the Critical bucket; we follow the
@@ -366,7 +371,9 @@ function renderUnifiedFinding(
   f: UnifiedFinding,
   includeReasoning: boolean,
 ): string {
-  const location = f.line ? `${f.file}:${f.line}` : f.file;
+  // Same guard as renderFinding — findingItemSchema.file is optional.
+  const fileLabel = f.file ?? '(unknown file)';
+  const location = f.line ? `${fileLabel}:${f.line}` : fileLabel;
   const head = f.attributions[0];
   if (!head) {
     // Defensive — shouldn't happen; the aggregator guarantees ≥1 attribution.

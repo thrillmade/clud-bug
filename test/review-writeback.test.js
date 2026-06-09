@@ -352,6 +352,40 @@ test('renderMultiPassMarkdown: independent attribution adds "found independently
   assert.ok(md.includes('— found independently]'));
 });
 
+test('renderReviewFile: absent f.file → "(unknown file)" fallback (not "undefined")', () => {
+  // clud-bug-review #158 minor: findingItemSchema.file is optional so
+  // f.file can be undefined; original template literal would emit literal
+  // "undefined" into the SPEC §1.8.1 doc file. Guard prevents that.
+  const noFileReview = {
+    ...REVIEW_WITH_CRITICAL,
+    critical_findings: [
+      { skill: 'race-conditions', summary: 'Cross-cutting race', reasoning: 'No anchor.' },
+    ],
+  };
+  const md = renderReviewFile({
+    review: noFileReview, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+  });
+  assert.ok(!md.includes('**undefined'));
+  assert.ok(md.includes('(unknown file)'));
+});
+
+test('renderMultiPassMarkdown: absent f.file → "(unknown file)" fallback (not "undefined")', () => {
+  const noFileReview = {
+    ...MULTI_PASS_REVIEW,
+    findings: [
+      {
+        ...MULTI_PASS_REVIEW.findings[0],
+        file: undefined,
+      },
+    ],
+  };
+  const md = renderMultiPassMarkdown({
+    review: noFileReview, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+  });
+  assert.ok(!md.includes('**undefined'));
+  assert.ok(md.includes('(unknown file)'));
+});
+
 test('renderMultiPassMarkdown: disagreed attribution adds Disputed note', () => {
   const disputedReview = {
     ...MULTI_PASS_REVIEW,

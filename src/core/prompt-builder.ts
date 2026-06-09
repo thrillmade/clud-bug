@@ -262,10 +262,15 @@ function renderSkillsBlock(
     // CLI's MAX_SKILL_BYTES env both wire to the same number.
     // Truncated bodies still let the model use the skill but with bounded
     // input cost. Append a marker so the model knows the cut happened.
+    //
+    // NB: cut via UTF-8 byte buffer, not String.slice. String.slice walks
+    // UTF-16 code units; for multi-byte content (CJK, emoji) the result
+    // can exceed the byte budget by up to 4×, defeating the cap. clud-bug-
+    // review #158 flagged the original code-unit slice as a bug.
     const trimmedBody = body.trim();
     const cappedBody =
       Buffer.byteLength(trimmedBody, 'utf8') > maxSkillBytes
-        ? `${trimmedBody.slice(0, maxSkillBytes)}\n\n_(truncated at ${maxSkillBytes} bytes — see SKILL.md for full body)_`
+        ? `${sliceUtf8Bytes(trimmedBody, maxSkillBytes)}\n\n_(truncated at ${maxSkillBytes} bytes — see SKILL.md for full body)_`
         : trimmedBody;
     blocks.push(`${header}\n\n${cappedBody}`);
   }
@@ -342,13 +347,44 @@ function renderDiffBlock(
 /**
  * Truncates a patch to `MAX_PATCH_BYTES_PER_FILE`, appending a marker so
  * the model knows it didn't see the whole file.
+ *
+ * Cut via UTF-8 byte buffer (see sliceUtf8Bytes) so multi-byte content
+ * — emoji in commit-author lines, CJK identifiers — doesn't blow past
+ * the byte cap. clud-bug-review #158 flagged the original code-unit
+ * slice as a contract violation when content went non-ASCII.
  */
 export function truncatePatch(patch: string): string {
   const size = Buffer.byteLength(patch, 'utf8');
   if (size <= MAX_PATCH_BYTES_PER_FILE) return patch;
-  const slice = patch.slice(0, MAX_PATCH_BYTES_PER_FILE);
-  const omitted = size - Buffer.byteLength(slice, 'utf8');
-  return `${slice}\n... (${omitted} bytes omitted)`;
+  const sliced = sliceUtf8Bytes(patch, MAX_PATCH_BYTES_PER_FILE);
+  const omitted = size - Buffer.byteLength(sliced, 'utf8');
+  return `${sliced}\n... (${omitted} bytes omitted)`;
+}
+
+/**
+ * Slice a string to at most `maxBytes` UTF-8 bytes, trimming any trailing
+ * partial codepoint (so the output is always a valid UTF-8 string).
+ *
+ * Why we need this: `String.prototype.slice(0, N)` keeps N UTF-16 code
+ * units, not N bytes. A skill body of CJK characters at maxSkillBytes=8192
+ * would actually carry 3*8192 ≈ 24KiB of UTF-8 bytes — silently busting
+ * the cap the call site exists to enforce. Buffer-based slicing is
+ * authoritative; we then decode back as UTF-8 with `fatal: false` so a
+ * trailing partial codepoint becomes a single replacement character that
+ * we strip below.
+ *
+ * For pure-ASCII content (the dominant case for skill files + diffs), this
+ * is bit-equivalent to String.slice. The fix only kicks in on multibyte.
+ */
+export function sliceUtf8Bytes(input: string, maxBytes: number): string {
+  if (maxBytes <= 0) return '';
+  if (Buffer.byteLength(input, 'utf8') <= maxBytes) return input;
+  const buf = Buffer.from(input, 'utf8').subarray(0, maxBytes);
+  // Strict decode would fail on a partial codepoint at the tail; lenient
+  // decode produces a U+FFFD replacement character. Strip any trailing
+  // U+FFFD so we don't leak it into the prompt / writeback file.
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  return decoder.decode(buf).replace(/�+$/, '');
 }
 
 function countAdditions(files: ChangedFile[]): number {
@@ -513,7 +549,11 @@ function renderPass1FindingsBlock(findings: Finding[]): string {
   }
   return findings
     .map((f, i) => {
-      const loc = f.line ? `${f.file}:${f.line}` : f.file;
+      // Same f.file guard as renderFinding in ./review-writeback.ts —
+      // findingItemSchema.file is optional and an absent value would
+      // otherwise emit literal "undefined" into the Pass-2 prompt.
+      const fileLabel = f.file ?? '(unknown file)';
+      const loc = f.line ? `${fileLabel}:${f.line}` : fileLabel;
       const reason = f.reasoning ? `\n  Reasoning: ${f.reasoning}` : '';
       return `${i}. [${f.severity}] **${loc}** — ${f.skill}: ${f.summary}${reason}`;
     })

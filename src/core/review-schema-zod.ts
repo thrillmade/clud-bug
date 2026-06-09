@@ -201,10 +201,20 @@ export function buildReviewFromFindings(opts: {
   diagnostics?: string[];
 }): Review {
   const split = unflattenFindings(opts.findings);
+  // Default status_header is derived from severity, NOT just emptiness.
+  // The App's original buildReviewFromFindings defaulted to
+  // 'critical findings' for ANY non-empty list, including minor-only and
+  // preexisting-only inputs. That was a bug (caught by clud-bug-review
+  // on PR #158): a review with only minor findings should be 'clean', not
+  // 'critical findings'. Fixed here on port to core.
+  //
+  // Callers that need the old behavior can pass `status_header` explicitly.
+  // Callers that want SPEC §1.8.1 semantics (the default) get the correct
+  // bucket: criticals present → 'critical findings'; else → 'clean'.
+  const hasCritical = opts.findings.some((f) => f.severity === 'critical');
+  const defaultStatus = hasCritical ? 'critical findings' : 'clean';
   return {
-    status_header:
-      opts.status_header ??
-      (opts.findings.length === 0 ? 'clean' : 'critical findings'),
+    status_header: opts.status_header ?? defaultStatus,
     summary_counts: deriveSummaryCounts(opts.findings),
     skills_referenced: deriveSkillsReferenced(opts.findings),
     per_skill_scan: opts.per_skill_scan ?? [],

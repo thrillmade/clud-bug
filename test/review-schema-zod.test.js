@@ -180,7 +180,7 @@ test('buildReviewFromFindings: empty findings → clean status', () => {
   assert.equal(r.last_reviewed_sha, '');
 });
 
-test('buildReviewFromFindings: with findings → critical findings status', () => {
+test('buildReviewFromFindings: with critical findings → critical findings status', () => {
   const r = core.buildReviewFromFindings({
     findings: [{ ...F_CRIT, severity: 'critical' }],
     last_reviewed_sha: 'abc'.padEnd(40, 'a'),
@@ -189,6 +189,35 @@ test('buildReviewFromFindings: with findings → critical findings status', () =
   assert.equal(r.critical_findings.length, 1);
   assert.deepEqual(r.skills_referenced, [F_CRIT.skill]);
   assert.equal(r.last_reviewed_sha.length, 40);
+});
+
+test('buildReviewFromFindings: minor-only findings → CLEAN status (not critical findings)', () => {
+  // clud-bug-review #158 critical finding: the App's original helper
+  // defaulted to 'critical findings' for any non-empty list, including
+  // minor-only. That's wrong per SPEC §1.8.1. Fixed on port to core.
+  const r = core.buildReviewFromFindings({
+    findings: [{ ...F_MINOR, severity: 'minor' }],
+  });
+  assert.equal(r.status_header, 'clean');
+  assert.equal(r.minor_findings.length, 1);
+});
+
+test('buildReviewFromFindings: preexisting-only findings → CLEAN status', () => {
+  const r = core.buildReviewFromFindings({
+    findings: [{ ...F_PRE, severity: 'preexisting' }],
+  });
+  assert.equal(r.status_header, 'clean');
+  assert.equal(r.preexisting_findings.length, 1);
+});
+
+test('buildReviewFromFindings: mixed (minor + critical) → critical findings', () => {
+  const r = core.buildReviewFromFindings({
+    findings: [
+      { ...F_MINOR, severity: 'minor' },
+      { ...F_CRIT, severity: 'critical' },
+    ],
+  });
+  assert.equal(r.status_header, 'critical findings');
 });
 
 test('buildReviewFromFindings: status_header override wins', () => {

@@ -91,6 +91,7 @@ export {
   skillMatchesDiff,
   globMatch,
   truncatePatch,
+  sliceUtf8Bytes,
   MAX_PATCH_BYTES_PER_FILE,
   DEFAULT_MAX_SKILL_BYTES,
   type BuildReviewPromptInput,

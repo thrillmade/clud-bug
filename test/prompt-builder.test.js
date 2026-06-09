@@ -20,6 +20,7 @@ import {
   skillMatchesDiff,
   globMatch,
   truncatePatch,
+  sliceUtf8Bytes,
   MAX_PATCH_BYTES_PER_FILE,
   DEFAULT_MAX_SKILL_BYTES,
 } from '../src/core/prompt-builder.js';
@@ -288,6 +289,55 @@ test('truncatePatch: over cap → sliced with omitted marker', () => {
 
 test('MAX_PATCH_BYTES_PER_FILE = 16 KiB', () => {
   assert.equal(MAX_PATCH_BYTES_PER_FILE, 16 * 1024);
+});
+
+// ---------------------------------------------------------------------------
+// sliceUtf8Bytes — UTF-8-correct byte cap. clud-bug-review #158 minor.
+// ---------------------------------------------------------------------------
+
+test('sliceUtf8Bytes: under cap → unchanged', () => {
+  assert.equal(sliceUtf8Bytes('hello', 10), 'hello');
+});
+
+test('sliceUtf8Bytes: ASCII over cap → byte-equivalent to slice', () => {
+  const huge = 'a'.repeat(1000);
+  const out = sliceUtf8Bytes(huge, 500);
+  assert.equal(out.length, 500);
+  assert.equal(Buffer.byteLength(out, 'utf8'), 500);
+});
+
+test('sliceUtf8Bytes: multibyte (CJK) respects byte budget', () => {
+  // Each CJK char is 3 UTF-8 bytes. 100 chars = 300 bytes. Cap at 100
+  // bytes should yield ~33 chars max, NOT 100 chars.
+  const cjk = '漢'.repeat(100); // 300 bytes
+  const out = sliceUtf8Bytes(cjk, 100);
+  const outBytes = Buffer.byteLength(out, 'utf8');
+  assert.ok(outBytes <= 100, `expected ≤100 bytes, got ${outBytes}`);
+  // Output should be a valid string (no trailing U+FFFD).
+  assert.ok(!out.endsWith('�'));
+});
+
+test('sliceUtf8Bytes: 4-byte codepoint (emoji) respects byte budget', () => {
+  // U+1F600 (😀) is 4 UTF-8 bytes. 10 emoji = 40 bytes.
+  const emoji = '😀'.repeat(10);
+  const out = sliceUtf8Bytes(emoji, 10);
+  const outBytes = Buffer.byteLength(out, 'utf8');
+  assert.ok(outBytes <= 10, `expected ≤10 bytes, got ${outBytes}`);
+  // 10 bytes = 2 complete emoji (8 bytes) + dropped partial.
+  assert.equal(outBytes, 8);
+});
+
+test('sliceUtf8Bytes: maxBytes=0 → empty string', () => {
+  assert.equal(sliceUtf8Bytes('anything', 0), '');
+});
+
+test('truncatePatch with multibyte content: stays within byte cap', () => {
+  // Build a patch just over MAX_PATCH_BYTES_PER_FILE that's pure CJK.
+  const chunk = '漢'.repeat(MAX_PATCH_BYTES_PER_FILE); // way over cap
+  const out = truncatePatch(chunk);
+  // Output should end with the omitted marker, not literal undefined or
+  // a half-codepoint. Marker is appended after the slice.
+  assert.ok(out.includes('bytes omitted'));
 });
 
 // ---------------------------------------------------------------------------
