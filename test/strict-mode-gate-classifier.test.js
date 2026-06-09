@@ -89,3 +89,61 @@ test('extractFirstReviewHeaderLine: vendored matches src/core/skills.ts', () => 
     assert.equal(actual, expected);
   }
 });
+
+test('selectReviewBody: vendored matches src/core/skills.ts', () => {
+  for (const botLogin of ['clud-bug[bot]', 'github-actions[bot]', 'unknown', '']) {
+    const expected = core.selectReviewBody(SAMPLE_COMMENTS, botLogin);
+    const actual = vendored.selectReviewBody(SAMPLE_COMMENTS, botLogin);
+    assert.equal(actual, expected, `mismatch for botLogin=${botLogin}`);
+  }
+});
+
+test('extractPerSkillLine: vendored matches src/core/skills.ts', () => {
+  const sampleBody = [
+    '## 🐛 Clud Bug review — clean',
+    '',
+    '### Per-skill scan',
+    '- [critical-issues-only]: scanned all 12 files. 0 critical findings.',
+    '- [evidence-based-review]: applied. ✓ all anchored.',
+    '- [respect-existing-conventions]: 0 findings.',
+  ].join('\n');
+  const skills = [
+    'critical-issues-only',
+    'evidence-based-review',
+    'respect-existing-conventions',
+    'unknown-skill',
+    '',
+  ];
+  for (const s of skills) {
+    const expected = core.extractPerSkillLine(sampleBody, s);
+    const actual = vendored.extractPerSkillLine(sampleBody, s);
+    assert.equal(actual, expected, `mismatch for skill=${s}`);
+  }
+  // Edge: non-string inputs
+  assert.equal(vendored.extractPerSkillLine(null, 'x'), core.extractPerSkillLine(null, 'x'));
+  assert.equal(vendored.extractPerSkillLine('body', null), core.extractPerSkillLine('body', null));
+});
+
+test('classifyPerSkillOutcome: vendored matches src/core/skills.ts', () => {
+  const cases = [
+    'scanned all 12 files. 0 critical findings.',
+    '1 critical finding below.',
+    '2 minor findings',
+    '10 findings',
+    'no findings to anchor',
+    'zero performance findings',
+    'n/a',
+    'not applicable',
+    'applied to all findings. ✓ all anchored.',
+    '✓ clean',
+    '',
+    null,
+    undefined,
+    'random text without keywords',
+  ];
+  for (const line of cases) {
+    const expected = core.classifyPerSkillOutcome(line);
+    const actual = vendored.classifyPerSkillOutcome(line);
+    assert.equal(actual, expected, `mismatch for line=${JSON.stringify(line)}`);
+  }
+});
