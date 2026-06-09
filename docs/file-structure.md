@@ -55,13 +55,17 @@ clud-bug
 │   ├── detect.test.js
 │   ├── edit-workflow.test.js
 │   ├── init-with-skdd.test.js
+│   ├── prompt-builder.test.js
 │   ├── prompts.eval.test.js
 │   ├── prompts.test.js
 │   ├── release-discipline.test.js
 │   ├── render-review.test.js
 │   ├── render.test.js
+│   ├── review-schema-zod.test.js
+│   ├── review-writeback.test.js
 │   ├── skill-usage-aggregation.test.js
 │   ├── skill-usage.test.js
+│   ├── skills-frontmatter.test.js
 │   ├── skills.test.js
 │   ├── strict-mode-gate-classifier.test.js
 │   ├── update-skill-usage.test.js

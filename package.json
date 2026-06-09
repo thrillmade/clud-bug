@@ -1,6 +1,6 @@
 {
   "name": "clud-bug",
-  "version": "0.7.0-rc.1",
+  "version": "0.7.0-rc.2",
   "description": "Skill-driven Claude PR review. Ship a brand-voice skill, get brand reviews. Each finding cites the skill that motivated it. CLI installs the workflow + a baseline kit; add more from skills.sh.",
   "homepage": "https://cludbug.dev",
   "bugs": "https://github.com/thrillmade/clud-bug/issues",
@@ -57,5 +57,8 @@
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
     "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }

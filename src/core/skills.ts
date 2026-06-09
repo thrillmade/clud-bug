@@ -576,3 +576,171 @@ export function classifyPerSkillOutcome(outcomeLine: unknown): 'failure' | 'succ
   // this classifier doesn't need per-skill vocabulary knowledge.
   return 'failure';
 }
+
+// ---------------------------------------------------------------------------
+// SKILL.md frontmatter parser (ported from clud-bug-app/lib/skills-loader.ts).
+//
+// The App's `loadSkillsFromBaseRef` Octokit fetcher stays App-side (depends
+// on Octokit). The PURE parser belongs in core so both the App and any
+// future CLI runtime that wants to read SKILL.md frontmatter without an
+// Octokit dependency can use it. SPEC §1.10 is the frontmatter contract.
+// ---------------------------------------------------------------------------
+
+/** Source provenance for an installed skill (see SPEC §1.10). */
+export type SkillSource =
+  | 'manual'
+  | 'logmind-derived'
+  | 'skills-sh'
+  | 'clud-bug-baseline';
+
+export type SkillReviewMode = 'shared' | 'dedicated';
+
+/**
+ * Parsed SKILL.md frontmatter. The App uses this shape (see
+ * `clud-bug-app/lib/skills-loader.ts:40`); the prompt builder's
+ * `PromptSkillFrontmatter` is a narrower subset (name + description +
+ * applies_to) so we keep the full shape here.
+ */
+export interface SkillFrontmatter {
+  name: string;
+  description: string;
+  source: SkillSource | string; // string fallback for forward-compat
+  review_mode: SkillReviewMode;
+  applies_to?: {
+    paths?: string[];
+    extensions?: string[];
+  };
+}
+
+/**
+ * Minimal YAML frontmatter parser. Handles:
+ *   - `key: value`            (scalar)
+ *   - `key: [a, b, c]`        (inline list)
+ *   - `key:\n  subkey: value` (one-level nesting — applies_to)
+ *
+ * Throws on malformed input; the App's `loadSkillsFromBaseRef` catches
+ * and skips the skill (a bad SKILL.md doesn't take down the whole review).
+ *
+ * Deliberately NOT a general-purpose YAML parser — SPEC §1.10 fixes the
+ * frontmatter schema to a handful of fields. If the schema grows beyond
+ * what this hand-rolled parser handles, swap to `js-yaml` — the boundary
+ * is this function.
+ */
+export function parseFrontmatter(raw: string): SkillFrontmatter {
+  // Frontmatter MUST be the literal `---\n...\n---\n` at the file head.
+  // We tolerate a leading BOM and trailing whitespace.
+  const trimmed = raw.replace(/^﻿/, '');
+  const match = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!match) {
+    throw new Error('missing YAML frontmatter');
+  }
+  const body = match[1] ?? '';
+  const lines = body.split(/\r?\n/);
+
+  const out: Record<string, unknown> = {};
+  let currentNested: string | null = null;
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    // Comment line; YAML allows '#' as a comment marker at column 0.
+    if (line.trim().startsWith('#')) continue;
+
+    // Nested-block lines start with whitespace (e.g. "  paths: [...]").
+    const isIndented = /^\s/.test(line);
+    if (isIndented && currentNested) {
+      const nested = out[currentNested] as Record<string, unknown> | undefined;
+      if (!nested) continue;
+      const trimmedLine = line.trim();
+      const colon = trimmedLine.indexOf(':');
+      if (colon === -1) continue;
+      const key = trimmedLine.slice(0, colon).trim();
+      const value = trimmedLine.slice(colon + 1).trim();
+      nested[key] = parseScalarOrList(value);
+      continue;
+    }
+
+    // Top-level key.
+    currentNested = null;
+    const colon = line.indexOf(':');
+    if (colon === -1) {
+      throw new Error(`malformed frontmatter line: ${line}`);
+    }
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim();
+
+    if (value === '') {
+      // Block — next indented lines populate this key as a nested map.
+      out[key] = {};
+      currentNested = key;
+      continue;
+    }
+    out[key] = parseScalarOrList(value);
+  }
+
+  // Validate the SPEC-required fields are present and apply documented
+  // defaults for optional ones.
+  const name = String(out['name'] ?? '').trim();
+  if (!name) throw new Error('frontmatter.name is required');
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(name)) {
+    throw new Error(`frontmatter.name is not a valid kebab-case slug: ${name}`);
+  }
+  const description = String(out['description'] ?? '').trim();
+  if (!description) throw new Error('frontmatter.description is required');
+
+  const source = String(out['source'] ?? 'manual').trim();
+  const reviewMode: SkillReviewMode =
+    out['review_mode'] === 'dedicated' ? 'dedicated' : 'shared';
+
+  const appliesToRaw = out['applies_to'] as
+    | { paths?: unknown; extensions?: unknown }
+    | undefined;
+  let appliesTo: SkillFrontmatter['applies_to'] | undefined;
+  if (appliesToRaw) {
+    const paths = Array.isArray(appliesToRaw.paths)
+      ? appliesToRaw.paths.map(String)
+      : undefined;
+    const extensions = Array.isArray(appliesToRaw.extensions)
+      ? appliesToRaw.extensions.map(String)
+      : undefined;
+    appliesTo = {
+      ...(paths !== undefined ? { paths } : {}),
+      ...(extensions !== undefined ? { extensions } : {}),
+    };
+  }
+
+  return {
+    name,
+    description,
+    source,
+    review_mode: reviewMode,
+    ...(appliesTo !== undefined ? { applies_to: appliesTo } : {}),
+  };
+}
+
+function parseScalarOrList(value: string): unknown {
+  if (value.startsWith('[') && value.endsWith(']')) {
+    // Inline list: [a, "b", 'c'] → ['a', 'b', 'c']
+    const inner = value.slice(1, -1).trim();
+    if (!inner) return [];
+    return inner
+      .split(',')
+      .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean);
+  }
+  // Strip surrounding quotes; YAML allows both ' and ".
+  return value.replace(/^['"]|['"]$/g, '');
+}
+
+/**
+ * Strip the leading `---\n...\n---\n` from a SKILL.md file. Returns the
+ * markdown body (the part the LLM actually reads).
+ *
+ * Ported from `clud-bug-app/lib/skills-loader.ts:269` so callers don't have
+ * to re-implement the regex.
+ */
+export function stripFrontmatter(raw: string): string {
+  const trimmed = raw.replace(/^﻿/, '');
+  const match = trimmed.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  if (!match) return trimmed;
+  return trimmed.slice(match[0].length);
+}
