@@ -11,3 +11,17 @@
 
 ---
 
+## 2026-06-09 17:20 - v0.7.0-rc.2 — port AI-Gateway prompt builder + doc renderer + skill frontmatter parser to core (Phase 4 unblock)
+
+**Reasoning:** rc.1 core/ shipped CLI-shape-only exports. Phase 4 of Bug 9 migration (App deletes ~6,500 LOC by importing from clud-bug/core) needs App-shape equivalents: Zod schemas for the AI SDK, {system, prompt} prompt builders that include byte-capped skill bodies, SPEC §1.8.1 'docs/reviews/PR-#.md' renderer, and SKILL.md frontmatter parser. All ported byte-equivalently from clud-bug-app/lib/{review-schema,prompt-builder,review-writeback,skills-loader}.ts as ADDITIVE exports — CLI shape stays first-class. Equivalence tests (91 new) pin the contract so the App's eventual swap can't drift silently.
+
+**Alternatives considered:** Wait for the App swap to land first and copy back to core post-hoc (kicks the can; Phase 4 agent already escalated with realistic LOC deletable = ~50-100 against rc.1, vs 6,500 target), Move both consumers to a single shared shape and break either CLI or App immediately (would require lockstep PRs across 2 repos + a stop-the-world coordination on the strict-mode-gate composite Agent SDK validator path), Ship Zod schemas only without the helper ports (App still has to duplicate flattenFindings/unflattenFindings/deriveSummaryCounts/deriveSkillsReferenced/buildReviewFromFindings/buildReviewPrompt/renderReviewFile — defeats the purpose; the LOC delete target collapses to ~200)
+
+**Implications:**
+- Net +1212 LOC added to src/core/ across 3 new files + 252 LOC into existing skills.ts + 84 LOC barrel rewrite. App can now: (a) import {reviewSchema, crossCheckSchema, flatten/unflatten/derive*, buildReviewFromFindings} for the Zod validation path; (b) import {buildReviewPrompt, buildCrossCheckPrompt, buildConsensusPrompt, MAX_PATCH_BYTES_PER_FILE, DEFAULT_MAX_SKILL_BYTES} for the AI-Gateway call; (c) import {renderReviewFile, renderMultiPassMarkdown, reviewFilePath, reviewCommitMessage, PROTOCOL_VERSION, WRITTEN_BY} for SPEC §1.8.1 doc-file writeback; (d) import {parseFrontmatter, stripFrontmatter, type SkillFrontmatter} for SKILL.md loading. Octokit-side writeback STAYS App-side (depends on Octokit which we don't pull into core).
+- Naming: ZodFinding (FindingItem + severity) disambiguates from the CLI's ReviewFinding (never carries severity). renderReviewFile (doc-file shape, H1) disambiguates from renderReview (PR-comment shape, H2). REVIEW_FILE_SEVERITY_EMOJI re-export aliases SEVERITY_EMOJI so callers know which renderer's emoji table they're getting.
+- Zod runtime dependency added (zod@^4.4.3 matches the App's pin). Audit clean for production deps.
+- Template + composite action pins bumped: strict-mode-gate@v0.7.0-rc.1 → v0.7.0-rc.2 in 3 templates + action.yml header. Release-discipline test enforces lockstep.
+
+---
+
