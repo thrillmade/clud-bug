@@ -38,3 +38,14 @@
 
 ---
 
+## 2026-06-10 11:16 - v0.7.0-rc.3: fix-closed unrecognized PR_AUTHOR_ASSOCIATION to NONE (clud-bug-review #163 fix)
+
+**Reasoning:** clud-bug-review on PR #163 (both baseline + clud-bug) flagged that the CLI's runSelectReviewEvent fallback mapped unrecognized author_association tokens to CONTRIBUTOR (org-trusted → APPROVE). This contradicts the §7.2.1 gate's defensive intent — a future REST-API rename of an external tier would silently re-open the drive-by auto-merge surface. Fixed by splitting empty (back-compat → CONTRIBUTOR) from non-empty unrecognized (fail-closed → NONE → COMMENT). Asymmetric risk: extra human Approve click vs auto-merge exploit.
+
+**Alternatives considered:** Reject any non-OWNER/MEMBER as external (rejected: breaks legitimate CONTRIBUTOR clean-review APPROVE flow)
+
+**Implications:**
+- Operator sees stderr warning when an unrecognized token arrives — early-warning signal for the rename
+
+---
+

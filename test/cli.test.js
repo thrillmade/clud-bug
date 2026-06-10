@@ -458,6 +458,28 @@ test('select-review-event: missing PR_AUTHOR_LOGIN → skip', () => {
   assert.equal(r.stdout.trim(), 'skip');
 });
 
+test('select-review-event: unrecognized PR_AUTHOR_ASSOCIATION → COMMENT (fail-closed per §7.2.1)', () => {
+  // clud-bug-review #163 caught a fail-open default: a future REST-API
+  // rename of an external tier (e.g. GitHub introduces a new external
+  // token) would silently route a clean drive-by PR to APPROVE under
+  // the old logic. The §7.2.1 gate exists explicitly to defend against
+  // this — the fallback MUST treat unrecognized non-empty values as
+  // external → COMMENT, NEVER APPROVE. If the rename was for a still-
+  // trusted tier the cost is one extra human Approve click; if it was
+  // for a new external tier we've closed the auto-merge exploit.
+  const payload = JSON.stringify({ critical_findings: [], minor_findings: [] });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: 'octocat',
+    PR_AUTHOR_ASSOCIATION: 'FUTURE_GH_TIER_2027',  // a token we don't recognize
+    STRICT_MODE: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  // Clean review on UNRECOGNIZED → COMMENT (fail-closed). NEVER APPROVE.
+  assert.equal(r.stdout.trim(), 'COMMENT');
+  // Operator-visible warning so the rename surface is detectable.
+  assert.match(r.stderr, /unrecognized PR_AUTHOR_ASSOCIATION/);
+});
+
 test('select-review-event: missing PR_AUTHOR_ASSOCIATION → defaults to CONTRIBUTOR (org-trusted)', () => {
   // Older webhook payloads / non-GH callers may not pass author_association.
   // We default to CONTRIBUTOR so the §7.2.1-naive caller's behaviour is

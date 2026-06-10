@@ -432,17 +432,47 @@ async function runSelectReviewEvent(args) {
     return;
   }
 
-  // author_association defaults to 'CONTRIBUTOR' (org-trusted tier in
-  // pre-§7.2.1 semantics) when the caller doesn't pass one. Old
-  // webhook payloads + tests use this branch.
+  // author_association resolution — security-critical fallback ladder.
+  //
+  // SPEC §7.2.1 + clud-bug-review #163 feedback: the §7.2.1 gate exists
+  // precisely so a future REST-API rename of an external tier doesn't
+  // silently degrade to "trusted → APPROVE". The fallback below splits
+  // the two error cases by what they MEAN:
+  //
+  //   1. EMPTY ("") — caller didn't pass author_association at all.
+  //      This is the "older webhook payload / non-GH caller" case.
+  //      Pre-§7.2.1, those callers got APPROVE on clean reviews; we
+  //      preserve that by defaulting to 'CONTRIBUTOR' (org-trusted).
+  //      Documented + tested under "missing PR_AUTHOR_ASSOCIATION".
+  //
+  //   2. NON-EMPTY UNRECOGNIZED ("FUTURE_TIER") — caller passed a
+  //      token this build doesn't know about. This is the rename
+  //      scenario the §7.2.1 gate is explicitly defending against.
+  //      Fail CLOSED: treat as external → 'NONE' → COMMENT, NEVER
+  //      APPROVE. If the rename was for a still-trusted tier (e.g.
+  //      'STAFF'), the cost is one extra COMMENT review pending
+  //      human approval; if it was a new external tier, we've closed
+  //      the drive-by exploit. Asymmetric risk → fail closed.
   const rawAssoc = String(process.env.PR_AUTHOR_ASSOCIATION ?? '').trim();
   const validAssociations = new Set([
     'OWNER', 'MEMBER', 'COLLABORATOR', 'CONTRIBUTOR',
     'FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER', 'NONE', 'MANNEQUIN',
   ]);
-  const authorAssociation = validAssociations.has(rawAssoc)
-    ? rawAssoc
-    : 'CONTRIBUTOR';
+  let authorAssociation;
+  if (rawAssoc === '') {
+    // Back-compat for legacy callers without author_association.
+    authorAssociation = 'CONTRIBUTOR';
+  } else if (validAssociations.has(rawAssoc)) {
+    authorAssociation = rawAssoc;
+  } else {
+    // Fail-closed for unrecognized future tokens. 'NONE' is the
+    // weakest external tier and the safest default — selectReviewEvent
+    // routes it to COMMENT (never APPROVE, never REQUEST_CHANGES).
+    process.stderr.write(
+      `clud-bug select-review-event: unrecognized PR_AUTHOR_ASSOCIATION="${rawAssoc}" — treating as external (fail-closed per SPEC §7.2.1).\n`,
+    );
+    authorAssociation = 'NONE';
+  }
 
   const strictMode = String(process.env.STRICT_MODE ?? '').trim() === 'true';
 
