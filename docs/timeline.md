@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (37 decisions)
+## 2026-06 (40 decisions)
 
-- **2026-06-09** — v0.7.0-rc.2: fix clud-bug-review #158 critical + 2 minor on first pass *(release/v0.7.0-rc.2)* — [decisions-branches/release__v0.7.0-rc.2.md](decisions-branches/release__v0.7.0-rc.2.md)
-- *... 35 more decisions ...*
+- **2026-06-10** — v0.7.0-rc.3: workflow template post-step + CLI select-review-event subcommand + version bumps *(release/v0.7.0-rc.3)* — [decisions-branches/release__v0.7.0-rc.3.md](decisions-branches/release__v0.7.0-rc.3.md)
+- *... 38 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
