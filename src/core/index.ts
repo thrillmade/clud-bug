@@ -116,6 +116,8 @@ export {
   WRITTEN_BY,
   SEVERITY_EMOJI as REVIEW_FILE_SEVERITY_EMOJI,
   type RenderReviewFileInput,
+  type RenderedFindingRef,
+  type CacheStats,
   type RenderMultiPassMarkdownInput,
   type MultiPassReview,
   type UnifiedFinding,
@@ -124,6 +126,31 @@ export {
   type ReviewPassMode,
   type MultiPassVerdict,
 } from './review-writeback.js';
+// SPEC §7.2.1 formal-review event selector. Pure rule-table half of
+// clud-bug-app's `lib/formal-review.ts`; the Octokit-side IO wrapper
+// (`postFormalReview`) stays App-side. v0.7.0-rc.3 adds the
+// `authorAssociation` extension so a clean review on an external
+// contributor's PR routes to COMMENT (not APPROVE) — the canonical
+// ruleset's `required_approving_review_count: 1` floor then requires
+// a human reviewer.
+export {
+  selectReviewEvent,
+  type FormalReviewEvent,
+  type AuthorAssociation,
+  type SelectReviewEventInput,
+} from './formal-review.js';
+// SPEC §1.8.1 Resolved / Still-open block helpers. `parsePriorReviewFile`
+// reads a prior `docs/reviews/PR-<n>.md`; `diffFindings` splits prior vs
+// current into resolved + still-open lists that `renderReviewFile`
+// emits as the §1.8.1 blocks. Identity scheme is shareable with future
+// inline-thread anchoring in clud-bug-app.
+export {
+  parsePriorReviewFile,
+  diffFindings,
+  findingIdentity,
+  type ParsedFinding,
+  type ParsedReview,
+} from './diff-findings.js';
 export {
   API_BASE,
   MAX_SKILLS,
