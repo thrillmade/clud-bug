@@ -53,7 +53,9 @@ clud-bug
 │   ├── branch-protection.test.js
 │   ├── cli.test.js
 │   ├── detect.test.js
+│   ├── diff-findings.test.js
 │   ├── edit-workflow.test.js
+│   ├── formal-review.test.js
 │   ├── init-with-skdd.test.js
 │   ├── prompt-builder.test.js
 │   ├── prompts.eval.test.js

@@ -171,3 +171,49 @@ test('release discipline: Upload skill-usage artifact step must set include-hidd
     );
   }
 });
+
+test('release discipline: Formal review step is present in all 3 templates (v0.7.0-rc.3)', async () => {
+  // v0.7.0-rc.3 added the SPEC §7.2.1 formal-review event poster to
+  // bridge the canonical-ruleset `required_approving_review_count: 1`
+  // floor on the npm workflow path. Without this step, every workflow-
+  // path PR requires a human Approve click even when the bot is clean.
+  //
+  // Three properties enforced here:
+  //   1. The step exists in all 3 templates (workflow/-ts/-py)
+  //   2. `continue-on-error: true` — best-effort contract; the step
+  //      MUST NEVER fail the workflow on caller-side problems
+  //   3. The step invokes `clud-bug@<CLUD_BUG_VERSION>` (templated)
+  //      so any future version bump automatically picks up the new pin
+  const templates = [
+    'workflow.yml.tmpl',
+    'workflow-ts.yml.tmpl',
+    'workflow-py.yml.tmpl',
+  ];
+  for (const tmpl of templates) {
+    const content = await readFile(join(REPO_ROOT, 'templates', tmpl), 'utf8');
+    const idx = content.indexOf('Formal review — APPROVE / REQUEST_CHANGES / COMMENT');
+    assert.ok(
+      idx !== -1,
+      `${tmpl}: missing the v0.7.0-rc.3 'Formal review' post-step.
+       Background: SPEC §7.2.1 requires the canonical ruleset's
+       \`required_approving_review_count: 1\` floor to be auto-satisfied
+       by clud-bug[bot] on clean reviews. Without this step the npm
+       workflow path never posts a formal APPROVE — every PR requires
+       a human Approve click even when the bot's verdict is clean.
+       See docs/decisions-branches/release__v0.7.0-rc.3.md for design.`,
+    );
+    // The step block extends ~1500 chars below the step name. Confirm
+    // the best-effort guard and the npx invocation are present.
+    const stepBlock = content.slice(idx, idx + 2000);
+    assert.match(
+      stepBlock,
+      /continue-on-error:\s*true/,
+      `${tmpl}: 'Formal review' step is missing 'continue-on-error: true' — required for the best-effort contract.`,
+    );
+    assert.match(
+      stepBlock,
+      /npx --yes clud-bug@\{\{CLUD_BUG_VERSION\}\} select-review-event/,
+      `${tmpl}: 'Formal review' step must invoke \`npx --yes clud-bug@{{CLUD_BUG_VERSION}} select-review-event\`. Hard-coded versions defeat the template's release-discipline pin auto-bump.`,
+    );
+  }
+});
