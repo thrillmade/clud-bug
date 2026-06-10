@@ -345,3 +345,152 @@ test('refresh --offline shows no-op when only baseline installed', async () => {
     assert.match(r.stdout, /sync with skills\.sh|collection updated/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// ---------------------------------------------------------------------------
+// v0.7.0-rc.3 — select-review-event subcommand for the workflow post-step.
+// SPEC §7.2.1 formal-review event selector. Robustness contract: NEVER
+// fails the workflow on caller-side problems — degrades to "skip" + 0.
+// ---------------------------------------------------------------------------
+
+function runSelectReviewEvent(input, env = {}) {
+  return run(process.cwd(), ['select-review-event', '--stdin'], { input, env });
+}
+
+test('select-review-event: clean review on org member → APPROVE', () => {
+  const payload = JSON.stringify({
+    critical_findings: [],
+    minor_findings: [],
+    preexisting_findings: [],
+  });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: 'octocat',
+    PR_AUTHOR_ASSOCIATION: 'MEMBER',
+    STRICT_MODE: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'APPROVE');
+});
+
+test('select-review-event: external contributor + clean review → COMMENT (NEVER APPROVE)', () => {
+  // The §7.2.1 drive-by-exploit guard. External contributors NEVER get
+  // APPROVE — auto-merge requires a human reviewer.
+  const payload = JSON.stringify({
+    critical_findings: [],
+    minor_findings: [],
+    preexisting_findings: [],
+  });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: 'drive-by',
+    PR_AUTHOR_ASSOCIATION: 'FIRST_TIME_CONTRIBUTOR',
+    STRICT_MODE: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'COMMENT');
+});
+
+test('select-review-event: critical + strictMode=true on org member → REQUEST_CHANGES', () => {
+  const payload = JSON.stringify({
+    critical_findings: [
+      { skill: 'race', file: 'a.ts', line: 1, summary: 'A' },
+    ],
+    minor_findings: [],
+    preexisting_findings: [],
+  });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: 'octocat',
+    PR_AUTHOR_ASSOCIATION: 'MEMBER',
+    STRICT_MODE: 'true',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'REQUEST_CHANGES');
+});
+
+test('select-review-event: self-PR (clud-bug[bot]) → skip', () => {
+  const payload = JSON.stringify({
+    critical_findings: [],
+    minor_findings: [],
+    preexisting_findings: [],
+  });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: 'clud-bug[bot]',
+    PR_AUTHOR_ASSOCIATION: 'MEMBER',
+    STRICT_MODE: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'skip');
+});
+
+test('select-review-event: empty stdin → skip + stderr note (workflow degrades)', () => {
+  const r = runSelectReviewEvent('', {
+    PR_AUTHOR_LOGIN: 'octocat',
+    PR_AUTHOR_ASSOCIATION: 'MEMBER',
+    STRICT_MODE: 'false',
+  });
+  // Must exit 0 — the workflow MUST NOT fail on missing review output.
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'skip');
+  assert.match(r.stderr, /stdin empty/);
+});
+
+test('select-review-event: malformed JSON → skip + stderr note (workflow degrades)', () => {
+  const r = runSelectReviewEvent('not valid json {{{', {
+    PR_AUTHOR_LOGIN: 'octocat',
+    PR_AUTHOR_ASSOCIATION: 'MEMBER',
+    STRICT_MODE: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'skip');
+  assert.match(r.stderr, /JSON parse failed/);
+});
+
+test('select-review-event: missing PR_AUTHOR_LOGIN → skip', () => {
+  // PR_AUTHOR_LOGIN is the structural guard — without it we can't safely
+  // run the self-PR check, so we skip rather than risk a self-review 422.
+  // Pass PR_AUTHOR_LOGIN='' explicitly so the inherited test-process env
+  // (whatever its value) can't satisfy the check.
+  const payload = JSON.stringify({ critical_findings: [], minor_findings: [] });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: '',
+    PR_AUTHOR_ASSOCIATION: 'MEMBER',
+    STRICT_MODE: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'skip');
+});
+
+test('select-review-event: missing PR_AUTHOR_ASSOCIATION → defaults to CONTRIBUTOR (org-trusted)', () => {
+  // Older webhook payloads / non-GH callers may not pass author_association.
+  // We default to CONTRIBUTOR so the §7.2.1-naive caller's behaviour is
+  // PRESERVED (would have APPROVED on a clean review), not silently
+  // degraded to COMMENT.
+  const payload = JSON.stringify({ critical_findings: [], minor_findings: [] });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: 'octocat',
+    PR_AUTHOR_ASSOCIATION: '',  // explicitly empty — inherited env can't pollute
+    STRICT_MODE: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'APPROVE');
+});
+
+test('select-review-event: minor-only on member → COMMENT', () => {
+  const payload = JSON.stringify({
+    critical_findings: [],
+    minor_findings: [{ skill: 'style', file: 'a.ts', line: 1, summary: 'A' }],
+    preexisting_findings: [],
+  });
+  const r = runSelectReviewEvent(payload, {
+    PR_AUTHOR_LOGIN: 'octocat',
+    PR_AUTHOR_ASSOCIATION: 'MEMBER',
+    STRICT_MODE: 'true',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  // Strict mode does NOT escalate minors per SPEC §7.2.1.
+  assert.equal(r.stdout.trim(), 'COMMENT');
+});
+
+test('--help advertises select-review-event subcommand', () => {
+  const r = run(process.cwd(), ['--help']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /select-review-event/);
+});

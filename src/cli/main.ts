@@ -138,6 +138,17 @@ Commands:
                         GitHub-markdown summary comment shape. Invoked by the
                         workflow post-step; output is what \`gh pr comment\`
                         receives. Empty stdin or non-object payload exits 2.
+  select-review-event   Compute the SPEC §7.2.1 formal-review event (APPROVE /
+   --stdin               REQUEST_CHANGES / COMMENT / skip) from a structured-output
+                        JSON payload + a few env-passed PR-author fields. Used by
+                        the v0.7.0-rc.3 workflow post-step to post a formal
+                        \`pulls.createReview\` call so the canonical ruleset's
+                        \`required_approving_review_count: 1\` floor is auto-
+                        satisfied by clud-bug[bot] on clean reviews.
+                        Required env vars: PR_AUTHOR_LOGIN, PR_AUTHOR_ASSOCIATION,
+                        STRICT_MODE ("true"/"false"). Empty/malformed stdin →
+                        exits 0 with "skip" on stdout (no-op; workflow degrades
+                        gracefully to the existing comment-only behavior).
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -191,6 +202,7 @@ async function main() {
     case 'eval':    return runEval();
     case 'render':  return runRender(args);
     case 'update-skill-usage': return runUpdateSkillUsage(args);
+    case 'select-review-event': return runSelectReviewEvent(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
@@ -332,6 +344,116 @@ async function runUpdateSkillUsage(args) {
 
   const skillCount = Object.keys(delta).length;
   ok(`update-skill-usage: merged ${skillCount} skill${skillCount === 1 ? '' : 's'} from review`);
+}
+
+
+// v0.7.0-rc.3 — SPEC §7.2.1 formal-review event selector for the npm
+// workflow path. Reads the action's structured_output JSON from stdin,
+// PR-author metadata from env, and emits ONE word on stdout:
+//
+//     APPROVE | REQUEST_CHANGES | COMMENT | skip
+//
+// The workflow template post-step pipes the structured_output payload
+// in, reads the verdict, then conditionally calls `gh api ... /reviews`
+// with `event=$VERDICT` (skipping the API call when verdict is "skip").
+//
+// Robustness contract: this command MUST NEVER fail the workflow on
+// caller-side problems (missing/malformed payload, missing env). Any
+// such case prints "skip" to stdout + a warning to stderr and exits 0
+// — the workflow then degrades to the existing comment-only behavior.
+// We only exit non-zero on programmer error (unknown command flags),
+// which the workflow templates don't pass.
+//
+// Required env vars (the workflow templates set all four):
+//   PR_AUTHOR_LOGIN          — github.event.pull_request.user.login
+//   PR_AUTHOR_ASSOCIATION    — github.event.pull_request.author_association
+//   STRICT_MODE              — "true" / "false" from the base-ref manifest
+// (PR_AUTHOR_ASSOCIATION missing → "CONTRIBUTOR" default which preserves
+// pre-§7.2.1 trusted-author semantics; PR_AUTHOR_LOGIN missing → "skip".)
+async function runSelectReviewEvent(args) {
+  const { selectReviewEvent } = await import('../core/formal-review.js');
+
+  if (!args.stdin) {
+    process.stderr.write(
+      'clud-bug select-review-event: --stdin is required.\n',
+    );
+    process.stdout.write('skip\n');
+    return;
+  }
+
+  let raw = '';
+  for await (const chunk of process.stdin) raw += chunk;
+  raw = raw.trim();
+  if (!raw) {
+    process.stderr.write(
+      'clud-bug select-review-event: stdin empty — emitting "skip".\n',
+    );
+    process.stdout.write('skip\n');
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (e) {
+    process.stderr.write(
+      `clud-bug select-review-event: JSON parse failed: ${e.message} — emitting "skip".\n`,
+    );
+    process.stdout.write('skip\n');
+    return;
+  }
+  if (!payload || typeof payload !== 'object') {
+    process.stderr.write(
+      'clud-bug select-review-event: payload must be a JSON object — emitting "skip".\n',
+    );
+    process.stdout.write('skip\n');
+    return;
+  }
+
+  // Count findings from the structured_output array shape. Each is
+  // optional — the model may emit absent / null / wrong-type arrays
+  // when its output drifts from schema; we tolerate all of those.
+  const criticalCount = Array.isArray(payload.critical_findings)
+    ? payload.critical_findings.length
+    : 0;
+  const minorCount = Array.isArray(payload.minor_findings)
+    ? payload.minor_findings.length
+    : 0;
+
+  // Env-passed metadata. Empty PR_AUTHOR_LOGIN means we have no idea
+  // who opened the PR — safer to skip than to attempt a formal review
+  // that might collide with the self-PR guard mis-routed.
+  const prAuthorLogin = String(process.env.PR_AUTHOR_LOGIN ?? '').trim();
+  if (prAuthorLogin === '') {
+    process.stderr.write(
+      'clud-bug select-review-event: PR_AUTHOR_LOGIN unset — emitting "skip".\n',
+    );
+    process.stdout.write('skip\n');
+    return;
+  }
+
+  // author_association defaults to 'CONTRIBUTOR' (org-trusted tier in
+  // pre-§7.2.1 semantics) when the caller doesn't pass one. Old
+  // webhook payloads + tests use this branch.
+  const rawAssoc = String(process.env.PR_AUTHOR_ASSOCIATION ?? '').trim();
+  const validAssociations = new Set([
+    'OWNER', 'MEMBER', 'COLLABORATOR', 'CONTRIBUTOR',
+    'FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER', 'NONE', 'MANNEQUIN',
+  ]);
+  const authorAssociation = validAssociations.has(rawAssoc)
+    ? rawAssoc
+    : 'CONTRIBUTOR';
+
+  const strictMode = String(process.env.STRICT_MODE ?? '').trim() === 'true';
+
+  const event = selectReviewEvent({
+    criticalCount,
+    minorCount,
+    strictMode,
+    prAuthorLogin,
+    authorAssociation,
+  });
+  process.stdout.write(event + '\n');
 }
 
 

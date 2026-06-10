@@ -26,3 +26,15 @@
 
 ---
 
+## 2026-06-10 10:58 - v0.7.0-rc.3: workflow template post-step + CLI select-review-event subcommand + version bumps
+
+**Reasoning:** Added new clud-bug CLI subcommand 'select-review-event --stdin' that the workflow templates invoke via 'npx --yes clud-bug@<version>' to post a formal pulls.createReview, satisfying canonical-ruleset's required_approving_review_count: 1 floor on the npm workflow path. continue-on-error: true ensures the formal review NEVER fails the workflow; degrades to skip on any caller-side error. Bumped package.json + action.yml header + all 3 template strict-mode-gate pins to v0.7.0-rc.3. Added release-discipline test guarding the new post-step.
+
+**Alternatives considered:** node -e inline import (rejected: brittle, hard to test), Shell-only jq rule table (rejected: rule lives in TS for cross-tool reuse)
+
+**Implications:**
+- Workflow consumers will see one extra 'Formal review' step + a per-PR APPROVE review (clud-bug[bot]) on clean PRs
+- Old workflows (pre-rc.3) keep working — they just never post APPROVE, status quo
+
+---
+
