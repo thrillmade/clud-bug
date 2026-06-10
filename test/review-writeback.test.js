@@ -386,6 +386,171 @@ test('renderMultiPassMarkdown: absent f.file → "(unknown file)" fallback (not 
   assert.ok(md.includes('(unknown file)'));
 });
 
+// ---------------------------------------------------------------------------
+// v0.7.0-rc.3 — SPEC §1.8.1 Resolved / Still-open blocks + §6.7.3 cache
+// telemetry. New optional inputs to renderReviewFile.
+// ---------------------------------------------------------------------------
+
+const RESOLVED_SAMPLE = [
+  {
+    file: 'src/foo.ts', line: 12, severity: 'critical',
+    skillName: 'critical-issues-only',
+    summary: 'null-deref on empty array',
+  },
+];
+const STILL_OPEN_SAMPLE = [
+  {
+    file: 'src/bar.ts', line: 84, severity: 'minor',
+    skillName: 'evidence-based-review',
+    summary: 'missing test for edge case',
+  },
+];
+
+test('renderReviewFile: Resolved this round block present when input non-empty', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    resolvedFindings: RESOLVED_SAMPLE,
+  });
+  assert.ok(md.includes('**Resolved this round:**'));
+  // SPEC §1.8.1 bullet shape — backtick-wrapped file + skill, (was 🔴 Critical) suffix.
+  assert.ok(
+    md.includes(
+      '- `src/foo.ts:12` — `critical-issues-only`: null-deref on empty array (was 🔴 Critical)',
+    ),
+  );
+});
+
+test('renderReviewFile: Resolved block emitted AFTER severity buckets, BEFORE trailing ---', () => {
+  // Use a review with a finding so we have severity buckets to anchor on.
+  const md = renderReviewFile({
+    review: REVIEW_WITH_CRITICAL, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    resolvedFindings: RESOLVED_SAMPLE,
+  });
+  const critIdx = md.indexOf('### 🔴 Critical');
+  const resolvedIdx = md.indexOf('**Resolved this round:**');
+  const dashIdx = md.indexOf('\n---\n');
+  assert.ok(critIdx >= 0);
+  assert.ok(resolvedIdx > critIdx);
+  assert.ok(dashIdx > resolvedIdx);
+});
+
+test('renderReviewFile: Resolved block omitted entirely on empty array', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    resolvedFindings: [],
+  });
+  assert.ok(!md.includes('**Resolved this round:**'));
+});
+
+test('renderReviewFile: Resolved block omitted entirely when undefined', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+  });
+  assert.ok(!md.includes('**Resolved this round:**'));
+});
+
+test('renderReviewFile: Still open block present when input non-empty', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    stillOpenFindings: STILL_OPEN_SAMPLE,
+  });
+  assert.ok(md.includes('**Still open:**'));
+  assert.ok(
+    md.includes(
+      '- `src/bar.ts:84` — `evidence-based-review`: missing test for edge case (was 🟡 Minor)',
+    ),
+  );
+});
+
+test('renderReviewFile: Still open block emitted AFTER Resolved this round when both present', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    resolvedFindings: RESOLVED_SAMPLE,
+    stillOpenFindings: STILL_OPEN_SAMPLE,
+  });
+  const resolvedIdx = md.indexOf('**Resolved this round:**');
+  const stillIdx = md.indexOf('**Still open:**');
+  assert.ok(resolvedIdx >= 0);
+  assert.ok(stillIdx > resolvedIdx);
+});
+
+test('renderReviewFile: Still open block omitted entirely on empty array', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    stillOpenFindings: [],
+  });
+  assert.ok(!md.includes('**Still open:**'));
+});
+
+test('renderReviewFile: cross-cutting finding (line=0) omits :line suffix in diff block', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    resolvedFindings: [
+      {
+        file: 'README.md', line: 0, severity: 'critical',
+        skillName: 'docs-link-check', summary: 'broken anchor',
+      },
+    ],
+  });
+  // line=0 means cross-cutting; we omit the :N suffix.
+  assert.ok(md.includes('- `README.md` — `docs-link-check`: broken anchor (was 🔴 Critical)'));
+  assert.ok(!md.includes('README.md:0'));
+});
+
+test('renderReviewFile: severity emoji correct in (was X) suffix for all three buckets', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    resolvedFindings: [
+      { file: 'a.ts', line: 1, severity: 'critical', skillName: 's', summary: 'A' },
+      { file: 'b.ts', line: 2, severity: 'minor', skillName: 's', summary: 'B' },
+      { file: 'c.ts', line: 3, severity: 'preexisting', skillName: 's', summary: 'C' },
+    ],
+  });
+  assert.ok(md.includes('(was 🔴 Critical)'));
+  assert.ok(md.includes('(was 🟡 Minor)'));
+  assert.ok(md.includes('(was 🟣 Preexisting)'));
+});
+
+test('renderReviewFile: SPEC §6.7.3 cache telemetry comment present when input provided', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    cacheStats: { cachedInputTokens: 12800, cacheCreationInputTokens: 184 },
+  });
+  assert.ok(md.includes('<!-- cache: 12800 read · 184 created -->'));
+});
+
+test('renderReviewFile: cache comment appears immediately below review-sha (SPEC §6.7.3)', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    cacheStats: { cachedInputTokens: 1000, cacheCreationInputTokens: 50 },
+  });
+  const shaIdx = md.indexOf('<!-- review-sha:');
+  const cacheIdx = md.indexOf('<!-- cache:');
+  assert.ok(shaIdx >= 0);
+  assert.ok(cacheIdx > shaIdx);
+  // Should be on the very next line — no other metadata between them.
+  const between = md.slice(shaIdx, cacheIdx);
+  // One newline + immediately the cache comment.
+  assert.match(between, /^<!-- review-sha: [0-9a-f]+ -->\n$/);
+});
+
+test('renderReviewFile: cache comment omitted entirely when cacheStats undefined', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+  });
+  assert.ok(!md.includes('<!-- cache:'));
+});
+
+test('renderReviewFile: cache comment with zero values still emitted (audit trail)', () => {
+  const md = renderReviewFile({
+    review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+    cacheStats: { cachedInputTokens: 0, cacheCreationInputTokens: 0 },
+  });
+  // Even at 0 / 0 the comment lands — operators need to see "first review"
+  // (0/0 means no cache hit, cold start) vs absent (caller didn't pass stats).
+  assert.ok(md.includes('<!-- cache: 0 read · 0 created -->'));
+});
+
 test('renderMultiPassMarkdown: disagreed attribution adds Disputed note', () => {
   const disputedReview = {
     ...MULTI_PASS_REVIEW,

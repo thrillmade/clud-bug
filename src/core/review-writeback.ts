@@ -46,6 +46,34 @@ export const SEVERITY_EMOJI = {
   preexisting: '\u{1F7E3}', // U+1F7E3 PURPLE CIRCLE
 } as const;
 
+/**
+ * One parsed finding suitable for the SPEC §1.8.1 Resolved / Still-open
+ * blocks. Mirrors `ParsedFinding` from `./diff-findings.ts`; declared
+ * here as a structural interface (not re-imported) so callers without
+ * `diff-findings` in scope can still construct the input.
+ */
+export interface RenderedFindingRef {
+  file: string;
+  line: number;
+  severity: 'critical' | 'minor' | 'preexisting';
+  skillName: string;
+  summary: string;
+}
+
+/**
+ * SPEC §6.7.3 cache telemetry — per-invocation token counts from the
+ * Anthropic-family `usage` block. When present, the renderer emits a
+ * `<!-- cache: ... -->` HTML comment immediately below the
+ * `<!-- review-sha: ... -->` metadata line so downstream cost analysis
+ * tooling can audit cache behaviour from the committed doc-file.
+ */
+export interface CacheStats {
+  /** `cache_read_input_tokens` from the Anthropic usage block. */
+  cachedInputTokens: number;
+  /** `cache_creation_input_tokens` from the Anthropic usage block. */
+  cacheCreationInputTokens: number;
+}
+
 export interface RenderReviewFileInput {
   review: Review;
   prNumber: number;
@@ -53,6 +81,34 @@ export interface RenderReviewFileInput {
   headSha: string;
   /** GitHub PR URL — appended verbatim to the trailing rule. */
   prUrl: string;
+  /**
+   * Findings present in the prior `docs/reviews/PR-<n>.md` that are NOT
+   * present in this round's `review`. When non-empty, emits the SPEC
+   * §1.8.1 `**Resolved this round:**` block AFTER the severity buckets
+   * and BEFORE the trailing `---` separator. Omitted entirely when
+   * empty/undefined (SPEC §1.8.1: blocks MUST be omitted when empty).
+   *
+   * Produced by `diffFindings()` from `./diff-findings.ts`.
+   */
+  resolvedFindings?: RenderedFindingRef[];
+  /**
+   * Findings present in BOTH the prior `docs/reviews/PR-<n>.md` AND
+   * this round's `review` — the persistent ones. When non-empty, emits
+   * the SPEC §1.8.1 `**Still open:**` block AFTER `**Resolved this
+   * round:**` and before the trailing `---` separator. Omitted entirely
+   * when empty/undefined.
+   *
+   * Produced by `diffFindings()` from `./diff-findings.ts`.
+   */
+  stillOpenFindings?: RenderedFindingRef[];
+  /**
+   * SPEC §6.7.3 cache telemetry. When present, emits a
+   * `<!-- cache: <read> read · <created> created -->` HTML comment
+   * immediately below the `<!-- review-sha: ... -->` metadata line.
+   * Omitted entirely when undefined (this comment is OPTIONAL per the
+   * SPEC, but SHOULD be implemented for cost-analysis tooling).
+   */
+  cacheStats?: CacheStats;
 }
 
 /**
@@ -66,7 +122,15 @@ export interface RenderReviewFileInput {
  * the underlying finding data but differ in container.
  */
 export function renderReviewFile(input: RenderReviewFileInput): string {
-  const { review, prNumber, headSha, prUrl } = input;
+  const {
+    review,
+    prNumber,
+    headSha,
+    prUrl,
+    resolvedFindings,
+    stillOpenFindings,
+    cacheStats,
+  } = input;
   // Wire-shape Review carries findings in 3 severity arrays. Flatten to
   // internal `Finding[]` so the renderer's bucketing, count-derivation,
   // and per-skill aggregation can work uniformly.
@@ -83,6 +147,15 @@ export function renderReviewFile(input: RenderReviewFileInput): string {
   lines.push(`<!-- protocol-version: ${PROTOCOL_VERSION} -->`);
   lines.push(`<!-- written-by: ${WRITTEN_BY} -->`);
   lines.push(`<!-- review-sha: ${headSha} -->`);
+  // SPEC §6.7.3: cache telemetry comment goes immediately below the
+  // review-sha so a single grep can pull review-sha + cache stats out
+  // of a doc-file without re-parsing the whole block. Omitted entirely
+  // when cacheStats is undefined.
+  if (cacheStats !== undefined) {
+    lines.push(
+      `<!-- cache: ${cacheStats.cachedInputTokens} read · ${cacheStats.cacheCreationInputTokens} created -->`,
+    );
+  }
   lines.push('');
 
   // Summary line — SPEC §1.8.1 wording.
@@ -124,9 +197,31 @@ export function renderReviewFile(input: RenderReviewFileInput): string {
     lines.push('');
   }
 
-  // D.2.0 never emits "Resolved this round" / "Still open" — both lists
-  // are empty until D.2.5 (multi-pass tracking). SPEC §1.8.1 says these
-  // blocks MUST be omitted when empty.
+  // SPEC §1.8.1 Resolved this round / Still open blocks. Omitted
+  // entirely when the corresponding input list is empty/undefined.
+  //
+  // Bullet shape (one finding per line):
+  //   - `path/file.ts:42` — `critical-issues-only`: null-deref ... (was 🔴 Critical)
+  //
+  // The `(was <emoji> <Severity>)` suffix carries the SEVERITY at the
+  // time the finding was last seen so a downgrade across rounds is
+  // visible without diffing the two doc files. Note: backticks around
+  // file and skill render in markdown viewers as inline-code, which
+  // makes the file path scannable in the GitHub UI.
+  if (resolvedFindings !== undefined && resolvedFindings.length > 0) {
+    lines.push('**Resolved this round:**');
+    for (const f of resolvedFindings) {
+      lines.push(renderDiffFinding(f));
+    }
+    lines.push('');
+  }
+  if (stillOpenFindings !== undefined && stillOpenFindings.length > 0) {
+    lines.push('**Still open:**');
+    for (const f of stillOpenFindings) {
+      lines.push(renderDiffFinding(f));
+    }
+    lines.push('');
+  }
 
   lines.push('---');
   lines.push('');
@@ -146,6 +241,30 @@ function bucketBySeverity(findings: Finding[]): Record<
     minor: findings.filter((f) => f.severity === 'minor'),
     preexisting: findings.filter((f) => f.severity === 'preexisting'),
   };
+}
+
+/**
+ * Renders one finding for the SPEC §1.8.1 Resolved / Still-open blocks.
+ * Output shape:
+ *
+ *   - `path/file.ts:42` — `critical-issues-only`: null-deref ... (was 🔴 Critical)
+ *
+ * Line `0` is treated as "no anchor" (cross-cutting / missing) and the
+ * `:N` suffix is omitted. The severity label uses the SPEC §1.8.1
+ * emoji + label so a reader can see at a glance whether the finding
+ * was downgraded (different severity in current round) or merely
+ * resolved.
+ */
+function renderDiffFinding(f: RenderedFindingRef): string {
+  const location = f.line > 0 ? `${f.file}:${f.line}` : f.file;
+  const label =
+    f.severity === 'critical'
+      ? 'Critical'
+      : f.severity === 'minor'
+        ? 'Minor'
+        : 'Preexisting';
+  const emoji = SEVERITY_EMOJI[f.severity];
+  return `- \`${location}\` — \`${f.skillName}\`: ${f.summary} (was ${emoji} ${label})`;
 }
 
 function renderFinding(f: Finding, includeReasoning: boolean): string {

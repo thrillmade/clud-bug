@@ -14,3 +14,15 @@
 
 ---
 
+## 2026-06-10 10:46 - v0.7.0-rc.3 core: selectReviewEvent + parsePriorReviewFile + diffFindings + renderReviewFile extensions
+
+**Reasoning:** Ported and extended formal-review for §7.2.1 with authorAssociation gate; added diff-findings module for §1.8.1 Resolved/Still-open block emission; extended renderReviewFile with three optional inputs (resolvedFindings, stillOpenFindings, cacheStats); barrel re-exports all three. 88 new tests passing.
+
+**Alternatives considered:** Inline author_association check at every caller (rejected: rule lives once), Hash-based identity using crypto.subtle SHA-256 (rejected: string identity is enough)
+
+**Implications:**
+- Phase 7 PR B in clud-bug-app deletes lib/formal-review.ts and imports from clud-bug/core
+- renderReviewFile inputs grew by 3 optional fields — back-compat preserved
+
+---
+
