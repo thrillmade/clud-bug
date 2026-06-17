@@ -62,6 +62,10 @@ function parseArgs(argv) {
     // users get the same one-command bootstrap as Python-first users
     // (logmind v0.6.8's --with-skdd is the symmetric counterpart).
     withSkdd: false,
+    // v0.7.0-rc.4: `clud-bug configure-github` flags.
+    // --dry-run prints the diff but skips PATCH; --branch overrides "main".
+    dryRun: false,
+    branch: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -84,6 +88,8 @@ function parseArgs(argv) {
     else if (a === '--health') args.health = true;
     else if (a === '--no-artifacts') args.artifacts = false;
     else if (a === '--with-skdd') args.withSkdd = true;
+    else if (a === '--dry-run') args.dryRun = true;
+    else if (a === '--branch') args.branch = argv[++i];
     else args._.push(a);
   }
   return args;
@@ -105,6 +111,12 @@ Commands:
                         Use --since / --changed-in / --scope to narrow.
   update                Re-render workflows + refresh baseline specimens to the latest shipped
                         templates. Custom and skills.sh-installed specimens left alone.
+  configure-github <owner>/<repo>
+                        Apply the SPEC §7 canonical branch protection ruleset to a repo.
+                        Auth: GITHUB_TOKEN env first, then \`gh auth token\`. Use
+                        --dry-run to print the diff without PATCH-ing; --branch to
+                        target a non-main branch. Idempotent — already-canonical
+                        repos exit 0 with no changes.
   edit-workflow         Helper for editing .github/workflows/clud-bug-*.yml in an isolated
                         PR (the action refuses to review PRs that modify its own workflow).
   usage                 Read recent clud-bug-review run JSON + normalize cost per LOC.
@@ -163,6 +175,9 @@ Options:
                         required_conversation_resolution on the default
                         branch (init only). Use for repos that manage
                         branch protection via ruleset or org policy.
+  --dry-run             Print the canonical-v1 diff without PATCH-ing
+                        (configure-github only).
+  --branch <name>       Target branch for configure-github (default: main).
   --repo <owner/name>   Restrict \`usage\` to a single repo. Default: all repos
                         with clud-bug-review.yml in the gh user's auth scope.
   --pr <N>              Restrict \`usage\` to a single PR.
@@ -198,6 +213,7 @@ async function main() {
     case 'audit':   return runAudit(args);
     case 'update':  return runUpdateCmd(args);
     case 'edit-workflow': return runEditWorkflow(args);
+    case 'configure-github': return runConfigureGithubCmd(args);
     case 'usage':   return runUsage(args);
     case 'eval':    return runEval();
     case 'render':  return runRender(args);
@@ -1138,6 +1154,24 @@ async function runUpdateCmd(_args) {
   log('');
   log('Commit + push to apply the refreshed kit on the next PR.');
   ok(`updated: @v${ourVersion}, ${result.changed.length} changed, ${result.unchanged.length} unchanged${skipped.length ? `, ${skipped.length} skipped` : ''}`);
+}
+
+// v0.7.0-rc.4 — `clud-bug configure-github <owner>/<repo>`. Pulls in the
+// SPEC §7 canonical ruleset applier from src/cli/configure-github.ts;
+// thin wrapper here just maps CLI args into the typed entry point. The
+// command is idempotent — re-runs on a converged repo exit 0 with no
+// PATCH calls. See `src/core/configure-github.ts` for the diff + rule
+// table.
+async function runConfigureGithubCmd(args) {
+  const { runConfigureGithub } = await import('./configure-github.js');
+  const target = args._[1] ?? null;
+  const code = await runConfigureGithub({
+    target,
+    branch: args.branch || 'main',
+    dryRun: Boolean(args.dryRun),
+    quiet: QUIET,
+  });
+  if (code !== 0) process.exit(code);
 }
 
 async function runAudit(args) {
