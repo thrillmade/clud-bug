@@ -1,5 +1,10 @@
 import { getLatestPublicReview } from '../lib/data';
 
+const APP_INSTALL_URL = 'https://github.com/apps/clud-bug/installations/new';
+const APP_DASHBOARD_URL = 'https://app.cludbug.dev/dashboard';
+const APP_PRICING_URL = 'https://app.cludbug.dev/pricing';
+const APP_COMPARE_URL = 'https://app.cludbug.dev/compare';
+
 export default async function Home() {
   // Server-fetched, cached for 1h. Returns null on any failure so the page
   // still renders; the observation section just hides itself in that case.
@@ -9,7 +14,7 @@ export default async function Home() {
     <main className="page">
       <header className="folio">
         <span>A Field Guide to Code Specimens</span>
-        <span>Vol. 0 · No. 2 · MMXXVI</span>
+        <span>Vol. I · No. 1 · MMXXVI</span>
       </header>
 
       {/* ─────────── FRONTISPIECE ─────────── */}
@@ -28,60 +33,88 @@ export default async function Home() {
             Clud <em>Bug</em>.
           </h1>
           <p className="subtitle appear-2">
-            <strong>Skills-driven development</strong> at PR time.
-            Skills you write. Reviews the bot does.
+            <strong>AI PR review with project-aware skills.</strong>
+            {' '}Install the GitHub App, write a skill, get reviews graded
+            against <em>your</em> conventions on every pull request.
             <em className="binomial">— Cluddus bugfindii, observed crawling on every PR.</em>
           </p>
-          <pre className="install-box appear-3">npx clud-bug init</pre>
+          <div className="cta-stack appear-3">
+            <a
+              className="cta-primary"
+              href={APP_INSTALL_URL}
+              rel="noopener"
+            >
+              <span className="cta-glyph" aria-hidden>→</span>
+              Install the GitHub App
+            </a>
+            <p className="cta-fineprint">
+              Free on public repos. See{' '}
+              <a href={APP_PRICING_URL} rel="noopener">pricing</a> and{' '}
+              <a href={APP_COMPARE_URL} rel="noopener">compare</a> tiers on{' '}
+              <a href={APP_DASHBOARD_URL} rel="noopener">app.cludbug.dev</a>.
+            </p>
+            <p className="cta-fineprint cta-secondary">
+              <a href="#self-hosted">Self-hosted? Use the open-source workflow →</a>
+            </p>
+          </div>
           <div className="actions appear-4">
-            <a href="https://github.com/thrillmade/clud-bug">View on GitHub</a>
+            <a href="#how-it-works">How it works</a>
             <span className="sep">·</span>
-            <a href="#observations">Observations</a>
+            <a href="#observations">Field notes</a>
             <span className="sep">·</span>
-            <a href="#how-to-collect">How to collect</a>
+            <a href="https://github.com/thrillmade/clud-bug" rel="noopener">GitHub</a>
           </div>
         </div>
       </section>
 
-      {/* ─────────── §I — WHY THIS EXISTS ─────────── */}
-      <section className="section" id="observations">
+      {/* ─────────── §I — HOW IT WORKS ─────────── */}
+      <section className="section" id="how-it-works">
         <header className="section-head">
-          <span className="section-num">§ I — Habitat & Habit</span>
-          <h2 className="section-title">Why a field guide.</h2>
+          <span className="section-num">§ I — Field Procedure</span>
+          <h2 className="section-title">Three steps. Two minutes per review.</h2>
         </header>
         <div className="section-body">
           <aside className="marginalia">
-            Stock Claude PR review installs leave Claude unable to post comments. The
-            bot thinks, then exits in silence. Specimens go uncatalogued.
+            No workflow file. No <code>ANTHROPIC_API_KEY</code> rotation. The
+            App carries its own credentials and posts inline comments under
+            its own GitHub identity.
           </aside>
-          <div className="section-prose">
-            <p>
-              The official <code>anthropics/claude-code-action</code> ships with{' '}
-              <code>gh pr comment</code> disabled by default. Without an explicit{' '}
-              <code>--allowedTools</code> whitelist, Claude runs through your diff,
-              composes a thorough review, and exits without ever posting a word.
-            </p>
-            <p>
-              <strong>Clud Bug</strong> ships the correct workflow configuration <em>and</em>{' '}
-              auto-curates skills from your repository — Next.js review patterns for a
-              Next.js repo, FastAPI patterns for a FastAPI repo, your team&rsquo;s own rules
-              for your team&rsquo;s own repo. Every PR gets a comment within ~2 minutes,
-              shaped by skills relevant to what you actually wrote.
-            </p>
-            <p>
-              <a href="https://zakelfassi.com/skdd-skills-driven-development"><strong>Skills-driven
-              development</strong></a> (SkDD): test-driven development for AI. You
-              write skills first — your team&rsquo;s conventions, brand voice,
-              API-contract rules, compliance constraints — and every PR review is
-              graded against them. Generic best-practice advice that contradicts a
-              project skill is wrong by definition. Skills carry authority.
-            </p>
-          </div>
+          <ol className="howto">
+            <li className="howto-step">
+              <span className="howto-num">1</span>
+              <h3 className="howto-name">Install</h3>
+              <p className="howto-desc">
+                <a href={APP_INSTALL_URL} rel="noopener">Install the GitHub
+                App</a> on the org or repos you want reviewed. Approve the
+                permissions for pull requests, contents, and checks.
+              </p>
+            </li>
+            <li className="howto-step">
+              <span className="howto-num">2</span>
+              <h3 className="howto-name">Authorize</h3>
+              <p className="howto-desc">
+                Pick a plan on the{' '}
+                <a href={APP_DASHBOARD_URL} rel="noopener">dashboard</a>{' '}
+                — free on public repos, or a Marketplace tier for private
+                ones. Skills are auto-curated from your repository on the
+                first PR.
+              </p>
+            </li>
+            <li className="howto-step">
+              <span className="howto-num">3</span>
+              <h3 className="howto-name">Reviews land</h3>
+              <p className="howto-desc">
+                Every PR (and every push to one) gets an inline review within
+                ~2 minutes — comments cited by skill name, anchored at the
+                exact line.
+              </p>
+            </li>
+          </ol>
         </div>
       </section>
 
       {/* ─────────── §II — SKILLS ─────────── */}
-      <section className="section">
+      <section className="section" id="skills">
         <header className="section-head">
           <span className="section-num">§ II — Specimens for your habitat</span>
           <h2 className="section-title">Skills are how Clud Bug knows your codebase.</h2>
@@ -153,10 +186,64 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ─────────── §III — FIELD OBSERVATION ─────────── */}
-      <section className="section">
+      {/* ─────────── §III — MULTI-PASS (BEETLE / WASP / MANTIS) ─────────── */}
+      <section className="section" id="multi-pass">
         <header className="section-head">
-          <span className="section-num">§ III — Recorded Observation</span>
+          <span className="section-num">§ III — Three Naturalists</span>
+          <h2 className="section-title">When one pair of eyes isn&rsquo;t enough.</h2>
+        </header>
+        <div className="section-body">
+          <aside className="marginalia">
+            Available on the Pro tier. Each pass writes to the same PR but
+            signs its own comments. Disagreements get adjudicated, not
+            averaged. <a href={APP_PRICING_URL} rel="noopener">Pricing →</a>
+          </aside>
+          <div className="section-prose">
+            <p>
+              The default review is a single pass — fast, skill-aware, cited.
+              On the Pro tier, Clud Bug runs three passes that each see the
+              previous one&rsquo;s findings and react to them:
+            </p>
+            <div className="passes">
+              <article className="pass">
+                <span className="pass-tag">Pass 1</span>
+                <h3 className="pass-name">Beetle</h3>
+                <p className="pass-desc">
+                  The broad scan. Walks the full diff, surfaces every
+                  candidate issue, no filtering. Optimized for recall.
+                </p>
+              </article>
+              <article className="pass">
+                <span className="pass-tag">Pass 2</span>
+                <h3 className="pass-name">Wasp</h3>
+                <p className="pass-desc">
+                  The cross-check. Re-reads Beetle&rsquo;s findings against
+                  the diff and the skills, drops noise, escalates the real
+                  ones, and catches what Beetle missed.
+                </p>
+              </article>
+              <article className="pass">
+                <span className="pass-tag">Pass 3</span>
+                <h3 className="pass-name">Mantis</h3>
+                <p className="pass-desc">
+                  The arbiter. Only fires on disputes — where Beetle and
+                  Wasp disagree on severity or correctness. Returns a single
+                  decisive call with reasoning.
+                </p>
+              </article>
+            </div>
+            <p>
+              Three perspectives, one PR thread, citations all the way down.{' '}
+              <a href={APP_COMPARE_URL} rel="noopener">Compare tiers →</a>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ─────────── §IV — FIELD OBSERVATION ─────────── */}
+      <section className="section" id="observations">
+        <header className="section-head">
+          <span className="section-num">§ IV — Recorded Observation</span>
           <h2 className="section-title">From Clud Bug&rsquo;s notebook.</h2>
         </header>
         <div className="section-body">
@@ -185,10 +272,10 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ─────────── §IV — REVIEW BUDGET ─────────── */}
+      {/* ─────────── §V — REVIEW BUDGET ─────────── */}
       <section className="section">
         <header className="section-head">
-          <span className="section-num">§ IV — Field Economy</span>
+          <span className="section-num">§ V — Field Economy</span>
           <h2 className="section-title">Even the largest specimens get a full examination.</h2>
         </header>
         <div className="section-body">
@@ -218,42 +305,11 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ─────────── §V — DROP-IN PROPAGATION ─────────── */}
-      <section className="section">
+      {/* ─────────── §VI — SELF-HOSTED ALTERNATIVE ─────────── */}
+      <section className="section" id="self-hosted">
         <header className="section-head">
-          <span className="section-num">§ V — Habitat Expansion</span>
-          <h2 className="section-title">One PR per repo. Then quiet self-updates.</h2>
-        </header>
-        <div className="section-body">
-          <aside className="marginalia">
-            Adding a specimen to a new habitat takes the same act of collection
-            every time. After that, the colony tends itself.
-          </aside>
-          <div className="section-prose">
-            <p>
-              Rolling Clud Bug across an org used to take an admin override on
-              every workflow file as it landed. Now: one PR per repo, then
-              quiet. Subsequent updates to skills, prompts, or the workflow
-              itself ship through clean PRs that the bot auto-classifies and
-              skips when there&rsquo;s nothing for a reviewer to read.
-            </p>
-            <p>
-              <strong>Code changes still get reviewed.</strong> The auto-skip
-              fires only on workflow-only PRs &mdash; any commit that touches a
-              source file outside the allowlist still gets the full Clud Bug
-              treatment. Skill files, configs, and decision logs may ride
-              along, but the moment something in <code>src/</code> changes,
-              the naturalist is on the scene.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ─────────── §VI — INSTALL ─────────── */}
-      <section className="section" id="how-to-collect">
-        <header className="section-head">
-          <span className="section-num">§ VI — Field Procedure</span>
-          <h2 className="section-title">How to begin collecting.</h2>
+          <span className="section-num">§ VI — Self-hosted alternative</span>
+          <h2 className="section-title">Prefer your own runner? Ship the workflow.</h2>
         </header>
         <div className="section-body">
           <aside className="marginalia">
@@ -262,6 +318,13 @@ export default async function Home() {
             naturalist arrives within two minutes.
           </aside>
           <div>
+            <p className="section-prose-lead">
+              The hosted GitHub App is the recommended path — managed runner,
+              managed billing, no secrets to rotate. For air-gapped orgs and
+              teams that want to bring their own Anthropic key, the same
+              review engine ships as an open-source npm package and runs as a
+              GitHub Action under your own credentials.
+            </p>
             <pre className="terminal">
               <span className="cmd">npx clud-bug init</span>{'\n'}
               <span className="out">  🐛 Field season opens here.</span>{'\n'}
@@ -271,19 +334,28 @@ export default async function Home() {
               <span className="cmd">git add <span className="path">.claude .github/workflows/</span></span>{'\n'}
               <span className="cmd">git commit -m &quot;Add clud-bug&quot; && git push</span>{'\n'}
             </pre>
+            <p className="specimens-footer">
+              Same skill engine, same review quality, same Beetle / Wasp /
+              Mantis behavior on Pro. You manage the runner and the API key.{' '}
+              <a href="https://github.com/thrillmade/clud-bug#readme" rel="noopener">
+                Read the workflow docs →
+              </a>
+            </p>
           </div>
         </div>
       </section>
 
       <footer className="colophon">
         <span>
-          Open source. <a href="https://github.com/thrillmade/clud-bug/blob/main/LICENSE">MIT</a>. v0.6.27.
+          Open source. <a href="https://github.com/thrillmade/clud-bug/blob/main/LICENSE">MIT</a>.
         </span>
         <span className="credit">
           a <a href="https://thrillmot.com" rel="noopener">thrillmot</a> project
         </span>
         <span>
-          <a href="https://github.com/thrillmade/clud-bug">github.com/thrillmade/clud-bug</a>
+          <a href={APP_DASHBOARD_URL} rel="noopener">app.cludbug.dev</a>
+          {' · '}
+          <a href="https://github.com/thrillmade/clud-bug">github</a>
         </span>
       </footer>
     </main>
