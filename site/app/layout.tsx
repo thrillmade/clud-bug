@@ -23,22 +23,22 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://cludbug.dev'),
-  title: 'Clud Bug — Claude PR review with project-aware skills',
+  title: 'Clud Bug — AI PR review with project-aware skills',
   description:
-    'Clud Bug pins skills auto-curated from skills.sh and ships a Claude PR-review workflow that actually posts comments. A field naturalist for your codebase. Open source.',
+    'Install the Clud Bug GitHub App. PR reviews graded against your team’s own skills — your conventions, your API contracts, your compliance rules. Reviews land within two minutes. Self-hosted workflow also available.',
   openGraph: {
-    title: 'Clud Bug — a field guide to specimens crawling your code',
+    title: 'Clud Bug — AI PR review with project-aware skills',
     description:
-      'Claude PR review tuned to your stack, with skills auto-curated from skills.sh and a baseline kit of review discipline. Reviews land within two minutes.',
+      'Install the GitHub App. Reviews land on every PR within two minutes, cited against the skills your team writes. Three-pass review on the Pro tier. Self-hosted workflow optional.',
     url: 'https://cludbug.dev',
     siteName: 'Clud Bug',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Clud Bug — a field guide to specimens crawling your code',
+    title: 'Clud Bug — AI PR review with project-aware skills',
     description:
-      'Claude PR review tuned to your stack, with skills auto-curated from skills.sh and a baseline kit of review discipline. Reviews land within two minutes.',
+      'Install the GitHub App. Reviews land on every PR within two minutes, cited against the skills your team writes. Self-hosted workflow optional.',
   },
 };
 
