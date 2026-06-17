@@ -99,3 +99,9 @@ export {
   type UpdateSkippedRecord,
   type RunUpdateResult,
 } from './update.js';
+
+export {
+  runConfigureGithub,
+  ghCliOctokit,
+  type RunConfigureGithubOptions,
+} from './configure-github.js';

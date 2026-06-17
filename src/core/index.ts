@@ -151,6 +151,18 @@ export {
   type ParsedFinding,
   type ParsedReview,
 } from './diff-findings.js';
+// SPEC §7 canonical-ruleset applier. Pure diff + idempotent-PATCH logic;
+// CLI side wraps `gh api` in an Octokit-like adapter and the App passes
+// its real Octokit instance. Shipped in v0.7.0-rc.4 for Marketplace prep
+// (Phase 6 task #227).
+export {
+  applyCanonicalRuleset,
+  loadCanonicalV1,
+  type CanonicalRuleset,
+  type OctokitLike,
+  type ApplyCanonicalRulesetParams,
+  type ApplyResult,
+} from './configure-github.js';
 export {
   API_BASE,
   MAX_SKILLS,

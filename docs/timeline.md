@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (42 decisions)
+## 2026-06 (43 decisions)
 
-- **2026-06-10** — v0.7.0-rc.3: fix-closed unrecognized PR_AUTHOR_ASSOCIATION to NONE (clud-bug-review #163 fix) *(release/v0.7.0-rc.3)* — [decisions-branches/release__v0.7.0-rc.3.md](decisions-branches/release__v0.7.0-rc.3.md)
-- *... 40 more decisions ...*
+- **2026-06-17** — v0.7.0-rc.4: configure-github + cache comment + resolved findings naming *(feat/rc.4-configure-github-cache-resolved)* — [decisions-branches/feat__rc.4-configure-github-cache-resolved.md](decisions-branches/feat__rc.4-configure-github-cache-resolved.md)
+- *... 41 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
