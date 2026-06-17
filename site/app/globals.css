@@ -141,31 +141,6 @@ main { position: relative; z-index: 1; }
 
 .plate-label { display: block; }
 
-.plate-gloss {
-  display: block;
-  margin-top: 0.85rem;
-  padding-top: 0.65rem;
-  border-top: 1px dotted var(--ink-faint);
-  font-family: var(--display);
-  font-style: italic;
-  font-size: 0.85rem;
-  font-weight: 300;
-  color: var(--ink-faint);
-  line-height: 1.4;
-  text-transform: none;
-  letter-spacing: 0;
-  max-width: 14rem;
-}
-.plate-gloss em {
-  font-style: normal;
-  color: var(--ink-soft);
-  font-variant: small-caps;
-  letter-spacing: 0.04em;
-  font-weight: 500;
-}
-/* The colons in the JSX are the natural separator. No ::after pseudo-
-   element needed — adding one collided with the literal ":" producing
-   an awkward "·:" adjacency. */
 
 .bug-pin {
   font-size: 3.5rem;
@@ -848,7 +823,6 @@ main { position: relative; z-index: 1; }
   }
   .plate-number { font-size: 1.6rem; margin: 0; }
   .plate-label  { display: inline; }
-  .plate-gloss  { display: none; } /* Doc-noise on small screens — hide. */
   .bug-pin      { font-size: 3rem; margin: 0; }
 
   /* Title scales with viewport width instead of jumping to a 3.5rem floor. */

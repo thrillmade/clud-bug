@@ -30,10 +30,6 @@ export default async function Home() {
         <aside className="plate appear">
           <span className="plate-number">№ I</span>
           <span className="plate-label">Plate I — Frontispiece</span>
-          <span className="plate-gloss">
-            <em>Plate</em>: a labeled illustration in a field guide.
-            <em>Frontispiece</em>: the cover plate.
-          </span>
           <span className="bug-pin" aria-hidden>🐛</span>
         </aside>
         <div>
