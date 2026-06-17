@@ -1,6 +1,14 @@
 import { getLatestPublicReview } from '../lib/data';
 
 const APP_INSTALL_URL = 'https://github.com/apps/clud-bug/installations/new';
+// Bare-domain URL for visible "app.cludbug.dev" link text — the root
+// redirects authenticated users to /dashboard and unauthenticated users
+// to /sign-in. Keeping href and visible text in agreement avoids the
+// "click bare domain → land on subpath" confusion the PR #165 reviewer
+// flagged (CTO follow-up 2026-06-17).
+const APP_ROOT_URL = 'https://app.cludbug.dev';
+// Specific routes get specific URLs (used where the visible text is the
+// route name, e.g. "dashboard").
 const APP_DASHBOARD_URL = 'https://app.cludbug.dev/dashboard';
 const APP_PRICING_URL = 'https://app.cludbug.dev/pricing';
 const APP_COMPARE_URL = 'https://app.cludbug.dev/compare';
@@ -51,7 +59,7 @@ export default async function Home() {
               Free on public repos. See{' '}
               <a href={APP_PRICING_URL} rel="noopener">pricing</a> and{' '}
               <a href={APP_COMPARE_URL} rel="noopener">compare</a> tiers on{' '}
-              <a href={APP_DASHBOARD_URL} rel="noopener">app.cludbug.dev</a>.
+              <a href={APP_ROOT_URL} rel="noopener">app.cludbug.dev</a>.
             </p>
             <p className="cta-fineprint cta-secondary">
               <a href="#self-hosted">Self-hosted? Use the open-source workflow →</a>
@@ -335,8 +343,10 @@ export default async function Home() {
               <span className="cmd">git commit -m &quot;Add clud-bug&quot; && git push</span>{'\n'}
             </pre>
             <p className="specimens-footer">
-              Same skill engine, same review quality, same Beetle / Wasp /
-              Mantis behavior on Pro. You manage the runner and the API key.{' '}
+              Same skill engine, same review quality. You manage the
+              runner and the API key. Multi-pass (Beetle / Wasp / Mantis)
+              is App-tier only — the hosted bot orchestrates the three
+              roles server-side.{' '}
               <a href="https://github.com/thrillmade/clud-bug#readme" rel="noopener">
                 Read the workflow docs →
               </a>
