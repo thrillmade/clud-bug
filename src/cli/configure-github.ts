@@ -117,56 +117,55 @@ export async function runConfigureGithub(
     );
   }
 
+  // Single-call orchestration: the CLI previously called
+  // applyCanonicalRuleset twice in apply mode (dry-run first to display the
+  // planned changes, then a real call to apply). That two-read pattern
+  // opened a TOCTOU window — concurrent changes between the two reads
+  // could make the displayed list diverge from the actually-applied list,
+  // and the dry-run cost a redundant API round-trip every time. Drop the
+  // preview-first read: pass `dryRun` straight through. The function's
+  // idempotency contract (returns `alreadyCanonical: true` + empty changes
+  // on a no-op) means we don't need a separate "look before you leap"
+  // call. Users who want preview semantics run `--dry-run` first as a
+  // distinct invocation — idiomatic CLI behavior. Surfaced by PR #166
+  // reviewer (CTO follow-up 2026-06-17).
   const octokit = octokitFactory(token);
-  let dryResult: ApplyResult;
+  let result: ApplyResult;
   try {
-    dryResult = await applyCanonicalRuleset(octokit, {
+    result = await applyCanonicalRuleset(octokit, {
       owner,
       repo,
       branch,
-      dryRun: true,
+      dryRun,
     });
   } catch (err) {
     stderr(
-      `clud-bug configure-github: failed to read current state: ${stringifyError(err)}\n`,
+      `clud-bug configure-github: ${dryRun ? 'failed to read current state' : 'PATCH failed'}: ${stringifyError(err)}\n`,
     );
     return 1;
   }
 
-  if (dryResult.alreadyCanonical) {
+  if (result.alreadyCanonical) {
     if (!quiet) stdout('  No changes — repo already matches canonical-v1.\n');
     stdout(`ok configure-github: ${owner}/${repo} already canonical-v1\n`);
     return 0;
   }
 
   if (!quiet) {
-    stdout(`  Planned changes (${dryResult.changes.length}):\n`);
-    for (const c of dryResult.changes) stdout(`    - ${c}\n`);
+    const verb = dryRun ? 'Planned' : 'Applied';
+    stdout(`  ${verb} changes (${result.changes.length}):\n`);
+    for (const c of result.changes) stdout(`    - ${c}\n`);
   }
 
   if (dryRun) {
     stdout(
-      `ok configure-github: dry-run on ${owner}/${repo} — ${dryResult.changes.length} change${dryResult.changes.length === 1 ? '' : 's'} pending\n`,
+      `ok configure-github: dry-run on ${owner}/${repo} — ${result.changes.length} change${result.changes.length === 1 ? '' : 's'} pending\n`,
     );
     return 0;
   }
 
-  let applyResult: ApplyResult;
-  try {
-    applyResult = await applyCanonicalRuleset(octokit, {
-      owner,
-      repo,
-      branch,
-    });
-  } catch (err) {
-    stderr(
-      `clud-bug configure-github: PATCH failed: ${stringifyError(err)}\n`,
-    );
-    return 1;
-  }
-
   stdout(
-    `ok configure-github: ${owner}/${repo} converged to canonical-v1 (${applyResult.changes.length} change${applyResult.changes.length === 1 ? '' : 's'})\n`,
+    `ok configure-github: ${owner}/${repo} converged to canonical-v1 (${result.changes.length} change${result.changes.length === 1 ? '' : 's'})\n`,
   );
   return 0;
 }
