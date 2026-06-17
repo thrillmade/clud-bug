@@ -20,7 +20,9 @@
     "ai",
     "skills"
   ],
-  "bin": "bin/clud-bug.js",
+  "bin": {
+    "clud-bug": "bin/clud-bug.js"
+  },
   "files": [
     "bin",
     "data",
