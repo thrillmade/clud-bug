@@ -96,7 +96,7 @@ jobs:
           fi
 
       - name: Checkout the tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # On tag push, github.ref is refs/tags/vX.Y.Z (correct).
           # On workflow_dispatch (publish mode), inputs.tag is now
