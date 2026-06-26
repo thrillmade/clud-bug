@@ -1,6 +1,6 @@
 {
   "name": "clud-bug",
-  "version": "0.7.0-rc.4",
+  "version": "0.7.0-rc.5",
   "description": "Skill-driven Claude PR review. Ship a brand-voice skill, get brand reviews. Each finding cites the skill that motivated it. CLI installs the workflow + a baseline kit; add more from skills.sh.",
   "homepage": "https://cludbug.dev",
   "bugs": "https://github.com/thrillmade/clud-bug/issues",
@@ -48,8 +48,10 @@
     "node": ">=20"
   },
   "scripts": {
+    "prebuild": "node scripts/gen-version.mjs",
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli/index.ts",
+    "pretest": "node scripts/gen-version.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:fixtures": "node scripts/fixture-check.mjs",

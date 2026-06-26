@@ -8,6 +8,12 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Codegen — version.ts is baked from package.json by scripts/gen-version.mjs
+# at every `npm run build` (prebuild) and `npm test` (pretest). Not checked
+# in to avoid main/branch drift; consumers always see the version that
+# matches the installed package.json.
+src/core/version.ts
+
 # Site (Next.js)
 site/.next/
 site/out/
