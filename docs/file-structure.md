@@ -28,7 +28,8 @@ clud-bug
 │   ├── file-structure.md
 │   └── timeline.md
 ├── scripts
-│   └── fixture-check.mjs
+│   ├── fixture-check.mjs
+│   └── gen-version.mjs
 ├── site
 │   ├── app
 │   ├── lib

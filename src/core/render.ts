@@ -1,29 +1,23 @@
 import { readFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { serializedReviewSchema } from './review-schema.js';
+import { PKG_VERSION } from './version.js';
 
 const PLACEHOLDER_RE = /\{\{([A-Z_]+)\}\}/g;
 
-// CLUD_BUG_VERSION (0.0.O / v0.6.22) — read from this package's
-// package.json at module-load time. The rendered workflow uses
+// CLUD_BUG_VERSION is baked at build time by scripts/gen-version.mjs into
+// src/core/version.ts (a git-ignored file, regenerated on every `npm run
+// build` via the "prebuild" hook). The rendered workflow uses
 // `npx --yes clud-bug@<CLUD_BUG_VERSION>` in the post-step that renders
 // structured output to markdown. Pinning to the version that ran
 // `clud-bug init` guarantees the renderer's output shape matches the
 // prompt's expectations.
 //
-// IMPORTANT (v0.7.0 TS migration): the JS source lived at lib/render.js,
-// so `join(__dirname, '..', 'package.json')` reached the package root
-// from one level up. The TS port compiles to dist/core/render.js, which
-// is TWO levels deep (dist/core/) — so we walk up TWO levels to find
-// package.json. Without this adjustment, module-load would throw at
-// runtime with "ENOENT dist/package.json". Verify on rebuild via:
-//   node -e "import('./dist/core/render.js').then(m => console.log(m.DEFAULTS.CLUD_BUG_VERSION))"
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PKG_VERSION: string = (
-  JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8')) as { version: string }
-).version;
+// History (v0.7.0-rc.5): previously this module did
+// `readFileSync(package.json)` at module-load. Under Next.js bundling in
+// clud-bug-app, `import.meta.url` resolved to `.next/server/...` not the
+// node_modules layout, so the fs call threw ENOENT (Phase 5.1 hotfix in
+// clud-bug-app PR #50 worked around with `serverExternalPackages`).
+// Codegen eliminates the runtime fs lookup entirely.
 
 // Public shape of the DEFAULTS map. Tests assert presence of CCA_VERSION
 // and CLUD_BUG_VERSION; REVIEW_SCHEMA is the serialized schema string the
