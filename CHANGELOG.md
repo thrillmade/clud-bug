@@ -4,6 +4,91 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.4] — 2026-06-17
+
+Marketplace prep — three SPEC-aligned core enhancements bundled for the
+v0.7.0 ship train. All three live in `src/core/` so the App's Phase 4
+re-import lands them in one wave; clud-bug-app consumption is a follow-up
+PR dispatched AFTER this version is tagged + published. See plan §Phase 6
+and tasks #224 + #227 + #228.
+
+### Added — `clud-bug configure-github <owner>/<repo>` (Phase 6 task #227)
+
+External users installing the App expect "best-practice branch protection"
+applied automatically. This CLI lets them opt in BEFORE the App's auto-setup
+runs server-side.
+
+- **`src/core/configure-github.ts`** — pure diff + idempotent-PATCH module.
+  Exports `applyCanonicalRuleset(octokit, params)` taking a structural
+  `OctokitLike` interface (no `@octokit/rest` runtime dep — App passes its
+  real instance; CLI passes a `gh api`-backed adapter). Returns
+  `{ changes: string[], alreadyCanonical: boolean, ruleset: 'canonical-v1' }`.
+  Hard idempotency contract: `apply(); apply()` converges and the second
+  call reports `alreadyCanonical: true` with zero PATCH side effects.
+- **`src/cli/configure-github.ts`** — `clud-bug configure-github
+  <owner>/<repo>` with `--dry-run` and `--branch <name>`. Auth ladder:
+  `GITHUB_TOKEN` env first, then `gh auth token`. Helpful exit-1 message
+  if neither produces a token.
+- **`data/canonical-v1.json`** — bundled copy of the protocol repo's
+  canonical-v1 ruleset (`thrillmade/protocol#rulesets/canonical-v1.json`),
+  so the CLI works offline. Loaded once per process by `loadCanonicalV1()`
+  with memoization.
+- Behavior on partial mismatch:
+  - `required_status_checks.contexts` are treated as a **superset** —
+    repos that legitimately require extra CI gates keep them.
+  - `required_approving_review_count` is a **floor** — never lowered.
+  - All other booleans converge exactly.
+
+### Added — SPEC §6.7.3 cache telemetry comment in review doc-files (task #224)
+
+`renderReviewFile()` now accepts an optional `cacheStats: { cachedInputTokens,
+cacheCreationInputTokens }` input. When present, emits a
+`<!-- cache: <read> read · <created> created -->` HTML comment immediately
+below `<!-- review-sha: ... -->` in the SPEC §1.8.1 doc-file. Absent input
+renders nothing (backwards-compat). Lights up post-hoc cost analysis on
+the committed doc-files — a single `grep '<!-- cache:'` over
+`docs/reviews/PR-*.md` produces the cache-hit-rate time series without
+re-walking workflow logs.
+
+### Added — SPEC §1.8.1 Resolved this round / Still open blocks (task #228)
+
+`renderReviewFile()` now accepts optional `resolvedFindings: Finding[]`
+and `stillOpenFindings: Finding[]` lists. When non-empty, emits the SPEC
+§1.8.1 named blocks (`**Resolved this round:**` and `**Still open:**`)
+AFTER the severity buckets and BEFORE the trailing `---` separator. Each
+bullet carries the (was 🔴 Critical / 🟡 Minor / 🟣 Preexisting) suffix so
+severity changes across rounds are visible without diffing the two doc
+files. Wired to `diffFindings()` from `./diff-findings.ts` (G7.t feedback —
+"1 resolved from prior" status line now backed by the named finding list).
+
+### Tests
+
+- `test/core/configure-github.test.js` — 19 new tests covering fresh repo
+  (404 protection), already-canonical no-op, partial mismatch (single-field
+  PATCH), superset preservation for required_status_checks.contexts,
+  raise-only floor for required_approving_review_count, dry-run skips
+  PATCH, idempotency contract, branch override, non-404 error propagation,
+  CLI wrapper missing-token / malformed-target / already-canonical /
+  dry-run / apply paths.
+- `test/review-writeback.test.js` — already covers the cache comment +
+  resolved/still-open block paths (v0.7.0-rc.3 infrastructure landed
+  alongside the parsePriorReviewFile + diffFindings port).
+
+### Version bumps
+
+- `package.json`: 0.7.0-rc.3 → 0.7.0-rc.4.
+- All 3 workflow templates + `.github/actions/strict-mode-gate/action.yml`:
+  `strict-mode-gate@v0.7.0-rc.3` → `@v0.7.0-rc.4` (release-discipline
+  guard enforces this).
+
+### Architectural lock
+
+Per Bug 9 / Phase 2-4 architecture: clud-bug npm is the **single source
+of truth**. clud-bug-app will consume the new `applyCanonicalRuleset` +
+`renderReviewFile` extensions via the `clud-bug@0.7.0-rc.4` import in a
+follow-up wave AFTER this version is tagged + published. No App-side
+changes ship in this PR.
+
 ## [0.6.34] — 2026-06-02
 
 ### Fixed — `clud-bug-review` emits `neutral` on transient Anthropic API errors (Concern 2 from tokenomics-agent v0.6.14 verification report)

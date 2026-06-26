@@ -18,6 +18,8 @@ clud-bug
 │   └── config.yml
 ├── bin
 │   └── clud-bug.js
+├── data
+│   └── canonical-v1.json
 ├── docs
 │   ├── decisions-branches
 │   ├── reviews
@@ -47,6 +49,7 @@ clud-bug
 │   ├── workflow-ts.yml.tmpl
 │   └── workflow.yml.tmpl
 ├── test
+│   ├── core
 │   ├── golden
 │   ├── agents-md.test.js
 │   ├── audit.test.js
