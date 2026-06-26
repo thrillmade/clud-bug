@@ -50,6 +50,7 @@
   "scripts": {
     "prebuild": "node scripts/gen-version.mjs",
     "build": "tsc -p tsconfig.json",
+    "predev": "node scripts/gen-version.mjs",
     "dev": "tsx src/cli/index.ts",
     "pretest": "node scripts/gen-version.mjs",
     "test": "vitest run",
