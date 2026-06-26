@@ -13,6 +13,12 @@
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "esModuleInterop": false,
+    // ignoreDeprecations: "6.0" is a BLANKET suppressor of every TS6-deprecated
+    // option (esModuleInterop:false, baseUrl, moduleResolution:node, target:es5,
+    // module:amd|umd|systemjs, etc.). We're only relying on the esModuleInterop:false
+    // suppression today, but anyone adding another deprecated option will get the
+    // error silently suppressed — re-evaluate this line whenever this section grows.
+    // Remove entirely when esModuleInterop becomes true; TS7 hard-removes the flag.
     "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
