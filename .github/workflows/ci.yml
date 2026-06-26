@@ -73,10 +73,12 @@ jobs:
         # upstream by the logmind tool — file shellcheck issues against
         # thrillmade/logmind, not here.
         run: |
+          # PR #170 (2026-06-17 stop-the-bleed) deleted clud-bug-review.yml +
+          # claude-code-review.yml — they consumed ANTHROPIC_API_KEY directly
+          # and double-billed alongside the hosted App's AI Gateway path. Removed
+          # from this lint list. clud-bug-audit.yml is on consumer repos only;
+          # never lived in clud-bug itself.
           for wf in .github/workflows/ci.yml \
-                    .github/workflows/clud-bug-review.yml \
-                    .github/workflows/clud-bug-audit.yml \
-                    .github/workflows/clud-bug-self-update.yml \
-                    .github/workflows/claude-code-review.yml; do
-            [ -f "$wf" ] && ./actionlint "$wf"
+                    .github/workflows/clud-bug-self-update.yml; do
+            if [ -f "$wf" ]; then ./actionlint "$wf"; fi
           done
