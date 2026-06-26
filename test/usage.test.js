@@ -202,11 +202,20 @@ test('extractTokensFromLog: log without token fields returns ok:false (job error
 
 // --- rollup ---
 
+// Default fixture createdAt is "7 days ago" relative to test-run time —
+// keeps the fixture inside the rollup's 30-day current window even as the
+// system clock advances. Previously a hardcoded literal (2026-05-25) drifted
+// outside the window once the calendar moved on, inverting the "no prior
+// window" test semantics. The relative form is stable across clock motion.
+const DEFAULT_FIXTURE_CREATED_AT = new Date(
+  Date.now() - 7 * 24 * 60 * 60 * 1000,
+).toISOString();
+
 function fixture(repo, pr, modifier = {}) {
   return {
     repo,
     pr,
-    createdAt: modifier.createdAt || '2026-05-25T00:00:00Z',
+    createdAt: modifier.createdAt || DEFAULT_FIXTURE_CREATED_AT,
     model: modifier.model || 'claude-sonnet-4-6',
     tokens: { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 9000, cache_creation_input_tokens: 0 },
     additions: modifier.additions ?? 100,

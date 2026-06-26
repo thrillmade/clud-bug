@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 
 export const runtime = 'edge';
-export const alt = 'Clud Bug — a field guide to specimens crawling your code';
+export const alt = 'Clud Bug — AI PR review with project-aware skills. Install the GitHub App.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -12,7 +12,6 @@ const INK = '#2b2418';
 const INK_SOFT = '#6b5a40';
 const INK_FAINT = '#7e6840';
 const LEAF = '#5a8a2e';
-const CITRUS = '#d97a2e';
 
 type FontWeight = 300 | 500;
 type FontVariant = {
@@ -151,8 +150,8 @@ export default async function OG() {
             color: INK_FAINT,
           }}
         >
-          <span>npx clud-bug init</span>
-          <span>github.com/thrillmade/clud-bug</span>
+          <span>Install the GitHub App</span>
+          <span>cludbug.dev</span>
         </div>
 
         {/* Left margin: plate number + bug */}
@@ -225,7 +224,7 @@ export default async function OG() {
               lineHeight: 1.2,
             }}
           >
-            A field naturalist for your codebase.
+            AI PR review with project-aware skills.
           </div>
           <div
             style={{
@@ -239,24 +238,25 @@ export default async function OG() {
             — Cluddus bugfindii, observed crawling on every PR.
           </div>
 
-          {/* Install pill — JetBrains Mono if loaded, otherwise default fallback */}
+          {/* Primary CTA pill — leaf-green on cream, matches the in-page button */}
           <div
             style={{
               marginTop: 44,
-              padding: '18px 28px',
-              background: PAPER_WARM,
+              padding: '20px 32px',
+              background: LEAF,
+              color: PAPER,
               border: `1px solid ${INK}`,
               boxShadow: `8px 8px 0 ${PAPER_SHADOW}`,
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: 32,
-              color: INK,
+              fontStyle: 'italic',
+              fontSize: 34,
+              fontWeight: 500,
               alignSelf: 'flex-start',
               display: 'flex',
               alignItems: 'center',
             }}
           >
-            <span style={{ color: CITRUS, marginRight: 14, fontWeight: 700 }}>$</span>
-            npx clud-bug init
+            <span style={{ marginRight: 18, fontFamily: '"JetBrains Mono", monospace', fontStyle: 'normal', fontWeight: 700, color: PAPER_WARM }}>→</span>
+            Install the GitHub App
           </div>
         </div>
       </div>
