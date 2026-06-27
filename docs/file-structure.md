@@ -61,6 +61,7 @@ clud-bug
 │   ├── edit-workflow.test.js
 │   ├── formal-review.test.js
 │   ├── init-with-skdd.test.js
+│   ├── inline-threads.test.js
 │   ├── prompt-builder.test.js
 │   ├── prompts.eval.test.js
 │   ├── prompts.test.js
