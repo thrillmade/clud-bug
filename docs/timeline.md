@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (46 decisions)
+## 2026-06 (47 decisions)
 
-- **2026-06-25** — Migrate clud-bug toolchain from TypeScript 5.5 to TypeScript 6.0 *(chore/ts6-migration-ignore-deprecations)* — [decisions-branches/chore__ts6-migration-ignore-deprecations.md](decisions-branches/chore__ts6-migration-ignore-deprecations.md)
-- *... 44 more decisions ...*
+- **2026-06-27** — Wave 4e.2 (rc.6) — extend SkillFrontmatter + appliesToAuthor helper *(feat/rc6-applies-to-author-filter)* — [decisions-branches/feat__rc6-applies-to-author-filter.md](decisions-branches/feat__rc6-applies-to-author-filter.md)
+- *... 45 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
