@@ -283,6 +283,21 @@ jobs:
 
           $CALIBRATION"
 
+      # Wave 5a (D.2.X) — see workflow.yml.tmpl for design notes.
+      - name: Post inline review threads
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          RESULT=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-inline-threads --stdin)
+          echo "::notice title=inline-threads::$RESULT"
+
       # v0.6.29 / Component 4 — see workflow.yml.tmpl for design notes.
       - name: Update skill-usage tracking
         if: success() && steps.clud-bug-review.outputs.structured_output != ''
@@ -366,7 +381,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.6
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].

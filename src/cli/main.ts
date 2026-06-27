@@ -161,6 +161,15 @@ Commands:
                         STRICT_MODE ("true"/"false"). Empty/malformed stdin →
                         exits 0 with "skip" on stdout (no-op; workflow degrades
                         gracefully to the existing comment-only behavior).
+  post-inline-threads   Post per-finding inline review threads (D.2.X). Reads a
+   --stdin               structured-output JSON payload from stdin, fetches the
+                        PR diff via \`gh api\`, posts one batched review with one
+                        comment per anchorable finding. Each comment body carries
+                        a hidden \`<!-- finding-id: <hash> --> \`marker so Wave 5b
+                        auto-resolve can re-match findings on subsequent pushes
+                        without persistent state. Required env vars: GH_TOKEN,
+                        REPO ("owner/name"), PR_NUMBER, HEAD_SHA. Output is a
+                        JSON status report \`{posted, skipped, preexisting, error?}\`.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -219,6 +228,7 @@ async function main() {
     case 'render':  return runRender(args);
     case 'update-skill-usage': return runUpdateSkillUsage(args);
     case 'select-review-event': return runSelectReviewEvent(args);
+    case 'post-inline-threads': return runPostInlineThreads(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
@@ -500,6 +510,201 @@ async function runSelectReviewEvent(args) {
     authorAssociation,
   });
   process.stdout.write(event + '\n');
+}
+
+
+// Wave 5a / 0.7.0-rc.7: post per-finding inline review threads (D.2.X)
+// to the PR.  Replaces the legacy "one summary comment listing every
+// finding" UX with first-class GitHub review threads users can reply to
+// and (in Wave 5b) the bot can auto-resolve on fix-push.
+//
+// Pipeline:
+//   1. Read the structured review JSON from stdin (same shape the
+//      `render` and `update-skill-usage` verbs consume).
+//   2. Fetch the PR's per-file diff via `gh api repos/.../pulls/N/files`.
+//   3. Call `planInlineThreads(findings, diffFiles)` from
+//      `clud-bug/core/inline-threads` to partition into anchored
+//      `comments[]` + skipped + preexisting buckets.
+//   4. If any comments survive: POST one batched review via
+//      `gh api -X POST repos/.../pulls/N/reviews` with `event: COMMENT`.
+//      Each comment body carries a hidden `<!-- finding-id: <hash> -->`
+//      marker so Wave 5b auto-resolve can re-derive the same ids on
+//      subsequent pushes without a persistent store.
+//   5. Emit a JSON summary on stdout (`{posted, skipped, preexisting}`).
+//
+// Required env vars (the workflow template provides all of them):
+//   GH_TOKEN, REPO ("owner/name"), PR_NUMBER, HEAD_SHA
+//
+// Failure posture: any `gh api` failure is logged to stderr + emitted in
+// the stdout JSON as `error`, but the verb exits 0 so the surrounding
+// workflow step's `continue-on-error: true` is the single source of
+// failure semantics. Mirrors the `render` / `update-skill-usage` posture.
+async function runPostInlineThreads(args) {
+  const { planInlineThreads } = await import('../core/inline-threads.js');
+
+  if (!args.stdin) {
+    process.stderr.write(
+      'clud-bug post-inline-threads: --stdin is required.\n',
+    );
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], error: 'no-stdin' }) + '\n');
+    return;
+  }
+
+  let raw = '';
+  for await (const chunk of process.stdin) raw += chunk;
+  raw = raw.trim();
+  if (!raw) {
+    process.stderr.write(
+      'clud-bug post-inline-threads: stdin empty — no-op.\n',
+    );
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], error: 'empty-stdin' }) + '\n');
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (e) {
+    process.stderr.write(
+      `clud-bug post-inline-threads: JSON parse failed: ${e.message} — no-op.\n`,
+    );
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], error: 'parse-failed' }) + '\n');
+    return;
+  }
+  if (!payload || typeof payload !== 'object') {
+    process.stderr.write(
+      'clud-bug post-inline-threads: payload must be a JSON object — no-op.\n',
+    );
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], error: 'not-object' }) + '\n');
+    return;
+  }
+
+  // Pull findings from the structured_output shape — same field names as
+  // the SPEC §1.8.1 review schema the model emits.
+  const findings = [];
+  for (const f of Array.isArray(payload.critical_findings) ? payload.critical_findings : []) {
+    if (f && typeof f === 'object') {
+      findings.push({ ...f, severity: 'critical' });
+    }
+  }
+  for (const f of Array.isArray(payload.minor_findings) ? payload.minor_findings : []) {
+    if (f && typeof f === 'object') {
+      findings.push({ ...f, severity: 'minor' });
+    }
+  }
+  // `preexisting_findings` are intentionally not threaded (informational
+  // about prior code; not a reason to block this PR). `planInlineThreads`
+  // partitions them into the `preexisting` bucket if any are included, but
+  // the workflow path doesn't ship them — keep the payload focused.
+
+  if (findings.length === 0) {
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], reason: 'no-findings' }) + '\n');
+    return;
+  }
+
+  // Required env vars.
+  const repo = String(process.env.REPO ?? '').trim();
+  const prNumberRaw = String(process.env.PR_NUMBER ?? '').trim();
+  const headSha = String(process.env.HEAD_SHA ?? '').trim();
+  const prNumber = Number(prNumberRaw);
+  if (!repo || !repo.includes('/') || !Number.isInteger(prNumber) || prNumber <= 0 || !headSha) {
+    process.stderr.write(
+      `clud-bug post-inline-threads: REPO + PR_NUMBER + HEAD_SHA env vars required (got REPO=${repo}, PR_NUMBER=${prNumberRaw}, HEAD_SHA=${headSha ? '<set>' : '<unset>'}).\n`,
+    );
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], error: 'missing-env' }) + '\n');
+    return;
+  }
+
+  // Fetch the PR's diff. `gh api repos/.../pulls/N/files --paginate`
+  // returns a JSON array of {filename, patch, status, ...}. The single
+  // -slurp on multi-page output stitches all pages into one big array.
+  const filesResult = spawnSync(
+    'gh',
+    [
+      'api',
+      `repos/${repo}/pulls/${prNumber}/files`,
+      '--paginate',
+      '--slurp',
+    ],
+    { encoding: 'utf8' },
+  );
+  if (filesResult.status !== 0) {
+    process.stderr.write(
+      `clud-bug post-inline-threads: \`gh api .../files\` failed (exit ${filesResult.status}): ${(filesResult.stderr || '').slice(0, 500)}\n`,
+    );
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], error: 'diff-fetch-failed' }) + '\n');
+    return;
+  }
+
+  let diffFiles = [];
+  try {
+    // --slurp wraps each page in an outer array; flatten one level.
+    const pages = JSON.parse(filesResult.stdout);
+    if (Array.isArray(pages)) {
+      for (const page of pages) {
+        if (Array.isArray(page)) diffFiles.push(...page);
+      }
+    }
+  } catch (e) {
+    process.stderr.write(
+      `clud-bug post-inline-threads: diff JSON parse failed: ${e.message}\n`,
+    );
+    process.stdout.write(JSON.stringify({ posted: 0, skipped: [], preexisting: [], error: 'diff-parse-failed' }) + '\n');
+    return;
+  }
+
+  const plan = planInlineThreads(findings, diffFiles);
+  if (plan.comments.length === 0) {
+    // Everything fell through to summary-comment fallback (no anchor
+    // matches). Not a failure — emit the breakdown so the workflow log
+    // explains why no inline threads were posted.
+    process.stdout.write(JSON.stringify({
+      posted: 0,
+      skipped: plan.skipped.map((f) => ({ skill: f.skill, file: f.file, line: f.line, reason: 'not-anchorable' })),
+      preexisting: plan.preexisting.map((f) => ({ skill: f.skill })),
+      reason: 'no-anchorable-findings',
+    }) + '\n');
+    return;
+  }
+
+  // Post the review. gh accepts the body as a JSON file via --input — we
+  // pipe through stdin with `--input -`. Build the body as JSON-on-one-line
+  // so stdin is a single write that `gh` reads start-to-finish.
+  const reviewBody = JSON.stringify({
+    commit_id: headSha,
+    event: 'COMMENT',
+    body: `Clud-Bug posted ${plan.comments.length} inline finding${plan.comments.length === 1 ? '' : 's'}.`,
+    comments: plan.comments,
+  });
+
+  const postResult = spawnSync(
+    'gh',
+    [
+      'api',
+      '--method', 'POST',
+      `repos/${repo}/pulls/${prNumber}/reviews`,
+      '--input', '-',
+    ],
+    { encoding: 'utf8', input: reviewBody },
+  );
+  if (postResult.status !== 0) {
+    process.stderr.write(
+      `clud-bug post-inline-threads: \`gh api -X POST .../reviews\` failed (exit ${postResult.status}): ${(postResult.stderr || '').slice(0, 500)}\n`,
+    );
+    process.stdout.write(JSON.stringify({
+      posted: 0,
+      skipped: plan.skipped.map((f) => ({ skill: f.skill, file: f.file, line: f.line, reason: 'not-anchorable' })),
+      preexisting: plan.preexisting.map((f) => ({ skill: f.skill })),
+      error: 'review-post-failed',
+    }) + '\n');
+    return;
+  }
+
+  process.stdout.write(JSON.stringify({
+    posted: plan.comments.length,
+    skipped: plan.skipped.map((f) => ({ skill: f.skill, file: f.file, line: f.line, reason: 'not-anchorable' })),
+    preexisting: plan.preexisting.map((f) => ({ skill: f.skill })),
+  }) + '\n');
 }
 
 
