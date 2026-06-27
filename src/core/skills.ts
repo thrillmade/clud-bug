@@ -285,6 +285,54 @@ export function appliesToPr(skillContent: unknown, prPaths: unknown): boolean {
   return false;
 }
 
+// v0.7.0-rc.6 (SPEC §1.10.1 v0.5.1+) — does this skill apply to a PR
+// opened by `prAuthor`? Reads `applies_to.author` from the raw SKILL.md
+// frontmatter. Returns:
+//   - `true` if `applies_to.author` is absent (no author filter set —
+//     skill loads regardless of author; v0.5.0 backward-compat default).
+//   - `true` if `applies_to.author === prAuthor` (case-sensitive match
+//     against the PR author's GitHub login).
+//   - `false` if `applies_to.author` is set to a different login.
+//
+// Designed to mirror `appliesToPr`'s signature (raw skill content +
+// runtime PR context) so consumers can call both filters in a single
+// loader pass. Skills with NO `applies_to` block at all also return
+// `true` (the existing v0.5.0 unconditional-load behavior).
+//
+// Strict-AND composition per SPEC §1.10.1: when a skill sets BOTH
+// `applies_to.author` AND `paths`/`extensions`, callers MUST call BOTH
+// filters and AND the results. This helper only checks the author leg;
+// the caller composes.
+export function appliesToAuthor(
+  skillContent: unknown,
+  prAuthor: unknown,
+): boolean {
+  if (typeof skillContent !== 'string') return true;
+  const fm = skillContent.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return true;
+  const block = fm[1] as string;
+  // Look for `applies_to:` block; if absent, no author constraint.
+  const head = block.match(/^applies_to:\s*$/m);
+  if (!head) return true;
+  const startIdx = (head.index as number) + head[0].length;
+  const rest = block.slice(startIdx);
+  // The block ends at the next top-level key (line starting with a
+  // word char + `:`) OR end-of-block. Mirrors `readAppliesTo`.
+  const stop = rest.search(/^\w[\w-]*:/m);
+  const scoped = stop === -1 ? rest : rest.slice(0, stop);
+  // Match `  author: <value>` — single string scalar; strip optional
+  // quotes. `author: [a, b]` form is intentionally NOT supported
+  // (SPEC: "single GitHub login string, no list").
+  const authorMatch = scoped.match(/^\s{2}author:\s*(.+?)\s*$/m);
+  if (!authorMatch) return true;
+  const declared = (authorMatch[1] as string)
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  if (!declared) return true; // empty value treated as unset
+  if (typeof prAuthor !== 'string' || !prAuthor) return false;
+  return declared === prAuthor;
+}
+
 // Minimal glob → regex: `**` → `.*`, `*` → `[^/]*`, `?` → `.`,
 // everything else escaped. Anchored full-string match.
 function globMatch(glob: string, path: string): boolean {
@@ -601,14 +649,39 @@ export type SkillReviewMode = 'shared' | 'dedicated';
  * `PromptSkillFrontmatter` is a narrower subset (name + description +
  * applies_to) so we keep the full shape here.
  */
+export type SkillKind = 'rule' | 'voice';
+export type VoiceScope = 'personal' | 'team' | 'org' | 'community';
+
 export interface SkillFrontmatter {
   name: string;
   description: string;
   source: SkillSource | string; // string fallback for forward-compat
   review_mode: SkillReviewMode;
+  /**
+   * SPEC §1.10.1 v0.5.0+ skill classification. OPTIONAL — absent =
+   * `kind: rule` (the v0.4.0 default). Surfaced on the parsed
+   * frontmatter (v0.7.0-rc.6+) so consumers can route on the field;
+   * v0.7.0-rc.5 and earlier silently dropped it.
+   */
+  kind?: SkillKind;
+  /**
+   * SPEC §1.10.1 v0.5.0+ voice scope. REQUIRED when `kind: voice`,
+   * absent otherwise. Surfaced on the parsed frontmatter (v0.7.0-rc.6+).
+   */
+  voice_scope?: VoiceScope;
   applies_to?: {
     paths?: string[];
     extensions?: string[];
+    /**
+     * SPEC §1.10.1 v0.5.1+ — single GitHub login string (no `@`
+     * prefix, no list). When present, the skill MUST only load when
+     * `pull_request.user.login === author`. Filters via strict AND
+     * with the sibling `paths` + `extensions` filters when all are
+     * present. v0.7.0-rc.5 and earlier silently dropped this field
+     * (treated skills as if it were absent — load unconditionally);
+     * v0.7.0-rc.6+ enforces the filter via `appliesToAuthor`.
+     */
+    author?: string;
   };
 }
 
@@ -691,8 +764,26 @@ export function parseFrontmatter(raw: string): SkillFrontmatter {
   const reviewMode: SkillReviewMode =
     out['review_mode'] === 'dedicated' ? 'dedicated' : 'shared';
 
+  // v0.7.0-rc.6 — surface SPEC §1.10.1 v0.5.0+ kind + voice_scope on
+  // the parsed frontmatter. v0.7.0-rc.5 silently dropped these fields
+  // (the Wave 4d reviewer-flagged silent-drop). Validation is lenient:
+  // unknown values are surfaced as undefined so downstream code sees a
+  // clean type rather than a malformed value. SPEC enforcement (e.g.,
+  // "voice_scope REQUIRED when kind: voice") is the caller's job.
+  const kindRaw = out['kind'];
+  const kind: SkillKind | undefined =
+    kindRaw === 'voice' ? 'voice' : kindRaw === 'rule' ? 'rule' : undefined;
+  const voiceScopeRaw = out['voice_scope'];
+  const voiceScope: VoiceScope | undefined =
+    voiceScopeRaw === 'personal' ||
+    voiceScopeRaw === 'team' ||
+    voiceScopeRaw === 'org' ||
+    voiceScopeRaw === 'community'
+      ? voiceScopeRaw
+      : undefined;
+
   const appliesToRaw = out['applies_to'] as
-    | { paths?: unknown; extensions?: unknown }
+    | { paths?: unknown; extensions?: unknown; author?: unknown }
     | undefined;
   let appliesTo: SkillFrontmatter['applies_to'] | undefined;
   if (appliesToRaw) {
@@ -702,9 +793,19 @@ export function parseFrontmatter(raw: string): SkillFrontmatter {
     const extensions = Array.isArray(appliesToRaw.extensions)
       ? appliesToRaw.extensions.map(String)
       : undefined;
+    // v0.7.0-rc.6 — SPEC §1.10.1 v0.5.1+ author filter. Single string
+    // only; reject lists + falsy values to keep the filter contract
+    // unambiguous (a future SPEC could broaden to lists if customer
+    // demand argues for it).
+    const authorRaw = appliesToRaw.author;
+    const author =
+      typeof authorRaw === 'string' && authorRaw.trim().length > 0
+        ? authorRaw.trim()
+        : undefined;
     appliesTo = {
       ...(paths !== undefined ? { paths } : {}),
       ...(extensions !== undefined ? { extensions } : {}),
+      ...(author !== undefined ? { author } : {}),
     };
   }
 
@@ -713,6 +814,8 @@ export function parseFrontmatter(raw: string): SkillFrontmatter {
     description,
     source,
     review_mode: reviewMode,
+    ...(kind !== undefined ? { kind } : {}),
+    ...(voiceScope !== undefined ? { voice_scope: voiceScope } : {}),
     ...(appliesTo !== undefined ? { applies_to: appliesTo } : {}),
   };
 }

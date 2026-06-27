@@ -172,6 +172,7 @@ export {
   readReviewMode,
   readAppliesTo,
   appliesToPr,
+  appliesToAuthor,
   partitionByReviewMode,
   extractPerSkillLine,
   selectReviewHeader,
@@ -191,4 +192,6 @@ export {
   type SkillFrontmatter,
   type SkillSource,
   type SkillReviewMode,
+  type SkillKind,
+  type VoiceScope,
 } from './skills.js';

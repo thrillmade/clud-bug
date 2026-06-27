@@ -10,7 +10,7 @@
 import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 
-import { parseFrontmatter, stripFrontmatter } from '../src/core/skills.js';
+import { appliesToAuthor, parseFrontmatter, stripFrontmatter } from '../src/core/skills.js';
 
 // ---------------------------------------------------------------------------
 // Valid frontmatter
@@ -229,4 +229,181 @@ test('stripFrontmatter: handles CRLF line endings', () => {
   const raw = MINIMAL_VALID.replace(/\n/g, '\r\n');
   const body = stripFrontmatter(raw);
   assert.ok(body.includes('Body text here.'));
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.0-rc.6 — SPEC v0.5.0+ kind + voice_scope surfaced on frontmatter
+// (Wave 4d reviewer-flagged silent-drop, now formalized in v0.5.1)
+// ---------------------------------------------------------------------------
+
+test('parseFrontmatter: kind: voice + voice_scope: org surfaced on parsed frontmatter', () => {
+  const raw = `---
+name: voice-acme
+description: Acme org voice for the bot.
+kind: voice
+voice_scope: org
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.kind, 'voice');
+  assert.equal(fm.voice_scope, 'org');
+});
+
+test('parseFrontmatter: kind: rule surfaced explicitly', () => {
+  const raw = `---
+name: my-rule
+description: A rule skill.
+kind: rule
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.kind, 'rule');
+});
+
+test('parseFrontmatter: unknown kind silently drops (defensive)', () => {
+  const raw = `---
+name: weird
+description: Weird kind.
+kind: enterprise
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.kind, undefined);
+});
+
+test('parseFrontmatter: unknown voice_scope silently drops', () => {
+  const raw = `---
+name: weird-voice
+description: Weird scope.
+kind: voice
+voice_scope: galaxy
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.kind, 'voice');
+  assert.equal(fm.voice_scope, undefined);
+});
+
+test('parseFrontmatter: absent kind + voice_scope → both undefined (v0.5.0 default)', () => {
+  const fm = parseFrontmatter(MINIMAL_VALID);
+  assert.equal(fm.kind, undefined);
+  assert.equal(fm.voice_scope, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.0-rc.6 — SPEC v0.5.1 applies_to.author field
+// ---------------------------------------------------------------------------
+
+test('parseFrontmatter: applies_to.author surfaces a single login string', () => {
+  const raw = `---
+name: conventions-ludlow
+description: ludlow's review conventions.
+kind: rule
+applies_to:
+  author: ludlow
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.applies_to?.author, 'ludlow');
+});
+
+test('parseFrontmatter: applies_to.author with paths + author composes both', () => {
+  const raw = `---
+name: conventions-ludlow-ts
+description: ludlow's TS conventions.
+kind: rule
+applies_to:
+  paths: ["src/**"]
+  author: ludlow
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.deepEqual(fm.applies_to?.paths, ['src/**']);
+  assert.equal(fm.applies_to?.author, 'ludlow');
+});
+
+test('parseFrontmatter: empty author string drops (treated as absent)', () => {
+  const raw = `---
+name: empty-author
+description: Empty author.
+applies_to:
+  author: ""
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.applies_to?.author, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.0-rc.6 — appliesToAuthor helper (SPEC §1.10.1 v0.5.1)
+// ---------------------------------------------------------------------------
+
+const AUTHOR_LUDLOW_SKILL = `---
+name: conventions-ludlow
+description: ludlow's review conventions.
+kind: rule
+applies_to:
+  author: ludlow
+---
+Body.
+`;
+
+const QUOTED_AUTHOR_SKILL = `---
+name: conventions-ludlow
+description: ludlow's review conventions.
+applies_to:
+  author: "ludlow"
+---
+Body.
+`;
+
+const NO_AUTHOR_SKILL = `---
+name: critical-issues-only
+description: No author filter.
+applies_to:
+  paths: ["src/**"]
+---
+Body.
+`;
+
+test('appliesToAuthor: matching author → true', () => {
+  assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, 'ludlow'), true);
+});
+
+test('appliesToAuthor: non-matching author → false', () => {
+  assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, 'alice'), false);
+});
+
+test('appliesToAuthor: case-sensitive (GitHub logins are not interchangeable case-wise)', () => {
+  assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, 'Ludlow'), false);
+});
+
+test('appliesToAuthor: quoted author value strips quotes', () => {
+  assert.equal(appliesToAuthor(QUOTED_AUTHOR_SKILL, 'ludlow'), true);
+});
+
+test('appliesToAuthor: no applies_to.author → true regardless of PR author (backward-compat)', () => {
+  assert.equal(appliesToAuthor(NO_AUTHOR_SKILL, 'anyone'), true);
+  assert.equal(appliesToAuthor(NO_AUTHOR_SKILL, ''), true);
+});
+
+test('appliesToAuthor: no frontmatter → true (defensive, never throws)', () => {
+  assert.equal(appliesToAuthor('Plain markdown.', 'ludlow'), true);
+});
+
+test('appliesToAuthor: empty PR author + author filter set → false', () => {
+  assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, ''), false);
+});
+
+test('appliesToAuthor: non-string skill content → true (defensive)', () => {
+  assert.equal(appliesToAuthor(undefined, 'ludlow'), true);
+  assert.equal(appliesToAuthor(null, 'ludlow'), true);
+  assert.equal(appliesToAuthor(42, 'ludlow'), true);
 });
