@@ -151,6 +151,28 @@ export {
   type ParsedFinding,
   type ParsedReview,
 } from './diff-findings.js';
+// Wave 5a — D.2.X per-finding inline review threads. Pure helpers
+// (anchor detection, comment rendering, plan partitioning) + the GraphQL
+// constants the CLI's `post-inline-threads` verb invokes via `gh api`.
+// `findingId` returns the SHA-256[:16] hash and is distinct from the
+// plain-string `findingIdentity` above (both serve different matchers).
+export {
+  findingId,
+  parseHeadLines,
+  findingAnchorable,
+  extractAnchorContext,
+  renderThreadBody,
+  extractFindingIdFromBody,
+  planInlineThreads,
+  REVIEW_THREADS_QUERY,
+  REVIEW_THREADS_STATE_QUERY,
+  RESOLVE_THREAD_MUTATION,
+  type Severity as InlineThreadSeverity,
+  type FindingForThread,
+  type DiffFile,
+  type InlineCommentPlan,
+  type PlanInlineThreadsResult,
+} from './inline-threads.js';
 // SPEC §7 canonical-ruleset applier. Pure diff + idempotent-PATCH logic;
 // CLI side wraps `gh api` in an Octokit-like adapter and the App passes
 // its real Octokit instance. Shipped in v0.7.0-rc.4 for Marketplace prep

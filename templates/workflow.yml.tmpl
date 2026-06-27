@@ -503,6 +503,35 @@ jobs:
 
           $CALIBRATION"
 
+      # v0.7.0-rc.7 / Wave 5a (D.2.X): post per-finding inline review
+      # threads alongside the summary comment. Each thread is anchored
+      # to a file + line in the diff and is a first-class GitHub review
+      # thread users can reply to. Each thread body carries a hidden
+      # `<!-- finding-id: <hash> -->` marker so Wave 5b (rc.8) auto-
+      # resolve can re-match findings on subsequent fix-pushes without
+      # any persistent state.
+      #
+      # Posted IN ADDITION TO the summary comment above — they serve
+      # different UX needs: the summary is the at-a-glance digest; the
+      # inline threads are where conversation + resolution happens.
+      #
+      # `continue-on-error` so a partial GraphQL/REST failure doesn't
+      # fail the whole review; the verb itself swallows errors into its
+      # stdout JSON and exits 0.
+      - name: Post inline review threads
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          RESULT=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-inline-threads --stdin)
+          echo "::notice title=inline-threads::$RESULT"
+
       # v0.6.29 / Component 4: pipe structured_output through
       # `clud-bug update-skill-usage` to compute the per-skill loads +
       # citations delta from this one review. Writes to the ephemeral
@@ -641,7 +670,7 @@ jobs:
       # Letting the action's own failure fail the check is louder and right.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.6
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: the summary is now posted by the workflow

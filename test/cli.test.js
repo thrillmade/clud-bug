@@ -516,3 +516,79 @@ test('--help advertises select-review-event subcommand', () => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /select-review-event/);
 });
+
+// ---------------------------------------------------------------------------
+// Wave 5a (v0.7.0-rc.7) — post-inline-threads subcommand for the workflow
+// post-step. Same robustness contract as select-review-event: NEVER fails
+// the workflow on caller-side problems — degrades to exit 0 + a JSON
+// status report on stdout. The shell-out paths (gh api) need an integration
+// harness; these tests cover the validation-and-no-op paths.
+// ---------------------------------------------------------------------------
+
+function runPostInlineThreads(input, env = {}) {
+  return run(process.cwd(), ['post-inline-threads', '--stdin'], { input, env });
+}
+
+test('post-inline-threads: empty stdin → no-op with error JSON, exits 0', () => {
+  const r = runPostInlineThreads('', {
+    REPO: 'acme/test',
+    PR_NUMBER: '1',
+    HEAD_SHA: 'a'.repeat(40),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim());
+  assert.equal(out.posted, 0);
+  assert.equal(out.error, 'empty-stdin');
+});
+
+test('post-inline-threads: malformed JSON → no-op with error JSON, exits 0', () => {
+  const r = runPostInlineThreads('not valid json {{{', {
+    REPO: 'acme/test',
+    PR_NUMBER: '1',
+    HEAD_SHA: 'a'.repeat(40),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim());
+  assert.equal(out.posted, 0);
+  assert.equal(out.error, 'parse-failed');
+});
+
+test('post-inline-threads: payload with no findings → no-op with reason=no-findings, exits 0', () => {
+  const payload = JSON.stringify({
+    critical_findings: [],
+    minor_findings: [],
+    preexisting_findings: [],
+  });
+  const r = runPostInlineThreads(payload, {
+    REPO: 'acme/test',
+    PR_NUMBER: '1',
+    HEAD_SHA: 'a'.repeat(40),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim());
+  assert.equal(out.posted, 0);
+  assert.equal(out.reason, 'no-findings');
+});
+
+test('post-inline-threads: missing env vars → no-op with error=missing-env, exits 0', () => {
+  // Has findings but no REPO/PR_NUMBER/HEAD_SHA — must short-circuit before
+  // attempting any gh api call.
+  const payload = JSON.stringify({
+    critical_findings: [
+      { skill: 'critical-issues-only', file: 'src/foo.ts', line: 1, summary: 'bug' },
+    ],
+    minor_findings: [],
+    preexisting_findings: [],
+  });
+  const r = runPostInlineThreads(payload, {}); // empty env, no REPO/PR_NUMBER/HEAD_SHA
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim());
+  assert.equal(out.posted, 0);
+  assert.equal(out.error, 'missing-env');
+});
+
+test('--help advertises post-inline-threads subcommand', () => {
+  const r = run(process.cwd(), ['--help']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /post-inline-threads/);
+});
