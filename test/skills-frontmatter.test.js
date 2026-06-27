@@ -341,6 +341,24 @@ Body.
   assert.equal(fm.applies_to?.author, undefined);
 });
 
+test('parseFrontmatter: empty applies_to block (no sub-keys) → applies_to undefined', () => {
+  // Reviewer-flagged on PR #179: an `applies_to:` block with no
+  // sub-keys was emitting `applies_to: {}` on the parsed
+  // frontmatter, leaking into the prompt as JSON noise and
+  // diverging semantically from readAppliesTo's null return for
+  // the same input. The fix omits applies_to entirely when no
+  // sub-field is present.
+  const raw = `---
+name: no-filters
+description: Empty applies_to.
+applies_to:
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.applies_to, undefined);
+});
+
 // ---------------------------------------------------------------------------
 // v0.7.0-rc.6 — appliesToAuthor helper (SPEC §1.10.1 v0.5.1)
 // ---------------------------------------------------------------------------
@@ -381,8 +399,14 @@ test('appliesToAuthor: non-matching author → false', () => {
   assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, 'alice'), false);
 });
 
-test('appliesToAuthor: case-sensitive (GitHub logins are not interchangeable case-wise)', () => {
-  assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, 'Ludlow'), false);
+test('appliesToAuthor: case-insensitive (GitHub logins route case-insensitively)', () => {
+  // GitHub treats `Ludlow` and `ludlow` as the same user. Skill
+  // authors may capitalize differently from what the webhook
+  // delivers; matching MUST be case-insensitive so authoring style
+  // doesn't silently break filtering. Reviewer-flagged Important
+  // on PR #179.
+  assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, 'Ludlow'), true);
+  assert.equal(appliesToAuthor(AUTHOR_LUDLOW_SKILL, 'LUDLOW'), true);
 });
 
 test('appliesToAuthor: quoted author value strips quotes', () => {

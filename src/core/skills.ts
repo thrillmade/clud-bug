@@ -330,7 +330,13 @@ export function appliesToAuthor(
     .replace(/^["']|["']$/g, '');
   if (!declared) return true; // empty value treated as unset
   if (typeof prAuthor !== 'string' || !prAuthor) return false;
-  return declared === prAuthor;
+  // GitHub logins are case-insensitive (GitHub rejects creating two
+  // accounts that differ only in case; `pull_request.user.login` is
+  // case-preserved but routing is not case-sensitive). Compare
+  // case-insensitively so a skill author writing `Thrillmot` still
+  // matches a webhook delivering `thrillmot` (or vice versa).
+  // Reviewer-flagged Important on PR #179.
+  return declared.toLowerCase() === prAuthor.toLowerCase();
 }
 
 // Minimal glob → regex: `**` → `.*`, `*` → `[^/]*`, `?` → `.`,
@@ -802,11 +808,19 @@ export function parseFrontmatter(raw: string): SkillFrontmatter {
       typeof authorRaw === 'string' && authorRaw.trim().length > 0
         ? authorRaw.trim()
         : undefined;
-    appliesTo = {
-      ...(paths !== undefined ? { paths } : {}),
-      ...(extensions !== undefined ? { extensions } : {}),
-      ...(author !== undefined ? { author } : {}),
-    };
+    // Reviewer-flagged Important on PR #179: an empty `applies_to:`
+    // block (no sub-keys) was emitting `applies_to: {}` on the
+    // returned frontmatter, which leaked into the prompt builder as
+    // JSON noise + semantically diverged from readAppliesTo's null
+    // return for the same input. Only construct appliesTo when at
+    // least one sub-field is present.
+    if (paths !== undefined || extensions !== undefined || author !== undefined) {
+      appliesTo = {
+        ...(paths !== undefined ? { paths } : {}),
+        ...(extensions !== undefined ? { extensions } : {}),
+        ...(author !== undefined ? { author } : {}),
+      };
+    }
   }
 
   return {
