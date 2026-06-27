@@ -267,7 +267,10 @@ export function renderThreadBody(finding: FindingForThread): string {
  * GitHub threads on a stateless re-run.
  */
 export function extractFindingIdFromBody(body: string): string | null {
-  const m = body.match(/<!--\s*finding-id:\s*([a-f0-9]{16})\s*-->/);
+  // Anchor to start-of-string so a user reply that quotes the marker can't be
+  // misattributed as bot-authored. `renderThreadBody` always places the marker
+  // on line 1 — anything else is suspect input.
+  const m = body.match(/^<!--\s*finding-id:\s*([a-f0-9]{16})\s*-->/);
   return m ? m[1]! : null;
 }
 
@@ -361,6 +364,11 @@ export const REVIEW_THREADS_QUERY = `
   }
 `;
 
+// Includes `body` (unlike the App's lighter state query, which omits it) so
+// Wave 5b's auto-resolve can re-derive the `findingId` from the
+// `<!-- finding-id: ... -->` marker on each thread's first comment WITHOUT
+// persisting state between fix-pushes. The npm workflow is stateless; the
+// body field is the substitute for Redis-backed thread-id correlation.
 export const REVIEW_THREADS_STATE_QUERY = `
   query ReviewThreadStates($owner: String!, $repo: String!, $pr: Int!) {
     repository(owner: $owner, name: $repo) {

@@ -308,6 +308,21 @@ describe('renderThreadBody + extractFindingIdFromBody', () => {
     expect(extractFindingIdFromBody('<!-- finding-id: deadbeef -->')).toBeNull(); // 8 chars, not 16
     expect(extractFindingIdFromBody('<!-- finding-id: deadbeefdeadbeefXX -->')).toBeNull(); // non-hex
   });
+
+  it('returns null when marker appears mid-body (anti-injection — user reply quoting the marker)', () => {
+    // A human replying to the inline thread might paste/quote the marker
+    // text. The extractor MUST NOT match it as bot-authored — `renderThreadBody`
+    // always places the canonical marker as the first line of the original
+    // comment, so anything mid-body is suspect input from a downstream reply.
+    const body =
+      '> The original finding id was <!-- finding-id: deadbeefdeadbeef -->\n\nI disagree with this finding.';
+    expect(extractFindingIdFromBody(body)).toBeNull();
+  });
+
+  it('extracts the marker when it is on the very first line (the canonical place)', () => {
+    const body = '<!-- finding-id: 0123456789abcdef -->\nrest of comment';
+    expect(extractFindingIdFromBody(body)).toBe('0123456789abcdef');
+  });
 });
 
 // ---------------------------------------------------------------------------
