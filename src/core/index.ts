@@ -265,6 +265,14 @@ export {
   type VerifierBudgetVerdict,
 } from './budget-plan.js';
 export {
+  planReview,
+  LARGE_DIFF_THRESHOLD_BYTES,
+  type PlanReviewInput,
+  type ReviewPlan,
+  type ReviewTrigger,
+  type TierDownReason,
+} from './plan-review.js';
+export {
   aggregatePasses,
   deriveConsensus,
   resolveVerdict,
