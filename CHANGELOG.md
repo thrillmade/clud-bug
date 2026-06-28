@@ -4,6 +4,27 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.10] — 2026-06-28
+
+Wave 6a — SPEC v0.5.1 conformance closure.
+
+### Added
+
+- **§6.6 conformance-fixture gate** — `fixtures/reviews/<scenario>/{input.json,
+  expected.md}` for 5 canonical scenarios (clean, critical-only, mixed-severities,
+  resolved-from-prior, dedicated-section). `scripts/fixture-check.mjs` renders each
+  `input.json` through `renderReview` and asserts byte-identity with the committed
+  golden (`--update` regenerates). Wired into CI as `npm run test:fixtures`, so a
+  renderer change that alters the comment shape now fails the build until the
+  goldens are reviewed + regenerated.
+
+### Changed
+
+- **§3.23.1 `configure-github` status payload** — the idempotent no-op now prints
+  `alreadyCanonical: true rulesetVersion: v1` as named fields (was embedded prose),
+  satisfying the NORMATIVE §3.23.1 contract. New `--json` flag emits the payload as
+  JSON for machine consumption across all outcomes.
+
 ## [0.7.0-rc.9] — 2026-06-28
 
 Graceful PAT-or-fallback auto-resolve (Wave 5b.1). The `resolveReviewThread`

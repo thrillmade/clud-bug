@@ -38,6 +38,8 @@ export interface RunConfigureGithubOptions {
   dryRun?: boolean;
   /** Suppress progress chatter; emit only the final `ok` summary. */
   quiet?: boolean;
+  /** Emit the SPEC §3.23.1 status payload as JSON instead of key-colon-value. */
+  json?: boolean;
   /** Resolver for the GitHub token (tests pass a stub). */
   resolveToken?: () => Promise<string | null>;
   /** Octokit factory (tests inject a fake; defaults to the gh-adapter). */
@@ -57,6 +59,7 @@ Options:
   --dry-run         Compute diff and print it, but do NOT call PATCH endpoints.
   --branch <name>   Target branch (default: main).
   --quiet,-q        Suppress progress chatter; emit only the final summary.
+  --json            Emit the status payload as JSON (machine consumption).
   --help,-h         Show this help.
 
 Auth (resolved in order):
@@ -68,6 +71,40 @@ Exit codes:
   1  auth missing, PATCH error, or unrecoverable transport failure
   2  CLI usage error (missing target, bad flag)
 `;
+
+/** Resolved outcome of a configure-github run, for the §3.23.1 status payload. */
+export interface ConfigureSummary {
+  owner: string;
+  repo: string;
+  /** True when the repo already matches canonical-v1 (idempotent no-op). */
+  alreadyCanonical: boolean;
+  /** True when this was a --dry-run (no PATCH calls made). */
+  dryRun: boolean;
+  /** Number of changes (applied, or pending for dry-run; 0 for a no-op). */
+  changes: number;
+}
+
+/**
+ * SPEC §3.23.1 (NORMATIVE): emit a single-line status payload carrying
+ * `alreadyCanonical` + `rulesetVersion` as named fields — JSON for machine
+ * consumption, key-colon-value for humans.
+ */
+export function formatConfigureSummary(summary: ConfigureSummary, json: boolean): string {
+  const { owner, repo, alreadyCanonical, dryRun, changes } = summary;
+  if (json) {
+    return (
+      JSON.stringify({ owner, repo, alreadyCanonical, rulesetVersion: 'v1', dryRun, changes }) + '\n'
+    );
+  }
+  if (alreadyCanonical) {
+    return `ok configure-github: owner: ${owner} repo: ${repo} alreadyCanonical: true rulesetVersion: v1\n`;
+  }
+  const plural = changes === 1 ? '' : 's';
+  if (dryRun) {
+    return `ok configure-github: dry-run on ${owner}/${repo} — ${changes} change${plural} pending\n`;
+  }
+  return `ok configure-github: ${owner}/${repo} converged to canonical-v1 (${changes} change${plural})\n`;
+}
 
 /**
  * Entry point — wired into `clud-bug.js` dispatch. Returns a Node-style
@@ -83,6 +120,7 @@ export async function runConfigureGithub(
     branch = 'main',
     dryRun = false,
     quiet = false,
+    json = false,
     resolveToken = defaultResolveToken,
     octokitFactory = ghCliOctokit,
     stdout = (msg) => process.stdout.write(msg),
@@ -147,7 +185,7 @@ export async function runConfigureGithub(
 
   if (result.alreadyCanonical) {
     if (!quiet) stdout('  No changes — repo already matches canonical-v1.\n');
-    stdout(`ok configure-github: ${owner}/${repo} already canonical-v1\n`);
+    stdout(formatConfigureSummary({ owner, repo, alreadyCanonical: true, dryRun, changes: 0 }, json));
     return 0;
   }
 
@@ -158,15 +196,11 @@ export async function runConfigureGithub(
   }
 
   if (dryRun) {
-    stdout(
-      `ok configure-github: dry-run on ${owner}/${repo} — ${result.changes.length} change${result.changes.length === 1 ? '' : 's'} pending\n`,
-    );
+    stdout(formatConfigureSummary({ owner, repo, alreadyCanonical: false, dryRun: true, changes: result.changes.length }, json));
     return 0;
   }
 
-  stdout(
-    `ok configure-github: ${owner}/${repo} converged to canonical-v1 (${result.changes.length} change${result.changes.length === 1 ? '' : 's'})\n`,
-  );
+  stdout(formatConfigureSummary({ owner, repo, alreadyCanonical: false, dryRun: false, changes: result.changes.length }, json));
   return 0;
 }
 

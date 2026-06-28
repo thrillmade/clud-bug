@@ -18,6 +18,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      # SPEC §6.6 conformance fixtures (byte-identical release-gate). Runs
+      # after build so scripts/fixture-check.mjs can import from dist/.
+      - run: npm run test:fixtures
 
   actionlint:
     runs-on: ubuntu-latest

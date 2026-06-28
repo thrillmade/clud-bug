@@ -27,6 +27,8 @@ clud-bug
 │   ├── decisions.md
 │   ├── file-structure.md
 │   └── timeline.md
+├── fixtures
+│   └── reviews
 ├── scripts
 │   ├── fixture-check.mjs
 │   └── gen-version.mjs
@@ -56,6 +58,7 @@ clud-bug
 │   ├── audit.test.js
 │   ├── branch-protection.test.js
 │   ├── cli.test.js
+│   ├── configure-github.test.js
 │   ├── detect.test.js
 │   ├── diff-findings.test.js
 │   ├── edit-workflow.test.js

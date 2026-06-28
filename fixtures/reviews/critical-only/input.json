@@ -1,0 +1,20 @@
+{
+  "status_header": "critical findings",
+  "summary_counts": { "critical": 1, "minor": 0, "preexisting": 0, "resolved_from_prior": 0, "still_open": 0 },
+  "per_skill_scan": [
+    { "skill": "critical-issues-only", "outcome": "scanned all changed paths. 1 critical finding below." }
+  ],
+  "critical_findings": [
+    {
+      "skill": "critical-issues-only",
+      "file": "src/auth.ts",
+      "line": 42,
+      "summary": "session token logged in cleartext",
+      "reasoning": "The token is written to debug.log on line 42, which ships to the log aggregator. Redact it before logging."
+    }
+  ],
+  "minor_findings": [],
+  "preexisting_findings": [],
+  "skills_referenced": ["critical-issues-only"],
+  "last_reviewed_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}
