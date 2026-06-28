@@ -67,6 +67,7 @@ function parseArgs(argv) {
     // .claude/commands/clud-bug-review.md so `/clud-bug-review` works in a
     // Claude Code session (reviews the current PR with the session's tokens).
     withLocalReview: false,
+    withHooks: false,
     // v0.7.0-rc.4: `clud-bug configure-github` flags.
     // --dry-run prints the diff but skips PATCH; --branch overrides "main".
     dryRun: false,
@@ -94,6 +95,7 @@ function parseArgs(argv) {
     else if (a === '--no-artifacts') args.artifacts = false;
     else if (a === '--with-skdd') args.withSkdd = true;
     else if (a === '--with-local-review') args.withLocalReview = true;
+    else if (a === '--with-hooks') args.withHooks = true;
     else if (a === '--dry-run') args.dryRun = true;
     else if (a === '--branch') args.branch = argv[++i];
     else if (a === '--trigger') args.trigger = argv[++i];
@@ -202,6 +204,11 @@ Options:
                         \`/clud-bug-review\` works in a Claude Code session —
                         reviews the current branch's PR using that session's
                         own tokens (no hosted App, no extra auth).
+  --with-hooks          (init) Also scaffold a native Claude Code \`type: agent\`
+                        commit-review hook into .claude/settings.json — on every
+                        \`git commit\` the agent makes, a backgrounded clud-bug
+                        review subagent runs on the session's subscription.
+                        Implies --with-local-review. Off by default.
   --quiet,-q            Token-frugal mode for agent invocations. Suppresses
                         progress chatter; emits exactly one final
                         \`ok <key-value>\` summary line per command. Errors
@@ -1261,12 +1268,50 @@ async function runInit(args) {
   // Claude Code session — the agent reviews the current branch's open PR using
   // THAT session's own tokens (Max or API), no hosted App or new auth required.
   // `.claude/` is already in the --commit add-list below, so it's staged too.
+  // `--with-hooks` implies `--with-local-review` — the auto hook and the manual
+  // `/clud-bug-review` command are complementary (the hook auto-runs the engine
+  // recipe on each commit; the command runs it on demand against the PR).
+  if (args.withHooks) args.withLocalReview = true;
   if (args.withLocalReview) {
     const commandPath = join(cwd, '.claude', 'commands', 'clud-bug-review.md');
     await mkdir(dirname(commandPath), { recursive: true });
     const commandContent = await renderFile(join(TEMPLATES, 'clud-bug-review.md.tmpl'), {});
     await writeFile(commandPath, commandContent);
     log(`    wrote ${rel(cwd, commandPath)}`);
+  }
+
+  // v0.7.0 (Wave 6b): optional native commit-review hook. Merges a Claude Code
+  // `type: agent` PostToolUse hook into `.claude/settings.json` (preserving any
+  // existing settings + hooks) that, on every `git commit` the agent makes,
+  // spawns a clud-bug review subagent on the session's subscription, in the
+  // background — the hook's prompt runs `clud-bug review-prompt` and follows it.
+  if (args.withHooks) {
+    const { mergeLocalReviewHook, COMMIT_REVIEW_PROMPT } = await import('./hooks.js');
+    const settingsPath = join(cwd, '.claude', 'settings.json');
+    await mkdir(dirname(settingsPath), { recursive: true });
+    // Read-then-parse so we can tell "no file yet" (fresh merge) from "file
+    // exists but is invalid JSON" (leave it ALONE — never clobber user content).
+    let raw: string | undefined;
+    try {
+      raw = await readFile(settingsPath, 'utf8');
+    } catch {
+      raw = undefined; // no settings.json yet → fresh
+    }
+    let existing: unknown;
+    let proceed = true;
+    if (raw !== undefined) {
+      try {
+        existing = JSON.parse(raw);
+      } catch {
+        proceed = false;
+        log(`    skipped ${rel(cwd, settingsPath)} (existing file is not valid JSON; left untouched)`);
+      }
+    }
+    if (proceed) {
+      const merged = mergeLocalReviewHook(existing, COMMIT_REVIEW_PROMPT);
+      await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
+      log(`    wrote ${rel(cwd, settingsPath)} (commit-review hook)`);
+    }
   }
 
   // Stamp the manifest. Sets strictMode: true ONLY on fresh installs —

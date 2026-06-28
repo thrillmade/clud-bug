@@ -33,6 +33,13 @@ Wave 6b (PR 0) — shared review engine extracted into `core` (single source of 
   `planReview`, and renders a plan-aware recipe — a single fast pass on `commit`, the full
   multi-pass fan-out (with the resolved tiers + aggregation mode) on `push`/`pr`. The dynamic,
   engine-driven counterpart of the rc.11 static `/clud-bug-review` slash command.
+- **`clud-bug init --with-hooks`** (off by default) — scaffolds a native Claude Code `type: agent`
+  commit-review hook into `.claude/settings.json` (merged non-clobbering, preserving existing
+  settings + hooks). On every `git commit` the agent makes, a **backgrounded** (`async`) review
+  subagent runs on the session's **own subscription** — its prompt simply runs `clud-bug
+  review-prompt` and follows the engine recipe, so it's always current. Implies `--with-local-review`;
+  `clud-bug update` refreshes our marked hook in place. (`type: agent` is experimental; a `type:
+  command` + `additionalContext` fallback reaches the same outcome on stable primitives.)
 
 ## [0.7.0-rc.11] — 2026-06-28
 
