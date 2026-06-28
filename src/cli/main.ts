@@ -1286,7 +1286,8 @@ async function runInit(args) {
   // spawns a clud-bug review subagent on the session's subscription, in the
   // background — the hook's prompt runs `clud-bug review-prompt` and follows it.
   if (args.withHooks) {
-    const { mergeLocalReviewHook, COMMIT_REVIEW_PROMPT } = await import('./hooks.js');
+    const { mergeLocalReviewHook, buildCommitReviewPrompt } = await import('./hooks.js');
+    const hookPrompt = buildCommitReviewPrompt(await readPkgVersion());
     const settingsPath = join(cwd, '.claude', 'settings.json');
     await mkdir(dirname(settingsPath), { recursive: true });
     // Read-then-parse so we can tell "no file yet" (fresh merge) from "file
@@ -1308,7 +1309,7 @@ async function runInit(args) {
       }
     }
     if (proceed) {
-      const merged = mergeLocalReviewHook(existing, COMMIT_REVIEW_PROMPT);
+      const merged = mergeLocalReviewHook(existing, hookPrompt);
       await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
       log(`    wrote ${rel(cwd, settingsPath)} (commit-review hook)`);
     }

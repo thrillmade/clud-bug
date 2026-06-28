@@ -305,6 +305,33 @@ test('renderMultiPassMarkdown: head line carries first pass attribution', () => 
   );
 });
 
+test('renderMultiPassMarkdown: §6.8.1 pass marker + §6.10.1 consensus marker precede each finding', () => {
+  const review = {
+    ...MULTI_PASS_REVIEW,
+    findings: [{ ...MULTI_PASS_REVIEW.findings[0], consensus: '2-of-2' }],
+  };
+  const md = renderMultiPassMarkdown({
+    review, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+  });
+  // §6.8.1 (NORMATIVE): the originating pass (Beetle) as a lowercase identifier.
+  assert.ok(md.includes('<!-- pass: beetle -->'), 'pass marker present');
+  // §6.10.1 (NORMATIVE for gated reviewers): the consensus marker alongside.
+  assert.ok(md.includes('<!-- consensus: 2-of-2 -->'), 'consensus marker present');
+  // Both markers immediately precede the finding's bullet, in spec order.
+  assert.ok(
+    /<!-- pass: beetle -->\n<!-- consensus: 2-of-2 -->\n- \[Pass 1/.test(md),
+    'markers precede the bullet in §6.8.1/§6.10.1 order',
+  );
+});
+
+test('renderMultiPassMarkdown: pass marker present without consensus (consensus marker omitted)', () => {
+  const md = renderMultiPassMarkdown({
+    review: MULTI_PASS_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
+  });
+  assert.ok(md.includes('<!-- pass: beetle -->'), 'pass marker present');
+  assert.ok(!md.includes('<!-- consensus:'), 'no consensus marker when finding has no consensus');
+});
+
 test('renderMultiPassMarkdown: follow-up attribution renders ✅ AGREED', () => {
   const md = renderMultiPassMarkdown({
     review: MULTI_PASS_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,

@@ -8,8 +8,12 @@ import { describe, expect, it } from 'vitest';
 import {
   buildLocalReviewHook,
   mergeLocalReviewHook,
-  COMMIT_REVIEW_PROMPT,
+  buildCommitReviewPrompt,
 } from '../src/cli/hooks.js';
+
+// The hook prompt is now version-pinned; build one at a fixed test version so
+// the merge/builder tests below read as before.
+const COMMIT_REVIEW_PROMPT = buildCommitReviewPrompt('0.7.0-rc.13');
 
 describe('buildLocalReviewHook', () => {
   it('is a backgrounded type:agent PostToolUse entry targeting git commit', () => {
@@ -83,10 +87,11 @@ describe('mergeLocalReviewHook', () => {
   });
 });
 
-describe('COMMIT_REVIEW_PROMPT', () => {
-  it('carries the marker and delegates to the review-prompt engine on the subscription', () => {
+describe('buildCommitReviewPrompt', () => {
+  it('carries the marker, pins the clud-bug version, and delegates to review-prompt on the subscription', () => {
     expect(COMMIT_REVIEW_PROMPT).toMatch(/clud-bug-local-review/);
-    expect(COMMIT_REVIEW_PROMPT).toMatch(/review-prompt --trigger commit/);
+    // version-pinned so the hook never resolves to a `latest` that predates the verb
+    expect(COMMIT_REVIEW_PROMPT).toMatch(/npx clud-bug@0\.7\.0-rc\.13 review-prompt --trigger commit/);
     expect(COMMIT_REVIEW_PROMPT).toMatch(/subscription/i);
   });
 });
