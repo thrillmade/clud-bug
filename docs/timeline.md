@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (50 decisions)
+## 2026-06 (51 decisions)
 
-- **2026-06-28** — clud-bug rc.9: graceful PAT-or-fallback auto-resolve + idempotent markers *(wave-5b1-rc9-graceful-resolve)* — [decisions-branches/wave-5b1-rc9-graceful-resolve.md](decisions-branches/wave-5b1-rc9-graceful-resolve.md)
-- *... 48 more decisions ...*
+- **2026-06-28** — clud-bug rc.10 (Wave 6a): §6.6 conformance-fixture gate + §3.23.1 configure-github payload *(wave-6a-fixtures-conformance)* — [decisions-branches/wave-6a-fixtures-conformance.md](decisions-branches/wave-6a-fixtures-conformance.md)
+- *... 49 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
