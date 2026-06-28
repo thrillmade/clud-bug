@@ -318,9 +318,30 @@ export interface PassAttribution {
   note?: string;
 }
 
+/**
+ * SPEC §6.10.1 consensus marker, derived from a finding's per-pass attributions
+ * by the aggregator's `deriveConsensus`. Defined here — the canonical home of
+ * the unified-finding shape — so it rides on `MultiPassReview.findings`.
+ *
+ * - `1-of-N` — single pass produced this finding; no consensus reached.
+ *   §6.10.2 MUST NOT fire auto-fix on these.
+ * - `2-of-2` — two passes independently produced an equivalent finding.
+ *   Qualifies for auto-fix per §6.10.2.
+ * - `arbitrated` — passes disagreed; an arbiter resolved the dispute. Today's
+ *   cross-check shape treats `arbitrated` as NOT-qualifying (conservative).
+ */
+export type Consensus = '1-of-N' | '2-of-2' | 'arbitrated';
+
 export interface UnifiedFinding extends Finding {
   /** One PassAttribution per pass involved with this finding. Order: by passNumber. */
   attributions: PassAttribution[];
+  /**
+   * SPEC §6.10.1 consensus verdict. Stamped by the aggregator's `finalize()`
+   * from `deriveConsensus(attributions)`. Optional: single-pass / non-aggregated
+   * findings omit it; consumers treat absence as '1-of-N' (the auto-fix gate
+   * default — see clud-bug-app/lib/auto-fix-policy.ts).
+   */
+  consensus?: Consensus;
 }
 
 /** Effective resolution verdict the multi-pass orchestrator emits. */

@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (52 decisions)
+## 2026-06 (53 decisions)
 
-- **2026-06-28** — clud-bug rc.11 (Wave 6b): local-review slash command MVP (/clud-bug-review) *(main)* — [decisions.md](decisions.md)
-- *... 50 more decisions ...*
+- **2026-06-28** — Extract review engine (review-plan/budget-plan/multi-pass-aggregate) into clud-bug/core — rc.12 *(wave-6b-core-engine)* — [decisions-branches/wave-6b-core-engine.md](decisions-branches/wave-6b-core-engine.md)
+- *... 51 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
