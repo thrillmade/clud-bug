@@ -4,6 +4,28 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.11] — 2026-06-28
+
+Wave 6b — local review mode (slash-command MVP).
+
+### Added
+
+- **`clud-bug init --with-local-review`** scaffolds `.claude/commands/clud-bug-review.md`,
+  so `/clud-bug-review` works inside a Claude Code session: the agent loads the repo's
+  review skills, fetches the PR diff via `gh`, reviews against the skills using **that
+  session's own tokens** (Max or API), and posts/updates a clud-bug-format comment — no
+  hosted App, no new auth. The local-mode comment carries a `written-by: @<login>
+  (clud-bug local-mode)` marker so the bot's auto-resolve never treats it as `clud-bug[bot]`.
+- `templates/clud-bug-review.md.tmpl` (new); `clud-bug update` refreshes a scaffolded
+  command in place when it carries the `<!-- clud-bug-local-version: -->` marker, and
+  leaves a user-customized (markerless) copy untouched.
+
+### Notes
+
+- This is the slash-command MVP; the optional `clud-bug-mcp` structured-tool package and
+  the pre-push hooks are designed but pending CEO sign-off (package location, hook
+  cache-skip behavior, conformance-level naming) and ship in follow-up PRs.
+
 ## [0.7.0-rc.10] — 2026-06-28
 
 Wave 6a — SPEC v0.5.1 conformance closure.

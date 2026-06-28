@@ -62,6 +62,10 @@ function parseArgs(argv) {
     // users get the same one-command bootstrap as Python-first users
     // (logmind v0.6.8's --with-skdd is the symmetric counterpart).
     withSkdd: false,
+    // v0.7.0 (Wave 6b): `clud-bug init --with-local-review` also scaffolds
+    // .claude/commands/clud-bug-review.md so `/clud-bug-review` works in a
+    // Claude Code session (reviews the current PR with the session's tokens).
+    withLocalReview: false,
     // v0.7.0-rc.4: `clud-bug configure-github` flags.
     // --dry-run prints the diff but skips PATCH; --branch overrides "main".
     dryRun: false,
@@ -88,6 +92,7 @@ function parseArgs(argv) {
     else if (a === '--health') args.health = true;
     else if (a === '--no-artifacts') args.artifacts = false;
     else if (a === '--with-skdd') args.withSkdd = true;
+    else if (a === '--with-local-review') args.withLocalReview = true;
     else if (a === '--dry-run') args.dryRun = true;
     else if (a === '--branch') args.branch = argv[++i];
     else args._.push(a);
@@ -185,6 +190,10 @@ Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
   --accept-all,-y       Accept the recommended specimens without prompting.
   --commit              git add + commit the generated kit when done (init only).
+  --with-local-review   (init) Scaffold .claude/commands/clud-bug-review.md so
+                        \`/clud-bug-review\` works in a Claude Code session —
+                        reviews the current branch's PR using that session's
+                        own tokens (no hosted App, no extra auth).
   --quiet,-q            Token-frugal mode for agent invocations. Suppresses
                         progress chatter; emits exactly one final
                         \`ok <key-value>\` summary line per command. Errors
@@ -1236,6 +1245,19 @@ async function runInit(args) {
   const selfUpdatePath = join(cwd, '.github', 'workflows', 'clud-bug-self-update.yml');
   await writeFile(selfUpdatePath, selfUpdateTmpl);
   log(`    wrote ${rel(cwd, selfUpdatePath)}`);
+
+  // v0.7.0 (Wave 6b): optional local-review slash command. Scaffolds
+  // `.claude/commands/clud-bug-review.md` so `/clud-bug-review` works inside a
+  // Claude Code session — the agent reviews the current branch's open PR using
+  // THAT session's own tokens (Max or API), no hosted App or new auth required.
+  // `.claude/` is already in the --commit add-list below, so it's staged too.
+  if (args.withLocalReview) {
+    const commandPath = join(cwd, '.claude', 'commands', 'clud-bug-review.md');
+    await mkdir(dirname(commandPath), { recursive: true });
+    const commandContent = await renderFile(join(TEMPLATES, 'clud-bug-review.md.tmpl'), {});
+    await writeFile(commandPath, commandContent);
+    log(`    wrote ${rel(cwd, commandPath)}`);
+  }
 
   // Stamp the manifest. Sets strictMode: true ONLY on fresh installs —
   // a manifest that's never been touched by clud-bug init/update has no

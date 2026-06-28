@@ -143,6 +143,25 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
   for (const p of agentDocs.created) changed.push({ path: join(cwd, p), label: `agent docs: created ${p}` });
   for (const p of agentDocs.touched) changed.push({ path: join(cwd, p), label: `agent docs: ${p}` });
 
+  // 5b. Refresh the local-review slash command (Wave 6b) when it was scaffolded
+  //     via `clud-bug init --with-local-review`. Only files carrying the
+  //     `<!-- clud-bug-local-version:` marker are refreshed; a markerless file
+  //     is user-owned (hand-customized) and left untouched.
+  const localReviewPath = join(cwd, '.claude', 'commands', 'clud-bug-review.md');
+  if (await pathExists(localReviewPath)) {
+    const prior = await readSafe(localReviewPath);
+    if (prior && prior.includes('<!-- clud-bug-local-version:')) {
+      const newCommand = await renderFile(join(templatesDir, 'clud-bug-review.md.tmpl'), {});
+      await maybeWrite(localReviewPath, newCommand, changed, unchanged, 'local-review slash command');
+    } else {
+      skipped.push({
+        path: localReviewPath,
+        label: 'local-review slash command',
+        reason: 'markerless (user-customized); delete + `clud-bug init --with-local-review` to refresh',
+      });
+    }
+  }
+
   // 6. Stamp the manifest with the version that ran the update.
   manifest['lastUpdate'] = new Date().toISOString();
   manifest['lastUpdateVersion'] = ourVersion;
