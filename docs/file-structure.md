@@ -64,6 +64,7 @@ clud-bug
 │   ├── diff-findings.test.js
 │   ├── edit-workflow.test.js
 │   ├── formal-review.test.js
+│   ├── hooks.test.js
 │   ├── init-local-review.test.js
 │   ├── init-with-skdd.test.js
 │   ├── inline-threads.test.js
