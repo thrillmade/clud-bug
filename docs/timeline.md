@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (49 decisions)
+## 2026-06 (50 decisions)
 
-- **2026-06-27** — Wave 5b — D.2.6 auto-resolve on fix-push in npm workflow (rc.8) *(wave-5b-auto-resolve)* — [decisions-branches/wave-5b-auto-resolve.md](decisions-branches/wave-5b-auto-resolve.md)
-- *... 47 more decisions ...*
+- **2026-06-28** — clud-bug rc.9: graceful PAT-or-fallback auto-resolve + idempotent markers *(wave-5b1-rc9-graceful-resolve)* — [decisions-branches/wave-5b1-rc9-graceful-resolve.md](decisions-branches/wave-5b1-rc9-graceful-resolve.md)
+- *... 48 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)

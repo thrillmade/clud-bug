@@ -398,7 +398,7 @@ export const REVIEW_THREADS_QUERY = `
           nodes {
             id
             isResolved
-            comments(first: 1) {
+            comments(first: 100) {
               nodes {
                 databaseId
                 path

@@ -4,6 +4,45 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.9] — 2026-06-28
+
+Graceful PAT-or-fallback auto-resolve (Wave 5b.1). The `resolveReviewThread`
+GraphQL mutation can't run under the Actions `GITHUB_TOKEN` ("Resource not
+accessible by integration"); rc.9 makes that path graceful and adds an opt-in
+PAT for true auto-close.
+
+### Added
+
+- **`CLUD_BUG_RESOLVE_PAT` secret (optional)** — workflow templates pass it to
+  the `resolve-threads` step. Present → the step closes verified threads like the
+  hosted App; absent → graceful "verified fixed" reply only. The CLI reads
+  `CLUD_BUG_RESOLVE_PAT` (alias `RESOLVE_PAT`) and scopes it to just the resolve
+  mutation; all other `gh` calls keep `GH_TOKEN`.
+- **`selectResolveAuth` / `anchorSignature` / `renderResolveMarkerTag` /
+  `parseResolveMarkerTag` / `latestResolveMarker`** pure helpers in
+  `src/core/auto-resolve.ts` (unit-tested).
+
+### Changed
+
+- **`src/cli/main.ts::runResolveThreads`** — the no-PAT path posts an accurate
+  "✅ Verified fixed — not auto-closed" reply (instead of claiming
+  "Auto-resolved") and skips the resolve mutation; the PAT path resolves with the
+  PAT scoped to that one call.
+- **Idempotency** — each auto-resolve reply carries a hidden
+  `<!-- clud-bug-resolve v=… sig=… -->` marker. On later fix-pushes a thread whose
+  anchor is unchanged is skipped (no re-verify, no re-reply), so multi-push PRs
+  don't get repeat replies and verifier spend is saved. A cached ADDRESSED thread
+  is still resolved if a PAT becomes available (no-PAT→PAT upgrade, or a prior
+  transient resolve-failure) without re-posting. `REVIEW_THREADS_QUERY` now fetches
+  `comments(first: 100)` to see prior replies; the anchor signature is 16 hex chars
+  (matching `findingId`).
+
+### Why
+
+Wave 5b smoke confirmed the verifier core works but `resolveReviewThread` is
+blocked for the Actions token. PAT-optional + always-graceful keeps the default
+install zero-config and regression-free while giving power users full auto-close.
+
 ## [0.7.0-rc.5] — 2026-06-26
 
 Build-time version bake — eliminates the runtime `readFileSync(package.json)`

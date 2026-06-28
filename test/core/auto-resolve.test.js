@@ -11,6 +11,11 @@ import {
   applyResolutionRules,
   renderAutoResolveMarker,
   DEFAULT_AUTO_RESOLVE_CONFIG,
+  selectResolveAuth,
+  renderResolveMarkerTag,
+  parseResolveMarkerTag,
+  anchorSignature,
+  latestResolveMarker,
 } from '../../src/core/auto-resolve.js';
 import {
   resolveAutoResolveConfig as barrelConfig,
@@ -310,5 +315,150 @@ describe('runAutoResolve', () => {
     });
     const callArg = verifier.mock.calls[0]?.[0];
     expect(callArg).not.toHaveProperty('diffAtAnchor');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 5b.1 (rc.9) — graceful PAT-or-fallback resolve + idempotency helpers
+// ---------------------------------------------------------------------------
+
+describe('selectResolveAuth', () => {
+  it('uses CLUD_BUG_RESOLVE_PAT when present (source pat, dedicated)', () => {
+    expect(selectResolveAuth({ CLUD_BUG_RESOLVE_PAT: 'ghp_pat', GH_TOKEN: 'gho_x' }))
+      .toEqual({ token: 'ghp_pat', source: 'pat', hasDedicatedPat: true });
+  });
+
+  it('falls back to GH_TOKEN when no PAT (source gh_token, not dedicated)', () => {
+    expect(selectResolveAuth({ GH_TOKEN: 'gho_x' }))
+      .toEqual({ token: 'gho_x', source: 'gh_token', hasDedicatedPat: false });
+  });
+
+  it('returns empty token when neither PAT nor GH_TOKEN set', () => {
+    expect(selectResolveAuth({}))
+      .toEqual({ token: '', source: 'gh_token', hasDedicatedPat: false });
+  });
+
+  it('honors the RESOLVE_PAT alias', () => {
+    expect(selectResolveAuth({ RESOLVE_PAT: 'ghp_alias', GH_TOKEN: 'gho_x' }))
+      .toEqual({ token: 'ghp_alias', source: 'pat', hasDedicatedPat: true });
+  });
+
+  it('treats a whitespace-only PAT as absent', () => {
+    expect(selectResolveAuth({ CLUD_BUG_RESOLVE_PAT: '   ', GH_TOKEN: 'gho_x' }))
+      .toEqual({ token: 'gho_x', source: 'gh_token', hasDedicatedPat: false });
+  });
+
+  it('treats an empty primary as absent and uses the alias (unset secret renders empty)', () => {
+    expect(selectResolveAuth({ CLUD_BUG_RESOLVE_PAT: '', RESOLVE_PAT: 'ghp_alias', GH_TOKEN: 'gho_x' }))
+      .toEqual({ token: 'ghp_alias', source: 'pat', hasDedicatedPat: true });
+  });
+});
+
+describe('renderAutoResolveMarker — resolved flag (no-PAT wording)', () => {
+  it('resolved:true keeps the "Auto-resolved" wording', () => {
+    const s = renderAutoResolveMarker({ kind: 'verified-addressed', rationale: 'fixed', resolved: true });
+    expect(s).toMatch(/Auto-resolved \(verified/);
+  });
+
+  it('omitted resolved defaults to "Auto-resolved" (back-compat)', () => {
+    const s = renderAutoResolveMarker({ kind: 'verified-addressed', rationale: 'fixed' });
+    expect(s).toMatch(/Auto-resolved \(verified/);
+  });
+
+  it('resolved:false uses "Verified fixed — not auto-closed" + manual-Resolve hint', () => {
+    const s = renderAutoResolveMarker({ kind: 'verified-addressed', rationale: 'fixed', resolved: false });
+    expect(s).toMatch(/Verified fixed/);
+    expect(s).toMatch(/Resolve conversation/);
+    expect(s).toMatch(/CLUD_BUG_RESOLVE_PAT/);
+    expect(s).not.toMatch(/Auto-resolved/);
+  });
+});
+
+describe('applyResolutionRules — canResolve flows to marker wording', () => {
+  it('ADDRESSED + canResolve:false → resolve kind, no-PAT wording', () => {
+    const action = applyResolutionRules({
+      thread: sampleThread('critical'),
+      verdict: { verdict: 'ADDRESSED', source: 'model', rationale: 'fixed' },
+      config: DEFAULT_AUTO_RESOLVE_CONFIG,
+      canResolve: false,
+    });
+    expect(action.kind).toBe('resolve');
+    expect(action.markerBody).toMatch(/Verified fixed/);
+    expect(action.markerBody).not.toMatch(/Auto-resolved/);
+  });
+
+  it('ADDRESSED + canResolve omitted → "Auto-resolved" wording (back-compat)', () => {
+    const action = applyResolutionRules({
+      thread: sampleThread('critical'),
+      verdict: { verdict: 'ADDRESSED', source: 'model', rationale: 'fixed' },
+      config: DEFAULT_AUTO_RESOLVE_CONFIG,
+    });
+    expect(action.markerBody).toMatch(/Auto-resolved/);
+  });
+});
+
+describe('resolve-marker tag (idempotency)', () => {
+  it('round-trips verdict + sig', () => {
+    const tag = renderResolveMarkerTag('ADDRESSED', 'a1b2c3d4e5f60718');
+    expect(parseResolveMarkerTag(tag)).toEqual({ verdict: 'ADDRESSED', sig: 'a1b2c3d4e5f60718' });
+  });
+
+  it('parses the tag out of a full reply body', () => {
+    const body = `**✓ Auto-resolved (verified)**: nice\n\n${renderResolveMarkerTag('NOT_ADDRESSED', 'deadbeefcafef00d')}`;
+    expect(parseResolveMarkerTag(body)).toEqual({ verdict: 'NOT_ADDRESSED', sig: 'deadbeefcafef00d' });
+  });
+
+  it('returns null when no tag present', () => {
+    expect(parseResolveMarkerTag('just a normal comment')).toBeNull();
+  });
+
+  it('returns null for a malformed verdict', () => {
+    expect(parseResolveMarkerTag('<!-- clud-bug-resolve v=MAYBE sig=a1b2c3d4e5f60718 -->')).toBeNull();
+  });
+});
+
+describe('anchorSignature', () => {
+  const finding = { file: 'lib/foo.ts', line: 10 };
+
+  it('is a stable 8-char hex for an identical anchor', () => {
+    const a = anchorSignature(finding, 'const x = guard(y);');
+    const b = anchorSignature(finding, 'const x = guard(y);');
+    expect(a).toBe(b);
+    expect(a).toMatch(/^[a-f0-9]{16}$/);
+  });
+
+  it('changes when codeAfter changes', () => {
+    const a = anchorSignature(finding, 'const x = guard(y);');
+    const b = anchorSignature(finding, 'const x = y; // regressed');
+    expect(a).not.toBe(b);
+  });
+});
+
+describe('latestResolveMarker', () => {
+  const BOT = new Set(['github-actions', 'github-actions[bot]']);
+  const finding = {
+    author: { login: 'github-actions[bot]' },
+    body: '<!-- finding-id: 0123456789abcdef -->\n🔴 `x`\n\nsummary',
+  };
+
+  it('returns the most-recent bot reply tag', () => {
+    const comments = [
+      finding,
+      { author: { login: 'github-actions[bot]' }, body: `r1 ${renderResolveMarkerTag('ADDRESSED', 'aaaaaaaaaaaaaaaa')}` },
+      { author: { login: 'github-actions[bot]' }, body: `r2 ${renderResolveMarkerTag('NOT_ADDRESSED', 'bbbbbbbbbbbbbbbb')}` },
+    ];
+    expect(latestResolveMarker(comments, BOT)).toEqual({ verdict: 'NOT_ADDRESSED', sig: 'bbbbbbbbbbbbbbbb' });
+  });
+
+  it('returns null when no tagged bot reply exists', () => {
+    expect(latestResolveMarker([finding], BOT)).toBeNull();
+  });
+
+  it('ignores tags authored by non-bot users', () => {
+    const comments = [
+      finding,
+      { author: { login: 'sneaky-user' }, body: `nope ${renderResolveMarkerTag('ADDRESSED', 'cccccccccccccccc')}` },
+    ];
+    expect(latestResolveMarker(comments, BOT)).toBeNull();
   });
 });

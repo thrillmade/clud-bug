@@ -556,6 +556,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Optional fine-grained PAT (Pull requests: write). Present → the
+          # workflow resolves fixed threads like the hosted App. Absent (the
+          # default; an unset secret renders empty) → graceful "verified fixed"
+          # reply only, since the Actions GITHUB_TOKEN can't resolve threads.
+          CLUD_BUG_RESOLVE_PAT: ${{ secrets.CLUD_BUG_RESOLVE_PAT }}
         run: |
           set -euo pipefail
           RESULT=$(npx --yes clud-bug@{{CLUD_BUG_VERSION}} resolve-threads)
@@ -699,7 +704,7 @@ jobs:
       # Letting the action's own failure fail the check is louder and right.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.8
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: the summary is now posted by the workflow

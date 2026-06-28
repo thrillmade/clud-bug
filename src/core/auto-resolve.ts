@@ -27,6 +27,8 @@
 //   - DROP per-PR budget gate — OSS workflow uses the customer's own
 //     `ANTHROPIC_API_KEY`; spend-cap is their concern, not ours.
 
+import { createHash } from 'node:crypto';
+
 import type { Severity } from './inline-threads.js';
 
 // ---------------------------------------------------------------------------
@@ -120,6 +122,13 @@ export interface AutoResolveInput {
   priorThreads: PriorThread[];
   /** Resolved config (after precedence merge). */
   config: AutoResolveConfig;
+  /**
+   * Whether the caller can actually resolve threads (a dedicated PAT is
+   * present). Drives the addressed-marker wording: PAT → "Auto-resolved";
+   * no-PAT → "Verified fixed — not auto-closed". Defaults to true (the App
+   * path / unit tests, where the App token can resolve).
+   */
+  canResolve?: boolean;
   /** Verifier callback. Tests inject a stub; CLI provides real Anthropic-call fn. */
   verifier: (args: {
     finding: PriorFinding;
@@ -256,6 +265,7 @@ export async function runAutoResolve(
       thread,
       verdict,
       config: input.config,
+      canResolve: input.canResolve !== false,
     });
     actions.push(action);
     if (action.kind === 'keep_open_request_changes') shouldRequestChanges = true;
@@ -284,8 +294,11 @@ export function applyResolutionRules(args: {
   thread: PriorThread;
   verdict: VerifyOutcome;
   config: AutoResolveConfig;
+  /** Whether the resolve mutation is available (PAT present). Defaults true. */
+  canResolve?: boolean;
 }): ThreadAction {
   const { verdict, thread, config } = args;
+  const canResolve = args.canResolve !== false;
   const severity = thread.finding.severity;
 
   if (verdict.verdict === 'ADDRESSED') {
@@ -294,6 +307,7 @@ export function applyResolutionRules(args: {
       markerBody: renderAutoResolveMarker({
         kind: 'verified-addressed',
         rationale: verdict.rationale,
+        resolved: canResolve,
       }),
       verdict,
     };
@@ -340,7 +354,7 @@ export function applyResolutionRules(args: {
 // ---------------------------------------------------------------------------
 
 type AutoResolveMarkerInput =
-  | { kind: 'verified-addressed'; rationale?: string }
+  | { kind: 'verified-addressed'; rationale?: string; resolved?: boolean }
   | { kind: 'verified-not-addressed'; rationale?: string }
   | { kind: 'verified-uncertain'; rationale?: string; severity: Severity };
 
@@ -354,6 +368,16 @@ export function renderAutoResolveMarker(input: AutoResolveMarkerInput): string {
   const tail = input.rationale ? `: ${input.rationale.trim()}` : '.';
   switch (input.kind) {
     case 'verified-addressed':
+      // No PAT → we did NOT resolve the thread, so don't claim "Auto-resolved".
+      // Post an accurate "verified fixed" badge + the manual-Resolve hint.
+      if (input.resolved === false) {
+        return (
+          `**✅ Verified fixed — not auto-closed**${tail} ` +
+          `_The Actions \`GITHUB_TOKEN\` can't resolve review threads; click ` +
+          `**Resolve conversation** to dismiss, or add a \`CLUD_BUG_RESOLVE_PAT\` ` +
+          `secret to auto-close (see README)._`
+        );
+      }
       return `**✓ Auto-resolved (verified by D.2.6 fix-check)**${tail}`;
     case 'verified-not-addressed':
       return `**❌ Re-review found this still applies**${tail}`;
@@ -363,4 +387,102 @@ export function renderAutoResolveMarker(input: AutoResolveMarkerInput): string {
       }
       return `**⚠ Auto-resolve uncertain — human review recommended**${tail}`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wave 5b.1 (rc.9) — graceful PAT-or-fallback resolve + idempotency
+// ---------------------------------------------------------------------------
+
+/** Which token the resolve mutation should use, and whether it's a dedicated PAT. */
+export interface ResolveAuth {
+  token: string;
+  source: 'pat' | 'gh_token';
+  hasDedicatedPat: boolean;
+}
+
+/**
+ * Picks the token for the `resolveReviewThread` GraphQL mutation. A dedicated
+ * fine-grained PAT (`CLUD_BUG_RESOLVE_PAT`, or the `RESOLVE_PAT` alias) is
+ * preferred — the Actions `GITHUB_TOKEN` can't resolve review threads
+ * ("Resource not accessible by integration"). With no PAT the verb keeps using
+ * `GH_TOKEN` for the other gh calls and skips the resolve mutation entirely.
+ *
+ * Empty / whitespace-only values are treated as absent — GitHub renders an
+ * unset secret as the empty string, so `CLUD_BUG_RESOLVE_PAT=''` must NOT
+ * shadow a hand-set `RESOLVE_PAT` alias.
+ */
+export function selectResolveAuth(env: {
+  CLUD_BUG_RESOLVE_PAT?: string;
+  RESOLVE_PAT?: string;
+  GH_TOKEN?: string;
+}): ResolveAuth {
+  const pat =
+    [env.CLUD_BUG_RESOLVE_PAT, env.RESOLVE_PAT]
+      .map((v) => (v ?? '').trim())
+      .find((v) => v !== '') ?? '';
+  if (pat) return { token: pat, source: 'pat', hasDedicatedPat: true };
+  return { token: (env.GH_TOKEN ?? '').trim(), source: 'gh_token', hasDedicatedPat: false };
+}
+
+/** Verifier verdict, as embedded in the idempotency marker. */
+export type ResolveVerdict = 'ADDRESSED' | 'NOT_ADDRESSED' | 'UNCERTAIN';
+
+const RESOLVE_MARKER_RE =
+  /<!--\s*clud-bug-resolve\s+v=(ADDRESSED|NOT_ADDRESSED|UNCERTAIN)\s+sig=([a-f0-9]{16})\s*-->/;
+
+/**
+ * Hidden HTML-comment marker appended to each auto-resolve reply so a later
+ * fix-push can tell whether it already replied to this thread for the current
+ * (verdict, anchor) — making the reply idempotent instead of one-per-push.
+ */
+export function renderResolveMarkerTag(verdict: ResolveVerdict, sig: string): string {
+  return `<!-- clud-bug-resolve v=${verdict} sig=${sig} -->`;
+}
+
+/** Parses the hidden marker out of a comment body. Null when absent / malformed. */
+export function parseResolveMarkerTag(
+  body: string,
+): { verdict: ResolveVerdict; sig: string } | null {
+  const m = body.match(RESOLVE_MARKER_RE);
+  if (!m || m[1] === undefined || m[2] === undefined) return null;
+  return { verdict: m[1] as ResolveVerdict, sig: m[2] };
+}
+
+/**
+ * 8-hex-char signature of a finding's post-fix anchor. Stable while the anchor
+ * is unchanged, changes when `codeAfter` changes — lets the verb skip
+ * re-verifying + re-replying to a thread whose anchor hasn't moved.
+ */
+export function anchorSignature(
+  finding: { file?: string; line?: number },
+  codeAfter: string,
+): string {
+  const file = finding.file ?? '<no-file>';
+  const line = finding.line ?? 0;
+  // 16 hex chars (64-bit), matching `findingId`'s convention — wide enough
+  // that a collision can't suppress a re-review marker.
+  return createHash('sha256').update(`${file}:${line}:${codeAfter}`).digest('hex').slice(0, 16);
+}
+
+/**
+ * Scans a thread's comments (oldest→newest, as GraphQL returns them) for the
+ * most-recent bot-authored reply carrying a resolve marker. Returns its
+ * `{verdict, sig}` or null. Only bot-authored comments count, so a user pasting
+ * a marker can't spoof the idempotency state.
+ */
+export function latestResolveMarker(
+  comments: Array<
+    { author?: { login?: string | null } | null; body?: string | null } | null | undefined
+  >,
+  botAuthors: Set<string>,
+): { verdict: ResolveVerdict; sig: string } | null {
+  let latest: { verdict: ResolveVerdict; sig: string } | null = null;
+  for (const c of comments) {
+    if (!c) continue;
+    const login = c.author?.login ?? '';
+    if (!botAuthors.has(login)) continue;
+    const tag = parseResolveMarkerTag(c.body ?? '');
+    if (tag) latest = tag;
+  }
+  return latest;
 }
