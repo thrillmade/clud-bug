@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (48 decisions)
+## 2026-06 (49 decisions)
 
-- **2026-06-27** — Wave 5a — D.2.X per-finding inline review threads in npm workflow (rc.7) *(wave-5a-inline-threads)* — [decisions-branches/wave-5a-inline-threads.md](decisions-branches/wave-5a-inline-threads.md)
-- *... 46 more decisions ...*
+- **2026-06-27** — Wave 5b — D.2.6 auto-resolve on fix-push in npm workflow (rc.8) *(wave-5b-auto-resolve)* — [decisions-branches/wave-5b-auto-resolve.md](decisions-branches/wave-5b-auto-resolve.md)
+- *... 47 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)

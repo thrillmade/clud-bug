@@ -9,8 +9,7 @@ clud-bug
 │   ├── workflow-ts.yml
 │   └── workflow.yml
 ├── .claude
-│   ├── skills
-│   └── worktrees
+│   └── skills
 ├── .github
 │   ├── actions
 │   ├── workflows
