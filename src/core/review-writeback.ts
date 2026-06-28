@@ -521,6 +521,15 @@ function renderUnifiedFinding(
   }
   const headLabel = formatAttributionLabel(head);
   const lines: string[] = [];
+  // SPEC §6.8.1 (NORMATIVE for multi-pass): a per-finding pass-attribution HTML
+  // comment immediately preceding the bullet, naming the originating pass as a
+  // stable lowercase identifier so consumers can aggregate per-pass metrics.
+  lines.push(`<!-- pass: ${passIdentifier(head.roleName)} -->`);
+  // SPEC §6.10.1 (NORMATIVE for gated reviewers): the consensus marker alongside
+  // the pass attribution, when the finding carries a consensus verdict.
+  if (f.consensus) {
+    lines.push(`<!-- consensus: ${f.consensus} -->`);
+  }
   lines.push(`- ${headLabel} **${location}** — ${f.skill}: ${f.summary}`);
   if (includeReasoning && f.reasoning) {
     lines.push(`  Reasoning: ${f.reasoning}`);
@@ -543,6 +552,14 @@ function renderUnifiedFinding(
  * `source: 'first'` — i.e. when a later pass surfaced this finding without
  * Pass 1 raising it.
  */
+/** SPEC §6.8.1 pass identifier: a stable lowercase slug of the role name. */
+function passIdentifier(roleName: string): string {
+  return roleName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function formatAttributionLabel(a: PassAttribution): string {
   const independent =
     a.source === 'independent' && a.passNumber > 1

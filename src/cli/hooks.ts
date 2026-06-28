@@ -16,29 +16,36 @@
 export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
 
 /**
- * The `prompt` of the Claude Code `type: agent` commit-review hook. Rather than
- * baking a static recipe (which would drift from the repo's skills/config), it
- * tells the subagent to run `clud-bug review-prompt` — the engine-driven verb
- * that emits a recipe tailored to THIS repo's resolved plan — and follow it.
- * The recipe is therefore generated fresh at commit time, always current.
+ * Build the `prompt` of the Claude Code `type: agent` commit-review hook,
+ * pinned to the clud-bug VERSION that scaffolded it. Pinning matters: a bare
+ * `npx clud-bug` resolves to the `latest` dist-tag, which can predate the
+ * `review-prompt` verb (e.g. while v0.7 is prerelease on `next`); `@${version}`
+ * guarantees the verb exists. `clud-bug update` refreshes the pin in place.
+ *
+ * Rather than baking a static recipe (which would drift from the repo's
+ * skills/config), it tells the subagent to run `clud-bug review-prompt` — the
+ * engine-driven verb that emits a recipe tailored to THIS repo's resolved plan
+ * — and follow it. The recipe is generated fresh at commit time, always current.
  */
-export const COMMIT_REVIEW_PROMPT = `<!-- ${CLUD_BUG_HOOK_MARKER} v1 -->
+export function buildCommitReviewPrompt(version: string): string {
+  return `<!-- ${CLUD_BUG_HOOK_MARKER} v1 -->
 You are clud-bug's local commit review, running as a background subagent on this
 session's own subscription (no extra auth — you have git, gh, and file access).
 
 Step 1 — get your review recipe from clud-bug's engine:
 
-    npx clud-bug review-prompt --trigger commit
+    npx clud-bug@${version} review-prompt --trigger commit
 
 That prints a structured review recipe tailored to THIS repo's skills + config (a
-fast single pass for a commit). If \`npx clud-bug\` isn't available, run the repo's
-installed clud-bug CLI instead.
+fast single pass for a commit). If that command isn't available, run the repo's
+installed clud-bug CLI's \`review-prompt --trigger commit\` instead.
 
 Step 2 — follow that recipe exactly: review the commit that was just made against
 the skills it names, and surface any findings back into the session so they can be
 fixed. A clean commit needs only a one-line note.
 
 Keep it tight — this is the commit-time safety net; the deeper review runs at PR time.`;
+}
 
 /** One Claude Code hook entry: a tool matcher plus its hook list. */
 export interface HookMatcherEntry {

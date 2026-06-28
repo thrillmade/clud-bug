@@ -4,6 +4,22 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.13] — 2026-06-28
+
+Wave 6b — SPEC render conformance + the hook version-pin.
+
+### Fixed
+
+- **SPEC §6.8.1 / §6.10.1 markers (NORMATIVE) now rendered.** `renderMultiPassMarkdown`
+  emits a `<!-- pass: <id> -->` attribution comment (the originating pass, lowercased) and,
+  for gated findings, a `<!-- consensus: 1-of-N | 2-of-2 | arbitrated -->` comment immediately
+  before each finding's bullet. The auto-fix gate (§6.10.2) was already safe (reads
+  `finding.consensus` directly); this closes the auditable/dashboard-parseable output gap.
+- **`init --with-hooks` pins the clud-bug version** in the commit-review hook prompt
+  (`npx clud-bug@<version> review-prompt`). A bare `npx clud-bug` resolves to the `latest`
+  dist-tag, which can predate the `review-prompt` verb while v0.7 is prerelease on `next` —
+  pinning guarantees the verb resolves. `clud-bug update` refreshes the pin in place.
+
 ## [0.7.0-rc.12] — 2026-06-28
 
 Wave 6b (PR 0) — shared review engine extracted into `core` (single source of truth).
