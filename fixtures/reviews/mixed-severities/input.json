@@ -1,0 +1,20 @@
+{
+  "status_header": "critical findings",
+  "summary_counts": { "critical": 1, "minor": 1, "preexisting": 1, "resolved_from_prior": 0, "still_open": 0 },
+  "per_skill_scan": [
+    { "skill": "critical-issues-only", "outcome": "1 critical finding below." },
+    { "skill": "evidence-based-review", "outcome": "1 minor + 1 pre-existing finding below." }
+  ],
+  "critical_findings": [
+    { "skill": "critical-issues-only", "file": "src/payments.ts", "line": 17, "summary": "missing input validation on amount" }
+  ],
+  "minor_findings": [
+    { "skill": "evidence-based-review", "file": "src/utils.ts", "line": 5, "summary": "rename helper to clarify intent" }
+  ],
+  "preexisting_findings": [
+    { "skill": "evidence-based-review", "file": "src/legacy.ts", "line": 91, "summary": "pre-existing nullability gap in an unrelated module" }
+  ],
+  "diagnostics": ["1 file exceeded the per-file diff cap and was truncated."],
+  "skills_referenced": ["critical-issues-only", "evidence-based-review"],
+  "last_reviewed_sha": "cccccccccccccccccccccccccccccccccccccccc"
+}

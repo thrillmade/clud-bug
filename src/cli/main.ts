@@ -1789,6 +1789,7 @@ async function runConfigureGithubCmd(args) {
     branch: args.branch || 'main',
     dryRun: Boolean(args.dryRun),
     quiet: QUIET,
+    json: Boolean(args.json),
   });
   if (code !== 0) process.exit(code);
 }

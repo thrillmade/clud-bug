@@ -1,0 +1,12 @@
+{
+  "status_header": "clean",
+  "summary_counts": { "critical": 0, "minor": 0, "preexisting": 0, "resolved_from_prior": 0, "still_open": 0 },
+  "per_skill_scan": [
+    { "skill": "critical-issues-only", "outcome": "scanned all changed paths. 0 findings." }
+  ],
+  "critical_findings": [],
+  "minor_findings": [],
+  "preexisting_findings": [],
+  "skills_referenced": [],
+  "last_reviewed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

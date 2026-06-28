@@ -1,0 +1,24 @@
+{
+  "status_header": "critical findings",
+  "summary_counts": { "critical": 1, "minor": 0, "preexisting": 0, "resolved_from_prior": 0, "still_open": 0 },
+  "per_skill_scan": [
+    { "skill": "brand-voice-review", "outcome": "dedicated-mode: see the Brand voice section below." },
+    { "skill": "critical-issues-only", "outcome": "1 critical finding below." }
+  ],
+  "dedicated_sections": [
+    {
+      "section_name": "Brand voice",
+      "skill": "brand-voice-review",
+      "findings": [
+        { "skill": "brand-voice-review", "file": "src/ui/Button.tsx", "line": 12, "summary": "label uses passive voice instead of the verb-noun pattern" }
+      ]
+    }
+  ],
+  "critical_findings": [
+    { "skill": "critical-issues-only", "file": "src/api.ts", "line": 55, "summary": "authentication bypass in the admin endpoint" }
+  ],
+  "minor_findings": [],
+  "preexisting_findings": [],
+  "skills_referenced": ["brand-voice-review", "critical-issues-only"],
+  "last_reviewed_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}

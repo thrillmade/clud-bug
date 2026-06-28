@@ -463,7 +463,36 @@ test('runConfigureGithub: already-canonical → exit 0 with summary', async () =
     stderr: () => {},
   });
   assert.equal(code, 0);
-  assert.match(stdoutBuf, /ok configure-github: octo\/demo already canonical-v1/);
+  // SPEC §3.23.1: the idempotent no-op MUST surface alreadyCanonical as a named field.
+  assert.match(stdoutBuf, /alreadyCanonical: true/);
+  assert.match(stdoutBuf, /rulesetVersion: v1/);
+  assert.match(stdoutBuf, /octo/);
+  assert.match(stdoutBuf, /demo/);
+});
+
+test('runConfigureGithub: already-canonical + --dry-run --json → payload reports dryRun:true', async () => {
+  let stdoutBuf = '';
+  const { octokit } = makeOctokitMock({
+    branchProtection: CANONICAL_BRANCH_PROTECTION_STATE,
+    repoSettings: CANONICAL_REPO_STATE,
+  });
+  const code = await runConfigureGithub({
+    target: 'octo/demo',
+    dryRun: true,
+    json: true,
+    resolveToken: async () => 'token',
+    octokitFactory: () => octokit,
+    quiet: true,
+    stdout: (m) => {
+      stdoutBuf += m;
+    },
+    stderr: () => {},
+  });
+  assert.equal(code, 0);
+  const payload = JSON.parse(stdoutBuf);
+  assert.equal(payload.alreadyCanonical, true);
+  // The no-op branch is reachable under --dry-run; the payload must reflect it.
+  assert.equal(payload.dryRun, true);
 });
 
 test('runConfigureGithub: --dry-run reports diff but skips PATCH', async () => {
