@@ -10,7 +10,6 @@
 
 import {
   resolveReviewPasses,
-  totalPassCount,
   type ReviewPlanSkill,
   type ReviewPassesConfig,
   type ResolvedReviewPasses,
@@ -112,13 +111,18 @@ export function planReview(input: PlanReviewInput): ReviewPlan {
     ...(input.billingExempt !== undefined ? { billingExempt: input.billingExempt } : {}),
   });
 
-  const passes = totalPassCount(perSkill);
+  // Report the per-skill pass DEPTH (max), not the summed call count — the
+  // recipe branches on this same depth, so "1-pass" here agrees with "single
+  // pass" there. (Total call count drives the budget below, not the summary.)
+  const passesPerSkill = perSkill.length
+    ? Math.max(...perSkill.map((p) => p.count))
+    : 0;
   const tierNote = tieredDown ? `, tiered down (${tieredDown})` : '';
   const budgetNote =
     budget.verdict === 'deny'
       ? `; budget exceeded ($${budget.estimate.estimatedCostUsd.toFixed(2)} > $${budget.estimate.capUsd.toFixed(2)})`
       : `; est $${budget.estimate.estimatedCostUsd.toFixed(2)}`;
-  const summary = `${passes} pass(es) across ${perSkill.length} skill(s) [${trigger}]${tierNote}${budgetNote}`;
+  const summary = `${passesPerSkill}-pass review across ${perSkill.length} skill(s) [${trigger}]${tierNote}${budgetNote}`;
 
   return {
     perSkill,

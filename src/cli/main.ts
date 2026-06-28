@@ -31,6 +31,7 @@ import {
 import { computeAuditFileSet } from './audit.js';
 import { renderAuditHeader } from '../core/audit.js';
 import { runUpdate } from './update.js';
+import { runReviewPrompt } from './review-prompt.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from './edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
 import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from './branch-protection.js';
@@ -95,6 +96,8 @@ function parseArgs(argv) {
     else if (a === '--with-local-review') args.withLocalReview = true;
     else if (a === '--dry-run') args.dryRun = true;
     else if (a === '--branch') args.branch = argv[++i];
+    else if (a === '--trigger') args.trigger = argv[++i];
+    else if (a === '--diff-size') args.diffSizeBytes = Number(argv[++i]);
     else args._.push(a);
   }
   return args;
@@ -185,6 +188,11 @@ Commands:
                         Required env vars: GH_TOKEN, ANTHROPIC_API_KEY,
                         REPO ("owner/name"), PR_NUMBER. Output: JSON
                         \`{actions, verifierCallCount, shouldRequestChanges}\`.
+  review-prompt         Emit the local-review recipe — the structured prompt a
+                        Claude Code agent/hook runs to review the current diff on
+                        the session's own subscription. Plans via the shared
+                        engine: --trigger commit (default) → a fast single pass;
+                        push/pr → the full multi-pass plan. Prints to stdout.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -206,6 +214,7 @@ Options:
   --dry-run             Print the canonical-v1 diff without PATCH-ing
                         (configure-github only).
   --branch <name>       Target branch for configure-github (default: main).
+  --trigger <ctx>       review-prompt context: commit (default) | push | pr.
   --repo <owner/name>   Restrict \`usage\` to a single repo. Default: all repos
                         with clud-bug-review.yml in the gh user's auth scope.
   --pr <N>              Restrict \`usage\` to a single PR.
@@ -249,6 +258,7 @@ async function main() {
     case 'select-review-event': return runSelectReviewEvent(args);
     case 'post-inline-threads': return runPostInlineThreads(args);
     case 'resolve-threads': return runResolveThreads(args);
+    case 'review-prompt': return runReviewPrompt(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
