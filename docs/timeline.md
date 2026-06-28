@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (51 decisions)
+## 2026-06 (52 decisions)
 
-- **2026-06-28** — clud-bug rc.10 (Wave 6a): §6.6 conformance-fixture gate + §3.23.1 configure-github payload *(wave-6a-fixtures-conformance)* — [decisions-branches/wave-6a-fixtures-conformance.md](decisions-branches/wave-6a-fixtures-conformance.md)
-- *... 49 more decisions ...*
+- **2026-06-28** — clud-bug rc.11 (Wave 6b): local-review slash command MVP (/clud-bug-review) *(main)* — [decisions.md](decisions.md)
+- *... 50 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
