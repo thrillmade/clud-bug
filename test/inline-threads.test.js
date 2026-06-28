@@ -12,10 +12,12 @@ import {
   extractAnchorContext,
   renderThreadBody,
   extractFindingIdFromBody,
+  parseThreadBody,
   planInlineThreads,
   REVIEW_THREADS_QUERY,
   REVIEW_THREADS_STATE_QUERY,
   RESOLVE_THREAD_MUTATION,
+  ADD_REPLY_MUTATION,
 } from '../src/core/inline-threads.js';
 import {
   findingId as barrelFindingId,
@@ -429,5 +431,66 @@ describe('GraphQL operation strings', () => {
     expect(RESOLVE_THREAD_MUTATION).toMatch(/mutation ResolveThread/);
     expect(RESOLVE_THREAD_MUTATION).toMatch(/resolveReviewThread/);
     expect(RESOLVE_THREAD_MUTATION).toMatch(/\$threadId: ID!/);
+  });
+
+  it('ADD_REPLY_MUTATION calls addPullRequestReviewThreadReply (Wave 5b)', () => {
+    expect(ADD_REPLY_MUTATION).toMatch(/mutation AddThreadReply/);
+    expect(ADD_REPLY_MUTATION).toMatch(/addPullRequestReviewThreadReply/);
+    expect(ADD_REPLY_MUTATION).toMatch(/\$threadId: ID!/);
+    expect(ADD_REPLY_MUTATION).toMatch(/\$body: String!/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseThreadBody — invert renderThreadBody for Wave 5b auto-resolve
+// ---------------------------------------------------------------------------
+
+describe('parseThreadBody — Wave 5b inverse of renderThreadBody', () => {
+  const finding = {
+    severity: 'critical',
+    skill: 'critical-issues-only',
+    file: 'lib/utils.ts',
+    line: 15,
+    summary: 'NPE risk on null user',
+    reasoning: 'getUser() can return null when the cache misses.',
+  };
+
+  it('roundtrips the canonical body shape', () => {
+    const body = renderThreadBody(finding);
+    const parsed = parseThreadBody(body);
+    expect(parsed).not.toBeNull();
+    expect(parsed.findingId).toBe(findingId(finding));
+    expect(parsed.severity).toBe('critical');
+    expect(parsed.skill).toBe('critical-issues-only');
+    expect(parsed.summary).toBe('NPE risk on null user');
+    expect(parsed.reasoning).toMatch(/getUser\(\)/);
+  });
+
+  it('roundtrips minor severity', () => {
+    const minor = { ...finding, severity: 'minor' };
+    const parsed = parseThreadBody(renderThreadBody(minor));
+    expect(parsed.severity).toBe('minor');
+  });
+
+  it('omits reasoning when source finding had none', () => {
+    const noReasoning = { ...finding, reasoning: undefined };
+    const parsed = parseThreadBody(renderThreadBody(noReasoning));
+    expect(parsed.reasoning).toBeUndefined();
+  });
+
+  it('returns null on a body that lacks the marker (regular human comment)', () => {
+    expect(parseThreadBody('Hello, I have a question about this.')).toBeNull();
+  });
+
+  it('returns null on a body where the marker is mid-body (anti-injection)', () => {
+    const body =
+      '> The original finding id was <!-- finding-id: deadbeefdeadbeef -->\n\nI disagree.';
+    expect(parseThreadBody(body)).toBeNull();
+  });
+
+  it('returns null on a body that has the marker but malformed structure (no badge line)', () => {
+    expect(
+      parseThreadBody('<!-- finding-id: deadbeefdeadbeef -->\nWrong format'),
+    ).toBeNull();
   });
 });

@@ -592,3 +592,39 @@ test('--help advertises post-inline-threads subcommand', () => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /post-inline-threads/);
 });
+
+// ---------------------------------------------------------------------------
+// Wave 5b (v0.7.0-rc.8) — resolve-threads subcommand validation paths.
+// Happy-path requires gh + Anthropic API mocking — covered by integration
+// smoke on clud-bug-test. These tests cover the env-validation no-op paths.
+// ---------------------------------------------------------------------------
+
+function runResolveThreads(env = {}) {
+  return run(process.cwd(), ['resolve-threads'], { env });
+}
+
+test('resolve-threads: missing env vars → no-op with error=missing-env, exits 0', () => {
+  const r = runResolveThreads({}); // no REPO, PR_NUMBER, GH_TOKEN, or ANTHROPIC_API_KEY
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim());
+  assert.equal(out.verifierCallCount, 0);
+  assert.equal(out.error, 'missing-env');
+});
+
+test('resolve-threads: missing ANTHROPIC_API_KEY alone → no-op with error=missing-env', () => {
+  const r = runResolveThreads({
+    REPO: 'acme/test',
+    PR_NUMBER: '1',
+    GH_TOKEN: 'gho_x',
+    // ANTHROPIC_API_KEY deliberately omitted
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim());
+  assert.equal(out.error, 'missing-env');
+});
+
+test('--help advertises resolve-threads subcommand', () => {
+  const r = run(process.cwd(), ['--help']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /resolve-threads/);
+});

@@ -156,6 +156,10 @@ export {
 // constants the CLI's `post-inline-threads` verb invokes via `gh api`.
 // `findingId` returns the SHA-256[:16] hash and is distinct from the
 // plain-string `findingIdentity` above (both serve different matchers).
+//
+// Wave 5b additions: `parseThreadBody` (inverts renderThreadBody) +
+// `ADD_REPLY_MUTATION` (for posting the auto-resolve marker reply
+// before resolving a thread).
 export {
   findingId,
   parseHeadLines,
@@ -163,16 +167,43 @@ export {
   extractAnchorContext,
   renderThreadBody,
   extractFindingIdFromBody,
+  parseThreadBody,
   planInlineThreads,
   REVIEW_THREADS_QUERY,
   REVIEW_THREADS_STATE_QUERY,
   RESOLVE_THREAD_MUTATION,
+  ADD_REPLY_MUTATION,
   type Severity as InlineThreadSeverity,
   type FindingForThread,
   type DiffFile,
   type InlineCommentPlan,
   type PlanInlineThreadsResult,
 } from './inline-threads.js';
+// Wave 5b — D.2.6 auto-resolve on fix-push. Pure rule tables + config
+// merge + marker rendering. The CLI's `resolve-threads` verb owns the
+// Anthropic Messages call + GraphQL mutations; `runAutoResolve` is
+// pure modulo the injected verifier callback.
+export {
+  resolveAutoResolveConfig,
+  readAutoResolveConfigFromCludBug,
+  runAutoResolve,
+  applyResolutionRules,
+  renderAutoResolveMarker,
+  DEFAULT_AUTO_RESOLVE_CONFIG,
+  type AutoResolveConfig,
+  type PriorThread,
+  type PriorFinding,
+  type ThreadAction,
+  type AutoResolveInput,
+  type AutoResolveResult,
+  type VerifyOutcome,
+} from './auto-resolve.js';
+export {
+  VERIFIER_SYSTEM,
+  buildVerifierPrompt,
+  parseVerifierResponse,
+  type VerifySingleFindingInput,
+} from './resolve-verifier.js';
 // SPEC §7 canonical-ruleset applier. Pure diff + idempotent-PATCH logic;
 // CLI side wraps `gh api` in an Octokit-like adapter and the App passes
 // its real Octokit instance. Shipped in v0.7.0-rc.4 for Marketplace prep

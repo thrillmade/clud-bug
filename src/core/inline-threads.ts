@@ -274,6 +274,50 @@ export function extractFindingIdFromBody(body: string): string | null {
   return m ? m[1]! : null;
 }
 
+/**
+ * Wave 5b — invert `renderThreadBody` to recover the original finding
+ * tuple from a bot-authored thread comment. The fix-push auto-resolve
+ * CLI verb uses this to reconstruct `PriorFinding` from the GraphQL
+ * `reviewThreads` response without persistent state.
+ *
+ * Returns null when the body doesn't match the canonical shape
+ * `<!-- finding-id: XX -->\n🔴|🟡 \`skill\`\n\nsummary[\n\nreasoning]`.
+ * Same start-anchored posture as `extractFindingIdFromBody` for anti-
+ * injection: a user reply that quotes the marker mid-body won't be
+ * misattributed as bot-authored.
+ */
+export function parseThreadBody(body: string): {
+  findingId: string;
+  severity: Severity;
+  skill: string;
+  summary: string;
+  reasoning?: string;
+} | null {
+  // Marker (line 1), header (line 2: badge + backticked skill), blank,
+  // summary, optional blank + reasoning. The header line shape:
+  //   `🔴 \`critical-issues-only\``  or  `🟡 \`magic-numbers\``
+  const re =
+    /^<!--\s*finding-id:\s*([a-f0-9]{16})\s*-->\n(🔴|🟡)\s+`([^`]+)`\n\n([\s\S]+?)(?:\n\n([\s\S]+))?$/;
+  const m = body.match(re);
+  if (!m) return null;
+  const [, findingId, badge, skill, summary, reasoning] = m;
+  const severity: Severity = badge === '🔴' ? 'critical' : 'minor';
+  const out: {
+    findingId: string;
+    severity: Severity;
+    skill: string;
+    summary: string;
+    reasoning?: string;
+  } = {
+    findingId: findingId!,
+    severity,
+    skill: skill!,
+    summary: summary!.trim(),
+  };
+  if (reasoning && reasoning.trim()) out.reasoning = reasoning.trim();
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Inline-thread posting plan
 // ---------------------------------------------------------------------------
@@ -340,6 +384,12 @@ export function planInlineThreads(
 // reference the same query strings as the App.
 // ---------------------------------------------------------------------------
 
+// Wave 5b update — `author { login }` added so the resolve-threads CLI
+// verb can filter to bot-authored threads. Without this, the bot-filter
+// reads `comments[0].author?.login` as undefined and accepts everything,
+// which would feed user-authored threads (that happen to start with the
+// marker) into the verifier. Additive change — Wave 5a consumers
+// (post-inline-threads) didn't read `author` so they're unaffected.
 export const REVIEW_THREADS_QUERY = `
   query ReviewThreads($owner: String!, $repo: String!, $pr: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -355,6 +405,9 @@ export const REVIEW_THREADS_QUERY = `
                 line
                 originalLine
                 body
+                author {
+                  login
+                }
               }
             }
           }
@@ -395,6 +448,23 @@ export const RESOLVE_THREAD_MUTATION = `
     resolveReviewThread(input: { threadId: $threadId }) {
       thread {
         isResolved
+      }
+    }
+  }
+`;
+
+// Wave 5b — post a reply on a review thread (used to attach the
+// auto-resolve marker explaining the verifier's verdict) BEFORE
+// calling `RESOLVE_THREAD_MUTATION`. The reply is visible in the PR
+// timeline so reviewers can audit why the bot auto-resolved.
+export const ADD_REPLY_MUTATION = `
+  mutation AddThreadReply($threadId: ID!, $body: String!) {
+    addPullRequestReviewThreadReply(
+      input: { pullRequestReviewThreadId: $threadId, body: $body }
+    ) {
+      comment {
+        id
+        body
       }
     }
   }

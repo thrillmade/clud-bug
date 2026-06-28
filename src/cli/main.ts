@@ -170,6 +170,16 @@ Commands:
                         without persistent state. Required env vars: GH_TOKEN,
                         REPO ("owner/name"), PR_NUMBER, HEAD_SHA. Output is a
                         JSON status report \`{posted, skipped, preexisting, error?}\`.
+  resolve-threads       Auto-resolve inline review threads when a fix-push
+                        addresses the original finding (D.2.6). Fetches all
+                        bot-authored unresolved threads, asks the Anthropic
+                        Messages API per-thread whether the new commit addressed
+                        the concern, then resolves (with a marker reply)
+                        ADDRESSED threads + leaves UNCERTAIN/NOT_ADDRESSED open.
+                        Fail-closed: verifier errors route to UNCERTAIN.
+                        Required env vars: GH_TOKEN, ANTHROPIC_API_KEY,
+                        REPO ("owner/name"), PR_NUMBER. Output: JSON
+                        \`{actions, verifierCallCount, shouldRequestChanges}\`.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -229,6 +239,7 @@ async function main() {
     case 'update-skill-usage': return runUpdateSkillUsage(args);
     case 'select-review-event': return runSelectReviewEvent(args);
     case 'post-inline-threads': return runPostInlineThreads(args);
+    case 'resolve-threads': return runResolveThreads(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
@@ -704,6 +715,313 @@ async function runPostInlineThreads(args) {
     posted: plan.comments.length,
     skipped: plan.skipped.map((f) => ({ skill: f.skill, file: f.file, line: f.line, reason: 'not-anchorable' })),
     preexisting: plan.preexisting.map((f) => ({ skill: f.skill })),
+  }) + '\n');
+}
+
+
+// Wave 5b / 0.7.0-rc.8: D.2.6 auto-resolve on fix-push. Fetches all
+// bot-authored unresolved inline threads, asks the Anthropic Messages
+// API per-thread whether the new commit addressed the original
+// finding, and resolves ADDRESSED threads (with a marker reply) while
+// leaving UNCERTAIN/NOT_ADDRESSED open. Fail-closed throughout —
+// verifier errors route to UNCERTAIN; the surrounding workflow
+// step's `continue-on-error: true` is the single failure gate.
+//
+// Required env: GH_TOKEN, ANTHROPIC_API_KEY, REPO ("owner/name"), PR_NUMBER.
+//
+// No `--stdin` — fetches everything from `gh api graphql` itself.
+// Workflow gates this verb on `github.event.action == 'synchronize'`
+// so it only runs on fix-pushes (not initial PR opens, when there
+// are no prior threads to resolve).
+async function runResolveThreads(_args) {
+  const {
+    parseThreadBody,
+    extractAnchorContext,
+    REVIEW_THREADS_QUERY,
+    RESOLVE_THREAD_MUTATION,
+    ADD_REPLY_MUTATION,
+  } = await import('../core/inline-threads.js');
+  const {
+    readAutoResolveConfigFromCludBug,
+    runAutoResolve,
+  } = await import('../core/auto-resolve.js');
+  const {
+    VERIFIER_SYSTEM,
+    buildVerifierPrompt,
+    parseVerifierResponse,
+  } = await import('../core/resolve-verifier.js');
+
+  // ---- Env validation ----------------------------------------------------
+  const repo = String(process.env.REPO ?? '').trim();
+  const prNumberRaw = String(process.env.PR_NUMBER ?? '').trim();
+  const prNumber = Number(prNumberRaw);
+  const ghToken = String(process.env.GH_TOKEN ?? '').trim();
+  const anthropicKey = String(process.env.ANTHROPIC_API_KEY ?? '').trim();
+  if (!repo || !repo.includes('/') || !Number.isInteger(prNumber) || prNumber <= 0 || !ghToken || !anthropicKey) {
+    process.stderr.write(
+      `clud-bug resolve-threads: REPO + PR_NUMBER + GH_TOKEN + ANTHROPIC_API_KEY env vars required.\n`,
+    );
+    process.stdout.write(JSON.stringify({ actions: [], verifierCallCount: 0, shouldRequestChanges: false, error: 'missing-env' }) + '\n');
+    return;
+  }
+  const [owner, repoName] = repo.split('/', 2);
+
+  // ---- Optional .clud-bug.json config (autoResolve block) ----------------
+  // The workflow's working dir is the PR checkout — if .clud-bug.json is
+  // present we read autoResolve from it. Otherwise defaults (mode='verified').
+  let autoResolveConfig;
+  try {
+    const cfgPath = join(process.cwd(), '.claude/skills/.clud-bug.json');
+    const cfgRaw = await readFile(cfgPath, 'utf8');
+    const cfg = JSON.parse(cfgRaw);
+    autoResolveConfig = readAutoResolveConfigFromCludBug(cfg, (msg) => {
+      process.stderr.write(`clud-bug resolve-threads: config warning: ${msg}\n`);
+    });
+  } catch (err) {
+    // Missing OR unparseable .clud-bug.json — use defaults but log the
+    // specific reason so an operator with malformed config can diagnose
+    // why their `autoResolve.mode = 'off'` is being silently ignored.
+    const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
+    if (code !== 'ENOENT') {
+      process.stderr.write(
+        `clud-bug resolve-threads: .clud-bug.json read/parse error (${err && typeof err === 'object' && 'message' in err ? err.message : String(err)}); using defaults.\n`,
+      );
+    }
+    autoResolveConfig = readAutoResolveConfigFromCludBug(null);
+  }
+
+  if (autoResolveConfig.mode === 'off') {
+    process.stdout.write(JSON.stringify({ actions: [], verifierCallCount: 0, shouldRequestChanges: false, reason: 'mode-off' }) + '\n');
+    return;
+  }
+
+  // ---- Fetch threads via GraphQL -----------------------------------------
+  // `gh api graphql` uses `-f` for String! variables and `-F` for typed
+  // (number / bool) variables. Owner + repo are String! per the query;
+  // pr is Int!. Reviewer-flagged: passing owner/repo as `-F` would coerce
+  // numeric-looking values incorrectly.
+  const threadsResult = spawnSync(
+    'gh',
+    [
+      'api', 'graphql',
+      '-f', `query=${REVIEW_THREADS_QUERY}`,
+      '-f', `owner=${owner}`,
+      '-f', `repo=${repoName}`,
+      '-F', `pr=${prNumber}`,
+    ],
+    { encoding: 'utf8' },
+  );
+  if (threadsResult.status !== 0) {
+    process.stderr.write(`clud-bug resolve-threads: gh api graphql (threads) failed (exit ${threadsResult.status}): ${(threadsResult.stderr || '').slice(0, 500)}\n`);
+    process.stdout.write(JSON.stringify({ actions: [], verifierCallCount: 0, shouldRequestChanges: false, error: 'threads-fetch-failed' }) + '\n');
+    return;
+  }
+
+  let threadNodes;
+  try {
+    const parsed = JSON.parse(threadsResult.stdout);
+    threadNodes = parsed?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+    if (!Array.isArray(threadNodes)) threadNodes = [];
+  } catch (e) {
+    process.stderr.write(`clud-bug resolve-threads: threads JSON parse failed: ${e.message}\n`);
+    process.stdout.write(JSON.stringify({ actions: [], verifierCallCount: 0, shouldRequestChanges: false, error: 'threads-parse-failed' }) + '\n');
+    return;
+  }
+
+  // ---- Filter to bot-authored unresolved threads with our marker --------
+  // The workflow's GITHUB_TOKEN posts as `github-actions[bot]`. Match both
+  // the bracketed bot form and the bare `github-actions` form (GraphQL
+  // can return either depending on the node-type field requested).
+  const BOT_AUTHORS = new Set(['github-actions', 'github-actions[bot]']);
+  const candidates = [];
+  for (const t of threadNodes) {
+    if (!t || t.isResolved) continue;
+    const c = t.comments?.nodes?.[0];
+    if (!c) continue;
+    const authorLogin = c.author?.login ?? '';
+    if (!BOT_AUTHORS.has(authorLogin)) continue;
+    const parsed = parseThreadBody(c.body ?? '');
+    if (!parsed) continue;
+    if (!c.path || (c.line === null && c.originalLine === null)) continue;
+    candidates.push({
+      threadId: t.id,
+      file: c.path,
+      line: c.line ?? c.originalLine,
+      parsed,
+    });
+  }
+
+  if (candidates.length === 0) {
+    process.stdout.write(JSON.stringify({ actions: [], verifierCallCount: 0, shouldRequestChanges: false, reason: 'no-bot-threads' }) + '\n');
+    return;
+  }
+
+  // ---- Fetch diff for anchor context -------------------------------------
+  const filesResult = spawnSync(
+    'gh',
+    [
+      'api',
+      `repos/${repo}/pulls/${prNumber}/files`,
+      '--paginate',
+      '--slurp',
+    ],
+    { encoding: 'utf8' },
+  );
+  if (filesResult.status !== 0) {
+    process.stderr.write(`clud-bug resolve-threads: diff fetch failed (exit ${filesResult.status}): ${(filesResult.stderr || '').slice(0, 500)}\n`);
+    process.stdout.write(JSON.stringify({ actions: [], verifierCallCount: 0, shouldRequestChanges: false, error: 'diff-fetch-failed' }) + '\n');
+    return;
+  }
+  let diffFiles = [];
+  try {
+    const pages = JSON.parse(filesResult.stdout);
+    if (Array.isArray(pages)) {
+      for (const page of pages) {
+        if (Array.isArray(page)) diffFiles.push(...page);
+      }
+    }
+  } catch (e) {
+    process.stderr.write(`clud-bug resolve-threads: diff JSON parse failed: ${e.message}\n`);
+    process.stdout.write(JSON.stringify({ actions: [], verifierCallCount: 0, shouldRequestChanges: false, error: 'diff-parse-failed' }) + '\n');
+    return;
+  }
+
+  // ---- Build PriorThread[] for runAutoResolve ----------------------------
+  const priorThreads = candidates.map((c) => {
+    const ctx = extractAnchorContext({ file: c.file, line: c.line }, diffFiles);
+    const findingBody = c.parsed.reasoning
+      ? `${c.parsed.summary}\n\n${c.parsed.reasoning}`
+      : c.parsed.summary;
+    return {
+      threadId: c.threadId,
+      finding: {
+        severity: c.parsed.severity,
+        body: findingBody,
+        skill: c.parsed.skill,
+        file: c.file,
+        line: c.line,
+      },
+      codeBefore: ctx.codeBefore,
+      codeAfter: ctx.codeAfter,
+      ...(ctx.diffAtAnchor !== undefined ? { diffAtAnchor: ctx.diffAtAnchor } : {}),
+    };
+  });
+
+  // ---- Define verifier (Anthropic Messages API via raw fetch) -----------
+  // Model is hardcoded here — the verifier needs a model that handles
+  // structured JSON output reliably. Sonnet 4.6 is the default. Override
+  // via CLUD_BUG_VERIFIER_MODEL env var if needed.
+  const verifierModel = String(process.env.CLUD_BUG_VERIFIER_MODEL ?? '').trim()
+    || 'claude-sonnet-4-6';
+
+  async function verifier(input) {
+    const userPrompt = buildVerifierPrompt(input);
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'x-api-key': anthropicKey,
+        },
+        body: JSON.stringify({
+          model: verifierModel,
+          max_tokens: 300,
+          system: VERIFIER_SYSTEM,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        return {
+          verdict: 'UNCERTAIN',
+          source: 'api-error',
+          rationale: `Anthropic API ${resp.status}: ${errText.slice(0, 200)}`,
+        };
+      }
+      const body = await resp.json();
+      // Messages API: content is an array of blocks; pick the first text block.
+      const text = (body?.content ?? []).find((b) => b?.type === 'text')?.text ?? '';
+      return parseVerifierResponse(text);
+    } catch (err) {
+      return {
+        verdict: 'UNCERTAIN',
+        source: 'api-error',
+        rationale: `verifier fetch error: ${err?.message ?? String(err)}`,
+      };
+    }
+  }
+
+  // ---- Run pure orchestration -------------------------------------------
+  const result = await runAutoResolve({
+    priorThreads,
+    config: autoResolveConfig,
+    verifier,
+  });
+
+  // ---- Execute the actions via GraphQL mutations ------------------------
+  const actionsReport = [];
+  for (let i = 0; i < result.actions.length; i++) {
+    const action = result.actions[i];
+    const thread = priorThreads[i];
+    if (!action || !thread) continue;
+    const report = {
+      threadId: thread.threadId,
+      file: thread.finding.file,
+      line: thread.finding.line,
+      verdict: action.verdict?.verdict,
+      kind: action.kind,
+    };
+
+    if (action.kind === 'skipped') {
+      actionsReport.push({ ...report, executed: 'skipped' });
+      continue;
+    }
+
+    // Post the marker reply (all non-skipped paths get a reply).
+    const replyResult = spawnSync(
+      'gh',
+      [
+        'api', 'graphql',
+        '-f', `query=${ADD_REPLY_MUTATION}`,
+        '-f', `threadId=${thread.threadId}`,
+        '-f', `body=${action.markerBody}`,
+      ],
+      { encoding: 'utf8' },
+    );
+    if (replyResult.status !== 0) {
+      process.stderr.write(`clud-bug resolve-threads: ADD_REPLY failed for thread ${thread.threadId}: ${(replyResult.stderr || '').slice(0, 200)}\n`);
+      actionsReport.push({ ...report, executed: 'reply-failed' });
+      continue;
+    }
+
+    // Resolve only ADDRESSED threads.
+    if (action.kind === 'resolve') {
+      const resolveResult = spawnSync(
+        'gh',
+        [
+          'api', 'graphql',
+          '-f', `query=${RESOLVE_THREAD_MUTATION}`,
+          '-f', `threadId=${thread.threadId}`,
+        ],
+        { encoding: 'utf8' },
+      );
+      if (resolveResult.status !== 0) {
+        process.stderr.write(`clud-bug resolve-threads: RESOLVE failed for thread ${thread.threadId}: ${(resolveResult.stderr || '').slice(0, 200)}\n`);
+        actionsReport.push({ ...report, executed: 'resolve-failed' });
+        continue;
+      }
+      actionsReport.push({ ...report, executed: 'resolved' });
+    } else {
+      // keep_open or keep_open_request_changes — reply already posted.
+      actionsReport.push({ ...report, executed: 'kept-open' });
+    }
+  }
+
+  process.stdout.write(JSON.stringify({
+    actions: actionsReport,
+    verifierCallCount: result.verifierCallCount,
+    shouldRequestChanges: result.shouldRequestChanges,
   }) + '\n');
 }
 
