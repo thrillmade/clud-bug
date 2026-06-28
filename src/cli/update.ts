@@ -5,6 +5,7 @@ import { reviewPrompt } from '../core/prompts.js';
 import { detect, buildDescriptionLine } from '../core/detect.js';
 import { loadBaseline, readManifest, writeManifest, type LoadBaselineOptions } from './skills.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
+import { mergeLocalReviewHook, COMMIT_REVIEW_PROMPT, CLUD_BUG_HOOK_MARKER } from './hooks.js';
 
 // Re-render the user's workflow + refresh baseline skills using the
 // templates / baseline shipped with the currently-installed clud-bug.
@@ -159,6 +160,27 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
         label: 'local-review slash command',
         reason: 'markerless (user-customized); delete + `clud-bug init --with-local-review` to refresh',
       });
+    }
+  }
+
+  // 5c. Refresh the native commit-review hook (Wave 6b) in place when it was
+  //     scaffolded via `clud-bug init --with-hooks` and our entry is intact (the
+  //     `clud-bug-local-review` marker). settings.json is user-managed — we only
+  //     re-merge OUR marked hook, never touching the user's other hooks/settings.
+  const settingsPath = join(cwd, '.claude', 'settings.json');
+  if (await pathExists(settingsPath)) {
+    const prior = await readSafe(settingsPath);
+    if (prior && prior.includes(CLUD_BUG_HOOK_MARKER)) {
+      try {
+        const merged = mergeLocalReviewHook(JSON.parse(prior), COMMIT_REVIEW_PROMPT);
+        await maybeWrite(settingsPath, JSON.stringify(merged, null, 2) + '\n', changed, unchanged, 'commit-review hook');
+      } catch {
+        skipped.push({
+          path: settingsPath,
+          label: 'commit-review hook',
+          reason: 'settings.json is not valid JSON; left untouched',
+        });
+      }
     }
   }
 

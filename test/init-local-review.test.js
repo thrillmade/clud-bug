@@ -4,7 +4,7 @@
 import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -57,4 +57,36 @@ test('init without --with-local-review does NOT scaffold the slash command', asy
     exists = false;
   }
   assert.equal(exists, false, 'slash command should not exist without the flag');
+});
+
+test('init --with-hooks scaffolds the native commit-review hook + the slash command', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-hooks-'));
+  await mkdir(join(dir, '.git'), { recursive: true });
+  const r = runInit(dir, ['--with-hooks']);
+  assert.equal(r.status, 0, r.stderr);
+  // --with-hooks implies --with-local-review, so the slash command is there too
+  await access(join(dir, '.claude', 'commands', 'clud-bug-review.md'));
+  // the native `type: agent` commit-review hook, merged into .claude/settings.json
+  const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
+  const entry = settings.hooks.PostToolUse[0];
+  assert.equal(entry.matcher, 'Bash');
+  assert.equal(entry.hooks[0].type, 'agent');
+  assert.equal(entry.hooks[0].if, 'Bash(git commit *)');
+  assert.equal(entry.hooks[0].async, true);
+  assert.match(entry.hooks[0].prompt, /clud-bug-local-review/);
+  assert.match(entry.hooks[0].prompt, /review-prompt --trigger commit/);
+});
+
+test('init --with-hooks does NOT clobber a pre-existing malformed settings.json', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-hooks-bad-'));
+  await mkdir(join(dir, '.git'), { recursive: true });
+  await mkdir(join(dir, '.claude'), { recursive: true });
+  const settingsPath = join(dir, '.claude', 'settings.json');
+  const malformed = '{ "model": "opus", oops not json';
+  await writeFile(settingsPath, malformed);
+  const r = runInit(dir, ['--with-hooks']);
+  assert.equal(r.status, 0, r.stderr);
+  // the user's (malformed) file must be left untouched, never overwritten with just our hook
+  const after = await readFile(settingsPath, 'utf8');
+  assert.equal(after, malformed, 'malformed settings.json must not be clobbered');
 });
