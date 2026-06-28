@@ -47,6 +47,7 @@ clud-bug
 ├── templates
 │   ├── skills
 │   ├── audit.yml.tmpl
+│   ├── clud-bug-review.md.tmpl
 │   ├── self-update.yml.tmpl
 │   ├── workflow-py.yml.tmpl
 │   ├── workflow-ts.yml.tmpl
@@ -63,6 +64,7 @@ clud-bug
 │   ├── diff-findings.test.js
 │   ├── edit-workflow.test.js
 │   ├── formal-review.test.js
+│   ├── init-local-review.test.js
 │   ├── init-with-skdd.test.js
 │   ├── inline-threads.test.js
 │   ├── prompt-builder.test.js
