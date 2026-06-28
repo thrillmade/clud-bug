@@ -777,8 +777,16 @@ async function runResolveThreads(_args) {
     autoResolveConfig = readAutoResolveConfigFromCludBug(cfg, (msg) => {
       process.stderr.write(`clud-bug resolve-threads: config warning: ${msg}\n`);
     });
-  } catch {
-    // Missing or unparseable .clud-bug.json — use defaults.
+  } catch (err) {
+    // Missing OR unparseable .clud-bug.json — use defaults but log the
+    // specific reason so an operator with malformed config can diagnose
+    // why their `autoResolve.mode = 'off'` is being silently ignored.
+    const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
+    if (code !== 'ENOENT') {
+      process.stderr.write(
+        `clud-bug resolve-threads: .clud-bug.json read/parse error (${err && typeof err === 'object' && 'message' in err ? err.message : String(err)}); using defaults.\n`,
+      );
+    }
     autoResolveConfig = readAutoResolveConfigFromCludBug(null);
   }
 
@@ -788,13 +796,17 @@ async function runResolveThreads(_args) {
   }
 
   // ---- Fetch threads via GraphQL -----------------------------------------
+  // `gh api graphql` uses `-f` for String! variables and `-F` for typed
+  // (number / bool) variables. Owner + repo are String! per the query;
+  // pr is Int!. Reviewer-flagged: passing owner/repo as `-F` would coerce
+  // numeric-looking values incorrectly.
   const threadsResult = spawnSync(
     'gh',
     [
       'api', 'graphql',
       '-f', `query=${REVIEW_THREADS_QUERY}`,
-      '-F', `owner=${owner}`,
-      '-F', `repo=${repoName}`,
+      '-f', `owner=${owner}`,
+      '-f', `repo=${repoName}`,
       '-F', `pr=${prNumber}`,
     ],
     { encoding: 'utf8' },

@@ -384,6 +384,12 @@ export function planInlineThreads(
 // reference the same query strings as the App.
 // ---------------------------------------------------------------------------
 
+// Wave 5b update — `author { login }` added so the resolve-threads CLI
+// verb can filter to bot-authored threads. Without this, the bot-filter
+// reads `comments[0].author?.login` as undefined and accepts everything,
+// which would feed user-authored threads (that happen to start with the
+// marker) into the verifier. Additive change — Wave 5a consumers
+// (post-inline-threads) didn't read `author` so they're unaffected.
 export const REVIEW_THREADS_QUERY = `
   query ReviewThreads($owner: String!, $repo: String!, $pr: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -399,6 +405,9 @@ export const REVIEW_THREADS_QUERY = `
                 line
                 originalLine
                 body
+                author {
+                  login
+                }
               }
             }
           }
