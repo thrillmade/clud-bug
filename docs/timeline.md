@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (56 decisions)
+## 2026-06 (57 decisions)
 
-- **2026-06-28** — Add clud-bug init --with-hooks — native type:agent commit-review hook (Wave 6b PR C) *(wave-6b-hooks)* — [decisions-branches/wave-6b-hooks.md](decisions-branches/wave-6b-hooks.md)
-- *... 54 more decisions ...*
+- **2026-06-28** — rc.13 — render SPEC §6.8.1/§6.10.1 markers + pin the hook's clud-bug version *(wave-6b-spec-render-rc13)* — [decisions-branches/wave-6b-spec-render-rc13.md](decisions-branches/wave-6b-spec-render-rc13.md)
+- *... 55 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
