@@ -22,6 +22,11 @@ Wave 6b (PR 0) — shared review engine extracted into `core` (single source of 
   `beetle | wasp | mantis` `tier` on `ReviewRole` (concrete model binding stays consumer-side).
   Additive — no existing consumer behavior changes; `resolveReviewPasses` is decoupled from the
   App's `LoadedSkill` (takes a minimal `{ slug, frontmatter }`).
+- **`core/plan-review.ts` — `planReview`** (SPEC §11.5): the single shared entry point that
+  composes `resolveReviewPasses` + `estimateBudget` and applies trigger / diff-size tiering —
+  `trigger: 'commit'` (or a diff over `LARGE_DIFF_THRESHOLD_BYTES`) tiers down to a single fast
+  (`beetle`-tier) pass; otherwise the full multi-pass plan. Every consumer plans through this one
+  function, so the fast-vs-deep choice falls out of the tier system — never hand-picked per call.
 
 ## [0.7.0-rc.11] — 2026-06-28
 
