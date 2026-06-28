@@ -4,6 +4,25 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.12] — 2026-06-28
+
+Wave 6b (PR 0) — shared review engine extracted into `core` (single source of truth).
+
+### Added
+
+- **`core/review-plan.ts`, `core/budget-plan.ts`, `core/multi-pass-aggregate.ts`** —
+  clud-bug's review-planning brain now lives in the shared package, ported behavior-identically
+  from `clud-bug-app/lib` (the App's unit suites ported alongside; 77 new tests):
+  - `resolveReviewPasses` — per-skill multi-pass resolver with the `.clud-bug.json` perSkill →
+    SKILL.md `review_passes` → repo-default → builtin precedence chain and the `MAX_PASSES=3` cap.
+  - `estimateBudget` — Layer-1 pre-flight cost gate (`Σ(skill_loads × passes) × worst-case ceiling`).
+  - `aggregatePasses` + `resolveVerdict` — cross-check / consensus / independent aggregation and
+    the §1.8.5 APPROVE/REQUEST_CHANGES table; `consensus` rides the canonical `UnifiedFinding`.
+  This is the foundation the hosted bot, the npm workflow, and local mode all consume. Adds a
+  `beetle | wasp | mantis` `tier` on `ReviewRole` (concrete model binding stays consumer-side).
+  Additive — no existing consumer behavior changes; `resolveReviewPasses` is decoupled from the
+  App's `LoadedSkill` (takes a minimal `{ slug, frontmatter }`).
+
 ## [0.7.0-rc.11] — 2026-06-28
 
 Wave 6b — local review mode (slash-command MVP).

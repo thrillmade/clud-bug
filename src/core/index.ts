@@ -119,6 +119,7 @@ export {
   type RenderedFindingRef,
   type CacheStats,
   type RenderMultiPassMarkdownInput,
+  type Consensus,
   type MultiPassReview,
   type UnifiedFinding,
   type PassAttribution,
@@ -216,6 +217,61 @@ export {
   type ApplyCanonicalRulesetParams,
   type ApplyResult,
 } from './configure-github.js';
+// Wave 6b — review-planning "brain" ported from clud-bug-app/lib. Three pure
+// modules: the multi-pass config resolver (`review-plan`), the Layer-1 cost
+// gate (`budget-plan`), and the multi-pass aggregator (`multi-pass-aggregate`).
+//
+// `ReviewPassMode` is intentionally NOT re-exported here — `review-writeback`
+// above already owns that name in the barrel (both declarations are the same
+// `'cross-check' | 'consensus' | 'independent'` union). Likewise the
+// aggregator's result types (`MultiPassReview`, `UnifiedFinding`,
+// `PassAttribution`, `PassSource`) come from `review-writeback` and are NOT
+// re-declared by the aggregator module — it imports them.
+export {
+  readReviewPassesConfig,
+  extractSkillReviewPassesOverride,
+  resolveReviewPasses,
+  roleForPass,
+  anyMultiPass,
+  totalPassCount,
+  REVIEW_PASS_MODES,
+  MAX_PASSES,
+  MIN_PASSES,
+  BUILTIN_DEFAULT,
+  BUILTIN_ROLES,
+  type ApplyTo,
+  type ReviewPassesEntry,
+  type ReviewRoleTier,
+  type ReviewRole,
+  type ResolvedReviewPasses,
+  type ReviewPassesConfig,
+  type SkillReviewPassesFrontmatter,
+  type ReviewPlanSkill,
+  type ResolveReviewPassesInput,
+  type ResolveReviewPassesResult,
+} from './review-plan.js';
+export {
+  perCallCeiling,
+  estimateBudget,
+  estimateVerifierBudget,
+  __setModelCeilingForTests,
+  DEFAULT_PER_PR_CAP_USD,
+  DEFAULT_VERIFIER_PER_PR_CAP_USD,
+  type BudgetEstimateInput,
+  type BudgetEstimate,
+  type BudgetVerdict,
+  type VerifierBudgetInput,
+  type VerifierBudgetEstimate,
+  type VerifierBudgetVerdict,
+} from './budget-plan.js';
+export {
+  aggregatePasses,
+  deriveConsensus,
+  resolveVerdict,
+  type CrossCheckVerdict,
+  type CrossCheckPassResult,
+  type AggregateInput,
+} from './multi-pass-aggregate.js';
 export {
   API_BASE,
   MAX_SKILLS,
