@@ -95,7 +95,7 @@ describe('planReview', () => {
     expect(plan.perSkill).toEqual([]);
     expect(plan.budget.estimate.estimatedCalls).toBe(0);
     expect(plan.budget.verdict).toBe('allow');
-    expect(plan.summary).toMatch(/0 pass/);
+    expect(plan.summary).toMatch(/0-pass/);
   });
 
   it('reports budget-exceeded detail in the summary when the verdict is deny', () => {

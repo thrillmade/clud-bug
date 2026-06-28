@@ -27,6 +27,12 @@ Wave 6b (PR 0) — shared review engine extracted into `core` (single source of 
   `trigger: 'commit'` (or a diff over `LARGE_DIFF_THRESHOLD_BYTES`) tiers down to a single fast
   (`beetle`-tier) pass; otherwise the full multi-pass plan. Every consumer plans through this one
   function, so the fast-vs-deep choice falls out of the tier system — never hand-picked per call.
+- **`clud-bug review-prompt [--trigger commit|push|pr]`** — emits the local-review *recipe*:
+  the structured prompt a Claude Code agent (or a `type: agent` hook) runs to review the current
+  diff on the session's own subscription. It loads the repo's skills + `.clud-bug.json`, plans via
+  `planReview`, and renders a plan-aware recipe — a single fast pass on `commit`, the full
+  multi-pass fan-out (with the resolved tiers + aggregation mode) on `push`/`pr`. The dynamic,
+  engine-driven counterpart of the rc.11 static `/clud-bug-review` slash command.
 
 ## [0.7.0-rc.11] — 2026-06-28
 
