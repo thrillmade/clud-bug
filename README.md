@@ -257,6 +257,26 @@ Every Clud Bug review opens with a status line that tells you exactly what chang
 
 Same format every time; zero values are always present so the line is easy to scan and parse.
 
+### Auto-resolving review threads (optional PAT)
+
+When you push a fix, Clud Bug re-checks each open review thread and, if it verifies the fix
+landed, posts a **✅ Verified fixed** reply on that thread.
+
+**Closing the thread automatically is optional.** GitHub doesn't let the built-in Actions
+`GITHUB_TOKEN` resolve review threads, so by default Clud Bug posts the "verified fixed"
+reply and you click **Resolve conversation** to dismiss it — no errors, nothing fails.
+
+To have Clud Bug close verified threads for you (matching the hosted App):
+
+1. Create a **fine-grained personal access token** scoped to this repo with **Pull
+   requests: write**.
+2. Add it as a repository secret named **`CLUD_BUG_RESOLVE_PAT`** (Settings → Secrets and
+   variables → Actions → New repository secret).
+
+The next fix-push then auto-closes verified threads. Without the secret everything still
+works; threads just wait for a manual Resolve. The reply is idempotent — re-pushes that
+don't change the code won't re-post, so the thread never gets spammed.
+
 ## Manual install (advanced)
 
 If you don't want to use the CLI, you can install a generic workflow by hand:

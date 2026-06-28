@@ -744,6 +744,11 @@ async function runResolveThreads(_args) {
   const {
     readAutoResolveConfigFromCludBug,
     runAutoResolve,
+    applyResolutionRules,
+    selectResolveAuth,
+    renderResolveMarkerTag,
+    anchorSignature,
+    latestResolveMarker,
   } = await import('../core/auto-resolve.js');
   const {
     VERIFIER_SYSTEM,
@@ -848,6 +853,9 @@ async function runResolveThreads(_args) {
       file: c.path,
       line: c.line ?? c.originalLine,
       parsed,
+      // Wave 5b.1: full comment list so idempotency can spot a prior
+      // bot reply's resolve marker (verdict + anchor sig) on this thread.
+      comments: t.comments?.nodes ?? [],
     });
   }
 
@@ -952,19 +960,96 @@ async function runResolveThreads(_args) {
     }
   }
 
-  // ---- Run pure orchestration -------------------------------------------
+  // ---- Resolve auth (Wave 5b.1: PAT optional + graceful fallback) -------
+  // A dedicated PAT lets us actually close threads; without one the Actions
+  // GITHUB_TOKEN can't resolve, so we post a "verified fixed" reply only.
+  const auth = selectResolveAuth(process.env);
+
+  // ---- Idempotency: skip threads whose anchor is unchanged --------------
+  // For each candidate, hash the post-fix anchor and look for a prior bot
+  // reply carrying the same (verdict, sig) marker. If the anchor hasn't moved
+  // since that marker, we re-use the cached verdict — NO verifier call, NO
+  // re-post — which kills repeat replies on multi-push PRs and saves spend.
+  const verifyItems = []; // { thread, sig } — need (re)verification
+  const cachedItems = []; // { thread, action } — anchor unchanged, no I/O
+  for (let i = 0; i < priorThreads.length; i++) {
+    const thread = priorThreads[i];
+    const candidate = candidates[i];
+    if (!thread) continue;
+    const sig = anchorSignature(thread.finding, thread.codeAfter);
+    const prior = latestResolveMarker(candidate?.comments ?? [], BOT_AUTHORS);
+    if (prior && prior.sig === sig) {
+      const action = applyResolutionRules({
+        thread,
+        verdict: {
+          verdict: prior.verdict,
+          source: 'model',
+          rationale: '(unchanged since last check)',
+        },
+        config: autoResolveConfig,
+        canResolve: auth.hasDedicatedPat,
+      });
+      cachedItems.push({ thread, action });
+    } else {
+      verifyItems.push({ thread, sig });
+    }
+  }
+
+  // ---- Run pure orchestration on the threads that need (re)verification --
   const result = await runAutoResolve({
-    priorThreads,
+    priorThreads: verifyItems.map((v) => v.thread),
     config: autoResolveConfig,
     verifier,
+    canResolve: auth.hasDedicatedPat,
   });
+
+  let shouldRequestChanges = result.shouldRequestChanges;
+  for (const c of cachedItems) {
+    if (c.action.kind === 'keep_open_request_changes') shouldRequestChanges = true;
+  }
 
   // ---- Execute the actions via GraphQL mutations ------------------------
   const actionsReport = [];
+
+  // Unchanged threads: never re-post the reply (idempotent). BUT if the
+  // thread is verified ADDRESSED and a PAT is now available, resolve it —
+  // the marker reply already exists, so this closes a thread that couldn't
+  // be resolved before (no-PAT → PAT upgrade, or a prior transient
+  // resolve-failure) WITHOUT re-verifying or re-replying.
+  for (const c of cachedItems) {
+    const baseReport = {
+      threadId: c.thread.threadId,
+      file: c.thread.finding.file,
+      line: c.thread.finding.line,
+      verdict: c.action.verdict?.verdict,
+      kind: c.action.kind,
+    };
+    if (c.action.kind === 'resolve' && auth.hasDedicatedPat) {
+      const resolveResult = spawnSync(
+        'gh',
+        [
+          'api', 'graphql',
+          '-f', `query=${RESOLVE_THREAD_MUTATION}`,
+          '-f', `threadId=${c.thread.threadId}`,
+        ],
+        { encoding: 'utf8', env: { ...process.env, GH_TOKEN: auth.token } },
+      );
+      if (resolveResult.status !== 0) {
+        process.stderr.write(`clud-bug resolve-threads: RESOLVE (cached) failed for thread ${c.thread.threadId}: ${(resolveResult.stderr || '').slice(0, 200)}\n`);
+        actionsReport.push({ ...baseReport, executed: 'resolve-failed' });
+      } else {
+        actionsReport.push({ ...baseReport, executed: 'resolved-from-cache' });
+      }
+    } else {
+      actionsReport.push({ ...baseReport, executed: 'unchanged' });
+    }
+  }
+
   for (let i = 0; i < result.actions.length; i++) {
     const action = result.actions[i];
-    const thread = priorThreads[i];
-    if (!action || !thread) continue;
+    const item = verifyItems[i];
+    if (!action || !item) continue;
+    const thread = item.thread;
     const report = {
       threadId: thread.threadId,
       file: thread.finding.file,
@@ -978,14 +1063,17 @@ async function runResolveThreads(_args) {
       continue;
     }
 
-    // Post the marker reply (all non-skipped paths get a reply).
+    // Reply body carries a hidden idempotency marker (verdict + anchor sig)
+    // so a later fix-push won't re-reply while the anchor is unchanged.
+    const tag = renderResolveMarkerTag(action.verdict.verdict, item.sig);
+    const replyBody = `${action.markerBody}\n\n${tag}`;
     const replyResult = spawnSync(
       'gh',
       [
         'api', 'graphql',
         '-f', `query=${ADD_REPLY_MUTATION}`,
         '-f', `threadId=${thread.threadId}`,
-        '-f', `body=${action.markerBody}`,
+        '-f', `body=${replyBody}`,
       ],
       { encoding: 'utf8' },
     );
@@ -995,8 +1083,14 @@ async function runResolveThreads(_args) {
       continue;
     }
 
-    // Resolve only ADDRESSED threads.
+    // Resolve only ADDRESSED threads, and only with a dedicated PAT — the
+    // Actions GITHUB_TOKEN can't resolve ("Resource not accessible by
+    // integration"). No PAT → marker-reply-only (graceful, no error).
     if (action.kind === 'resolve') {
+      if (!auth.hasDedicatedPat) {
+        actionsReport.push({ ...report, executed: 'reply-only-no-pat' });
+        continue;
+      }
       const resolveResult = spawnSync(
         'gh',
         [
@@ -1004,7 +1098,8 @@ async function runResolveThreads(_args) {
           '-f', `query=${RESOLVE_THREAD_MUTATION}`,
           '-f', `threadId=${thread.threadId}`,
         ],
-        { encoding: 'utf8' },
+        // Scope the PAT to JUST this call; all other gh calls keep GH_TOKEN.
+        { encoding: 'utf8', env: { ...process.env, GH_TOKEN: auth.token } },
       );
       if (resolveResult.status !== 0) {
         process.stderr.write(`clud-bug resolve-threads: RESOLVE failed for thread ${thread.threadId}: ${(resolveResult.stderr || '').slice(0, 200)}\n`);
@@ -1021,7 +1116,8 @@ async function runResolveThreads(_args) {
   process.stdout.write(JSON.stringify({
     actions: actionsReport,
     verifierCallCount: result.verifierCallCount,
-    shouldRequestChanges: result.shouldRequestChanges,
+    shouldRequestChanges,
+    resolveTokenSource: auth.source,
   }) + '\n');
 }
 
