@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (60 decisions)
+## 2026-06 (61 decisions)
 
-- **2026-06-28** — site: reconcile landing copy to shipped pricing + multi-pass reality *(a5-landing-refresh)* — [decisions-branches/a5-landing-refresh.md](decisions-branches/a5-landing-refresh.md)
-- *... 58 more decisions ...*
+- **2026-06-29** — design-critic B1a: add kind:design skill lens + ship the design baseline kit *(b1a-design-kit)* — [decisions-branches/b1a-design-kit.md](decisions-branches/b1a-design-kit.md)
+- *... 59 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
