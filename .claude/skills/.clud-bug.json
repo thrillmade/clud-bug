@@ -30,8 +30,8 @@
       "description": "(baseline)"
     }
   ],
-  "lastUpdate": "2026-06-01T14:17:41.585Z",
-  "lastUpdateVersion": "0.6.32",
+  "lastUpdate": "2026-06-29T18:19:31.973Z",
+  "lastUpdateVersion": "0.7.0-rc.18",
   "strictMode": true,
   "strictSkills": []
 }
