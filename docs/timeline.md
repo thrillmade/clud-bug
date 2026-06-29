@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (79 decisions)
+## 2026-06 (80 decisions)
 
-- **2026-06-29** — rc.20: floating @next hook + update notifier + fix update re-adding the Action in local-only repos *(rc20-floating-pin)* — [decisions-branches/rc20-floating-pin.md](decisions-branches/rc20-floating-pin.md)
-- *... 77 more decisions ...*
+- **2026-06-29** — re-pin: float the max-mode hook to @next (auto-update; last manual re-pin) *(repin-next-floating)* — [decisions-branches/repin-next-floating.md](decisions-branches/repin-next-floating.md)
+- *... 78 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
