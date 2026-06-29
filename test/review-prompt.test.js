@@ -83,6 +83,39 @@ describe('renderReviewRecipe', () => {
     expect(consensusRecipe).not.toMatch(/arbiter sub-agent/i);
   });
 
+  it('H1: carries adversarial rigor — three lenses, verify/ground, refute, tiebreak', () => {
+    // single-pass (commit): three explicit lenses + verify-and-ground discipline
+    const single = renderReviewRecipe({
+      plan: planReview({ skills: SKILLS, config: { count: 1, mode: 'cross-check' }, trigger: 'commit' }),
+      trigger: 'commit',
+    });
+    expect(single).toMatch(/three disciplined lenses/i);
+    expect(single).toMatch(/Correctness/);
+    expect(single).toMatch(/Security/);
+    expect(single).toMatch(/Regression/);
+    expect(single).toMatch(/VERIFY before you record/i);
+    expect(single).toMatch(/cannot ground/i);
+
+    // multi-pass cross-check (pr): adversarial refute framing + grounding rule + arbiter tiebreak
+    const multi = renderReviewRecipe({
+      plan: planReview({ skills: SKILLS, config: { count: 2, mode: 'cross-check' }, trigger: 'pr' }),
+      trigger: 'pr',
+    });
+    // the three lenses live in the shared §2 segment — assert they reach multi-pass too
+    expect(multi).toMatch(/three disciplined lenses/i);
+    expect(multi).toMatch(/Correctness/);
+    expect(multi).toMatch(/Security/);
+    expect(multi).toMatch(/Regression/);
+    expect(multi).toMatch(/ADVERSARIAL/);
+    expect(multi).toMatch(/REFUTE/);
+    expect(multi).toMatch(/Grounding rule/i);
+    expect(multi).toMatch(/Tiebreak/);
+    expect(multi).toMatch(/severity decides/i);
+    // the local arbiter consequence is stated, NOT the hosted "doesn't gate" invariant
+    expect(multi).toMatch(/stays in the report/i);
+    expect(multi).not.toMatch(/does not change which findings gate/i);
+  });
+
   it('renders the design-critic step only when the design lens is passed (gated on)', () => {
     const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
     const design = {
