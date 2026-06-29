@@ -98,3 +98,24 @@ test('init --with-hooks does NOT clobber a pre-existing malformed settings.json'
   const after = await readFile(settingsPath, 'utf8');
   assert.equal(after, malformed, 'malformed settings.json must not be clobbered');
 });
+
+test('init --local-only installs max mode (slash command + hook) but NO Action workflows', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-localonly-'));
+  await mkdir(join(dir, '.git'), { recursive: true });
+  const r = runInit(dir, ['--local-only']);
+  assert.equal(r.status, 0, r.stderr);
+  // max mode present: slash command + the type:command hook
+  await access(join(dir, '.claude', 'commands', 'clud-bug-review.md'));
+  const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
+  assert.equal(settings.hooks.PostToolUse[0].hooks[0].type, 'command');
+  // NO GitHub Action workflows (those run claude-code-action with ANTHROPIC_API_KEY)
+  for (const wf of ['clud-bug-review.yml', 'clud-bug-audit.yml', 'clud-bug-self-update.yml']) {
+    let exists = true;
+    try {
+      await access(join(dir, '.github', 'workflows', wf));
+    } catch {
+      exists = false;
+    }
+    assert.equal(exists, false, `${wf} must NOT be written under --local-only`);
+  }
+});

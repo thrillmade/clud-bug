@@ -73,6 +73,12 @@ function parseArgs(argv) {
     // (3 `kind: design` skills) and flips the off-by-default `design` block to
     // enabled so the visual review lens runs (local recipe + hosted bot).
     withDesign: false,
+    // rc.18: `clud-bug init --local-only` installs MAX MODE (skills + slash
+    // command + commit hook), but SKIPS the GitHub Action workflows (which run
+    // claude-code-action with ANTHROPIC_API_KEY). For repos that review on a
+    // Claude subscription via the in-session hook, not a billed CI Action.
+    // Implies --with-local-review + --with-hooks.
+    localOnly: false,
     // v0.7.0-rc.4: `clud-bug configure-github` flags.
     // --dry-run prints the diff but skips PATCH; --branch overrides "main".
     dryRun: false,
@@ -102,6 +108,7 @@ function parseArgs(argv) {
     else if (a === '--with-local-review') args.withLocalReview = true;
     else if (a === '--with-hooks') args.withHooks = true;
     else if (a === '--with-design') args.withDesign = true;
+    else if (a === '--local-only') args.localOnly = true;
     else if (a === '--dry-run') args.dryRun = true;
     else if (a === '--branch') args.branch = argv[++i];
     else if (a === '--trigger') args.trigger = argv[++i];
@@ -218,6 +225,10 @@ Options:
   --with-design         (init) Install the design-critic kit (3 \`kind: design\`
                         skills) and enable the off-by-default visual review
                         lens — renders changed UI and critiques it. Off by default.
+  --local-only          (init) MAX MODE: install the slash command + commit hook
+                        (implies --with-local-review + --with-hooks) but SKIP the
+                        GitHub Action workflows. Reviews run in your Claude Code
+                        session on your subscription — no API key, no per-review bill.
   --quiet,-q            Token-frugal mode for agent invocations. Suppresses
                         progress chatter; emits exactly one final
                         \`ok <key-value>\` summary line per command. Errors
@@ -1248,29 +1259,38 @@ async function runInit(args) {
       language: templateLanguage(tmplName),
     }),
   });
-  const workflowPath = join(cwd, '.github', 'workflows', 'clud-bug-review.yml');
-  await mkdir(dirname(workflowPath), { recursive: true });
-  await writeFile(workflowPath, workflow);
-  log(`    wrote ${rel(cwd, workflowPath)}`);
+  // --local-only (max mode): SKIP the GitHub Action workflows entirely. The
+  // review + audit workflows run `claude-code-action` with ANTHROPIC_API_KEY
+  // (per-token cost); max mode reviews on the session's own subscription, so a
+  // local-only install must never add a token-billing Action. (self-update is
+  // benign but skipped too — local-only means no clud-bug CI workflows at all.)
+  if (args.localOnly) {
+    log('    skipped GitHub Action workflows (--local-only: max mode runs on the session subscription, no API key)');
+  } else {
+    const workflowPath = join(cwd, '.github', 'workflows', 'clud-bug-review.yml');
+    await mkdir(dirname(workflowPath), { recursive: true });
+    await writeFile(workflowPath, workflow);
+    log(`    wrote ${rel(cwd, workflowPath)}`);
 
-  // Install the audit workflow alongside the per-PR review one.
-  // Manual-trigger by default; users opt into the cron by uncommenting.
-  // Routed through renderFile so {{CCA_VERSION}} substitution pins
-  // claude-code-action consistently with the review workflow.
-  const auditTmpl = await renderFile(join(TEMPLATES, 'audit.yml.tmpl'), {});
-  const auditPath = join(cwd, '.github', 'workflows', 'clud-bug-audit.yml');
-  await writeFile(auditPath, auditTmpl);
-  log(`    wrote ${rel(cwd, auditPath)}`);
+    // Install the audit workflow alongside the per-PR review one.
+    // Manual-trigger by default; users opt into the cron by uncommenting.
+    // Routed through renderFile so {{CCA_VERSION}} substitution pins
+    // claude-code-action consistently with the review workflow.
+    const auditTmpl = await renderFile(join(TEMPLATES, 'audit.yml.tmpl'), {});
+    const auditPath = join(cwd, '.github', 'workflows', 'clud-bug-audit.yml');
+    await writeFile(auditPath, auditTmpl);
+    log(`    wrote ${rel(cwd, auditPath)}`);
 
-  // Install the self-update workflow. Cron weekly Mondays 12:00 UTC; opens
-  // a PR if a newer clud-bug version is published. Disable by deleting the
-  // file or pinning via .claude/skills/.clud-bug.json.
-  // Routed through renderFile for parity (no CCA ref today but future
-  // tokens should propagate uniformly).
-  const selfUpdateTmpl = await renderFile(join(TEMPLATES, 'self-update.yml.tmpl'), {});
-  const selfUpdatePath = join(cwd, '.github', 'workflows', 'clud-bug-self-update.yml');
-  await writeFile(selfUpdatePath, selfUpdateTmpl);
-  log(`    wrote ${rel(cwd, selfUpdatePath)}`);
+    // Install the self-update workflow. Cron weekly Mondays 12:00 UTC; opens
+    // a PR if a newer clud-bug version is published. Disable by deleting the
+    // file or pinning via .claude/skills/.clud-bug.json.
+    // Routed through renderFile for parity (no CCA ref today but future
+    // tokens should propagate uniformly).
+    const selfUpdateTmpl = await renderFile(join(TEMPLATES, 'self-update.yml.tmpl'), {});
+    const selfUpdatePath = join(cwd, '.github', 'workflows', 'clud-bug-self-update.yml');
+    await writeFile(selfUpdatePath, selfUpdateTmpl);
+    log(`    wrote ${rel(cwd, selfUpdatePath)}`);
+  }
 
   // v0.7.0 (Wave 6b): optional local-review slash command. Scaffolds
   // `.claude/commands/clud-bug-review.md` so `/clud-bug-review` works inside a
@@ -1280,6 +1300,12 @@ async function runInit(args) {
   // `--with-hooks` implies `--with-local-review` — the auto hook and the manual
   // `/clud-bug-review` command are complementary (the hook auto-runs the engine
   // recipe on each commit; the command runs it on demand against the PR).
+  // --local-only IS the max-mode install: the slash command + the commit hook,
+  // minus the GitHub Action workflows (gated above).
+  if (args.localOnly) {
+    args.withLocalReview = true;
+    args.withHooks = true;
+  }
   if (args.withHooks) args.withLocalReview = true;
   if (args.withLocalReview) {
     const commandPath = join(cwd, '.claude', 'commands', 'clud-bug-review.md');
@@ -1384,9 +1410,14 @@ async function runInit(args) {
     log('  committing...');
     const toAdd = [
       '.claude',
-      '.github/workflows/clud-bug-review.yml',
-      '.github/workflows/clud-bug-audit.yml',
-      '.github/workflows/clud-bug-self-update.yml',
+      // No GitHub Action workflows under --local-only (none were written).
+      ...(args.localOnly
+        ? []
+        : [
+            '.github/workflows/clud-bug-review.yml',
+            '.github/workflows/clud-bug-audit.yml',
+            '.github/workflows/clud-bug-self-update.yml',
+          ]),
       ...agentDocs.created,
       ...agentDocs.touched,
     ];
@@ -1403,21 +1434,40 @@ async function runInit(args) {
 
   log('');
   log('Field kit assembled. Next:');
-  log('  1. Set ANTHROPIC_API_KEY in your repo secrets:');
-  log('     Settings → Secrets and variables → Actions → New repository secret');
-  if (!args.commit) {
-    log('  2. git add .claude .github/workflows/clud-bug-*.yml && git commit && git push');
-    log('  3. Open a PR — the naturalist arrives within ~2 minutes.');
+  if (args.localOnly) {
+    log('  Max mode — reviews run inside your Claude Code session on your own');
+    log('  subscription. No API key, no GitHub Action, no per-review bill. On every');
+    log('  commit the hook surfaces a review recipe; or run /clud-bug-review on demand.');
+    if (!args.commit) {
+      log('  → git add .claude && git commit && git push');
+    } else {
+      log('  → git push.');
+    }
   } else {
-    log('  2. git push, then open a PR — the naturalist arrives within ~2 minutes.');
+    log('  1. Set ANTHROPIC_API_KEY in your repo secrets:');
+    log('     Settings → Secrets and variables → Actions → New repository secret');
+    if (!args.commit) {
+      log('  2. git add .claude .github/workflows/clud-bug-*.yml && git commit && git push');
+      log('  3. Open a PR — the naturalist arrives within ~2 minutes.');
+    } else {
+      log('  2. git push, then open a PR — the naturalist arrives within ~2 minutes.');
+    }
   }
   log('');
   log('Drop your own .claude/skills/<name>/SKILL.md files anytime — they get pinned automatically.');
-  log('For a whole-repo walk: Actions tab → Clud Bug 🐛 Audit → Run workflow.');
-  log('Self-update is on (weekly Mondays 12:00 UTC). Pin via "pinVersion" in .claude/skills/.clud-bug.json.');
+  // These reference the GitHub Action workflows, which --local-only does not write.
+  if (!args.localOnly) {
+    log('For a whole-repo walk: Actions tab → Clud Bug 🐛 Audit → Run workflow.');
+    log('Self-update is on (weekly Mondays 12:00 UTC). Pin via "pinVersion" in .claude/skills/.clud-bug.json.');
+  }
   log('');
-  log('Strict mode is ON by default (clud-bug-review fails the check on critical findings).');
-  log('  • Add `clud-bug-review` to your branch protection required checks for full enforcement.');
+  if (args.localOnly) {
+    log('Strict mode + branch-protection enforcement apply to the GitHub Action path; max mode is');
+    log('advisory by design — findings surface in your session for you to act on.');
+  } else {
+    log('Strict mode is ON by default (clud-bug-review fails the check on critical findings).');
+    log('  • Add `clud-bug-review` to your branch protection required checks for full enforcement.');
+  }
   log('  • Opt out by setting "strictMode": false in .claude/skills/.clud-bug.json.');
 
   // v0.6.33 — opt-in unified install (mirror of logmind v0.6.8). When
