@@ -13,8 +13,8 @@ import {
   buildCommitReviewCommand,
 } from '../src/cli/hooks.js';
 
-// The hook command is version-pinned; build one at a fixed test version.
-const COMMIT_REVIEW_COMMAND = buildCommitReviewCommand('0.7.0-rc.13');
+// The hook command floats to the `next` dist-tag by default (rc.20).
+const COMMIT_REVIEW_COMMAND = buildCommitReviewCommand();
 
 describe('buildLocalReviewHook', () => {
   it('is a backgrounded type:command PostToolUse entry targeting git commit + logmind log', () => {
@@ -113,10 +113,12 @@ describe('mergeLocalReviewHook', () => {
 });
 
 describe('buildCommitReviewCommand', () => {
-  it('carries the marker, pins the clud-bug version, and runs review-prompt on the subscription', () => {
+  it('carries the marker, floats to @next, and runs review-prompt on the subscription', () => {
     expect(COMMIT_REVIEW_COMMAND).toMatch(/clud-bug-local-review/);
-    // version-pinned so the hook never resolves to a `latest` that predates the verb
-    expect(COMMIT_REVIEW_COMMAND).toMatch(/npx clud-bug@0\.7\.0-rc\.13 review-prompt --trigger commit/);
+    // floating @next so the hook always fetches the latest recipe — no per-release re-pin
+    expect(COMMIT_REVIEW_COMMAND).toMatch(/npx clud-bug@next review-prompt --trigger commit/);
+    // the pin is overridable for a repo that wants a frozen exact version
+    expect(buildCommitReviewCommand('0.7.0-rc.99')).toMatch(/npx clud-bug@0\.7\.0-rc\.99 review-prompt/);
     expect(COMMIT_REVIEW_COMMAND).toMatch(/subscription/i);
     // idempotency: skips re-surfacing the same HEAD; never blocks the commit
     expect(COMMIT_REVIEW_COMMAND).toMatch(/git rev-parse HEAD/);

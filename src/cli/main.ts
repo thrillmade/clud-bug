@@ -283,6 +283,17 @@ async function main() {
   if (args.quiet) setQuiet(true);
 
   const cmd = args._[0];
+
+  // rc.20 — update notifier (brew/gh/vercel pattern). Only on an interactive
+  // terminal, and never for the machine-consumed verbs (the hook runs
+  // review-prompt in a non-TTY subprocess, so this is doubly skipped there).
+  // Best-effort + cache-backed, so it adds no latency to the command.
+  const MACHINE_VERBS = new Set(['review-prompt', 'post-check-run', 'render', 'update-skill-usage']);
+  if (process.stderr.isTTY && !MACHINE_VERBS.has(cmd)) {
+    const { maybeNotifyUpdate } = await import('./update-notifier.js');
+    await maybeNotifyUpdate(await readPkgVersion());
+  }
+
   switch (cmd) {
     case 'init':    return runInit(args);
     case 'list':    return runList(args);
@@ -1340,7 +1351,8 @@ async function runInit(args) {
   // never run the CLI; see hooks.ts.)
   if (args.withHooks) {
     const { mergeLocalReviewHook, buildCommitReviewCommand } = await import('./hooks.js');
-    const hookCommand = buildCommitReviewCommand(await readPkgVersion());
+    // Floating @next pin (default) — the hook auto-fetches the latest recipe.
+    const hookCommand = buildCommitReviewCommand();
     const settingsPath = join(cwd, '.claude', 'settings.json');
     await mkdir(dirname(settingsPath), { recursive: true });
     // Read-then-parse so we can tell "no file yet" (fresh merge) from "file

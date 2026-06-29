@@ -87,6 +87,7 @@ clud-bug
 │   ├── skills-frontmatter.test.js
 │   ├── skills.test.js
 │   ├── strict-mode-gate-classifier.test.js
+│   ├── update-notifier.test.js
 │   ├── update-skill-usage.test.js
 │   ├── update.test.js
 │   └── usage.test.js
