@@ -362,6 +362,12 @@ export default async function Home() {
           a <a href="https://thrillmot.com" rel="noopener">thrillmot</a> project
         </span>
         <span>
+          <a href="/pricing">pricing</a>
+          {' · '}
+          <a href="/privacy">privacy</a>
+          {' · '}
+          <a href="/terms">terms</a>
+          {' · '}
           <a href={APP_DASHBOARD_URL} rel="noopener">app.cludbug.dev</a>
           {' · '}
           <a href="https://github.com/thrillmade/clud-bug">github</a>
