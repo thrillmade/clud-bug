@@ -262,6 +262,22 @@ Body.
   assert.equal(fm.kind, 'rule');
 });
 
+test('parseFrontmatter: kind: design surfaced (visual-review lens, no scope required)', () => {
+  const raw = `---
+name: visual-polish
+description: A design skill.
+kind: design
+review_mode: dedicated
+---
+Body.
+`;
+  const fm = parseFrontmatter(raw);
+  assert.equal(fm.kind, 'design');
+  // design needs no voice_scope (unlike kind: voice)
+  assert.equal(fm.voice_scope, undefined);
+  assert.equal(fm.review_mode, 'dedicated');
+});
+
 test('parseFrontmatter: unknown kind silently drops (defensive)', () => {
   const raw = `---
 name: weird

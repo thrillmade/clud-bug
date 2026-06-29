@@ -655,7 +655,7 @@ export type SkillReviewMode = 'shared' | 'dedicated';
  * `PromptSkillFrontmatter` is a narrower subset (name + description +
  * applies_to) so we keep the full shape here.
  */
-export type SkillKind = 'rule' | 'voice';
+export type SkillKind = 'rule' | 'voice' | 'design';
 export type VoiceScope = 'personal' | 'team' | 'org' | 'community';
 
 export interface SkillFrontmatter {
@@ -778,7 +778,13 @@ export function parseFrontmatter(raw: string): SkillFrontmatter {
   // "voice_scope REQUIRED when kind: voice") is the caller's job.
   const kindRaw = out['kind'];
   const kind: SkillKind | undefined =
-    kindRaw === 'voice' ? 'voice' : kindRaw === 'rule' ? 'rule' : undefined;
+    kindRaw === 'voice'
+      ? 'voice'
+      : kindRaw === 'design'
+        ? 'design'
+        : kindRaw === 'rule'
+          ? 'rule'
+          : undefined;
   const voiceScopeRaw = out['voice_scope'];
   const voiceScope: VoiceScope | undefined =
     voiceScopeRaw === 'personal' ||
