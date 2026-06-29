@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (75 decisions)
+## 2026-06 (77 decisions)
 
-- **2026-06-29** — H4 review fix: clear $recipe on non-zero npx exit so partial/error stdout is never surfaced *(h4-hook-robustness)* — [decisions-branches/h4-hook-robustness.md](decisions-branches/h4-hook-robustness.md)
-- *... 73 more decisions ...*
+- **2026-06-29** — H3 review fixes: CLI-level false-green guard tests + document the check-run stacking tradeoff *(h3-merge-gate)* — [decisions-branches/h3-merge-gate.md](decisions-branches/h3-merge-gate.md)
+- *... 75 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)

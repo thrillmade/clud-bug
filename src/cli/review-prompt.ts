@@ -177,6 +177,21 @@ export function renderReviewRecipe(input: {
       : 'Surface the findings into the session, and — if an open PR exists — post or edit (in ' +
         'place, by integer comment id) the clud-bug summary comment on it.';
 
+  // H3 — the merge-gate step (PR only). After reporting, the agent posts a
+  // SELF-ATTESTED `clud-bug-review` check so branch protection can gate the merge
+  // on a local review too. Commit/push triggers skip it (no PR head to anchor a
+  // check to). The conclusion is derived by `post-check-run` from the verdict +
+  // the repo's strictMode.
+  const gateStep =
+    trigger === 'pr'
+      ? `\n\n## 5. Post the merge-gate check
+After reporting, post the self-attested \`clud-bug-review\` check so branch protection can gate on it:
+\`\`\`bash
+clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical> --critical-count <N> --source local
+\`\`\`
+\`clean\` → the check passes (merge unblocked); \`critical\` → it fails when the repo is in strict mode. This is a **self-attested** local review (this session), not independent CI — post it honestly from what you actually found. Skip silently if \`gh\` lacks \`checks: write\`.`
+      : '';
+
   // 3b (rc.15) — the OPTIONAL design-critic visual pass. Rendered only when the
   // caller gated it on (design.enabled + kind:design skills + pr trigger). The
   // step itself defers to runtime: no deploy-preview URL or no browser MCP in
@@ -252,7 +267,7 @@ Skills referenced: [<the skills you applied>]
 <!-- written-by: @<login> (clud-bug local-mode) -->
 \`\`\`
 
-${surface}
+${surface}${gateStep}
 
 Keep it tight — this is the local safety net; the deeper review still happens at PR time.
 `;

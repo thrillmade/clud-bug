@@ -32,6 +32,7 @@ import { computeAuditFileSet } from './audit.js';
 import { renderAuditHeader } from '../core/audit.js';
 import { runUpdate } from './update.js';
 import { runReviewPrompt } from './review-prompt.js';
+import { runPostCheckRun } from './post-check-run.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from './edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
 import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from './branch-protection.js';
@@ -113,6 +114,15 @@ function parseArgs(argv) {
     else if (a === '--branch') args.branch = argv[++i];
     else if (a === '--trigger') args.trigger = argv[++i];
     else if (a === '--diff-size') args.diffSizeBytes = Number(argv[++i]);
+    // H3: `clud-bug post-check-run` flags.
+    else if (a === '--sha') args.sha = argv[++i];
+    else if (a === '--verdict') args.verdict = argv[++i];
+    else if (a === '--critical-count') args.criticalCount = Number(argv[++i]);
+    else if (a === '--source') args.source = argv[++i];
+    else if (a === '--strict') args.strict = true;
+    else if (a === '--no-strict') args.strict = false;
+    else if (a === '--owner') args.owner = argv[++i];
+    else if (a === '--details-url') args.detailsUrl = argv[++i];
     else args._.push(a);
   }
   return args;
@@ -208,6 +218,11 @@ Commands:
                         the session's own subscription. Plans via the shared
                         engine: --trigger commit (default) → a fast single pass;
                         push/pr → the full multi-pass plan. Prints to stdout.
+  post-check-run        Post the \`clud-bug-review\` GitHub check so branch
+                        protection can gate the merge (H3). --verdict
+                        clean|critical|failed --sha <sha> [--critical-count N]
+                        [--source local|ci] [--strict|--no-strict] [--dry-run].
+                        clean→success, critical+strict→failure, else neutral.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -286,6 +301,7 @@ async function main() {
     case 'post-inline-threads': return runPostInlineThreads(args);
     case 'resolve-threads': return runResolveThreads(args);
     case 'review-prompt': return runReviewPrompt(args);
+    case 'post-check-run': return runPostCheckRun(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
