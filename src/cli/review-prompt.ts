@@ -127,9 +127,10 @@ export function renderReviewRecipe(input: {
           `with a one-line rationale. Skip the arbiter if the passes agree, or disagree only on ` +
           `\`preexisting\` findings. **Tiebreak:** when a dispute is genuinely unresolvable from the ` +
           `diff + the cited skill, severity decides — surface at the higher severity ` +
-          `(\`critical\` > \`minor\` > \`preexisting\`) rather than suppress. The arbiter's verdict sets ` +
-          `each disputed finding's consensus marker (\`2-of-2\` if upheld, \`arbitrated\` if not) and its ` +
-          `rationale — it does not change which findings gate the merge.`
+          `(\`critical\` > \`minor\` > \`preexisting\`) rather than suppress. The arbiter records each ` +
+          `disputed finding's verdict + a one-line rationale and sets its consensus marker (\`2-of-2\` ` +
+          `if upheld, \`arbitrated\` if overturned): an upheld finding stays in the report; one the ` +
+          `arbiter judges a false positive is dropped.`
         : '';
     reviewStep =
       `Dispatch ${maxPasses} reviewer sub-agents — a ${maxPasses}-pass **${mode}** review on this ` +
@@ -187,16 +188,17 @@ ${diffStep}
 Read each skill's discipline from the checkout:
 ${skillsList}
 
-Apply them as three disciplined lenses — every finding must earn its place under one:
-  - **Correctness** (critical-issues-only): real bugs only — wrong logic, broken contracts,
-    unhandled cases, race conditions, performance cliffs. Skip nits and style.
-  - **Security** (evidence-based-review): injection, auth/authz gaps, secret or PII exposure,
-    SSRF, unsafe input — and quote the exact line that proves it.
-  - **Regression** (respect-existing-conventions): does the change break an existing pattern,
-    invariant, or caller? Flag where the diff fights the codebase — don't fight its conventions.
+Apply them through three disciplined lenses — every finding must earn its place under one:
+  - **Correctness**: real bugs — wrong logic, broken contracts, unhandled cases, race
+    conditions, performance cliffs. Skip nits and style.
+  - **Security**: injection, auth/authz gaps, secret or PII exposure, SSRF, unsafe input.
+  - **Regression**: does the change break an existing pattern, invariant, or caller? Flag
+    where the diff fights the codebase — don't fight its conventions.
 
-Run each lens deliberately; a generic "looks fine" is not a review. Findings that don't fit a
-lens are noise — drop them.
+The installed skills above are your authority — apply each skill's specific discipline within
+whichever lens it speaks to (a skill may sharpen more than one). Two rules cut across all three:
+**quote the exact line** every finding flags (evidence), and **drop anything that fits no lens**
+(noise). A generic "looks fine" is not a review.
 
 ## 3. Review
 ${reviewStep}${designStep}

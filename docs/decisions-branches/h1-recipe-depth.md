@@ -9,3 +9,12 @@
 
 ---
 
+## 2026-06-29 15:22 - H1 review fixes: skill-agnostic lenses + correct the local arbiter-gate consequence
+
+**Reasoning:** The adversarial review of H1 caught a real conceptual bug: the three lenses were 1:1-mapped to specific skills (Security=evidence-based-review — actually a cross-cutting evidence methodology, not a security-domain skill; Correctness=critical-issues-only — which also covers security+perf), and those names were hardcoded even though a repo may install different skills. Reframed the lenses as skill-AGNOSTIC domain categories, made 'quote the exact line' (evidence) + 'drop what fits no lens' cross-cutting, and said the installed skills (whatever they are) are the authority. Also fixed a contradiction: my tiebreak ('don't suppress') clashed with the pre-existing 'arbiter does not change which findings gate the merge' — that's the HOSTED engine's internal contract (resolveVerdict ignores the marker), but locally the agent IS the arbiter+renderer, so suppressing DOES change the gate. Replaced it with the real local consequence (upheld stays, false-positive dropped). Test asserts lenses reach multi-pass + the local wording.
+
+**Implications:**
+- Part of H1 (no version bump). The adversarial-review->fix loop is exactly the dogfood the plan wants
+
+---
+
