@@ -11,3 +11,9 @@
 
 ---
 
+## 2026-06-29 14:08 - rc.18 review fix: gate the post-init Action/branch-protection log lines under --local-only
+
+**Reasoning:** The rc.18 review found three post-init log lines (Actions tab → Audit, Self-update cron, 'add clud-bug-review to branch protection') firing unconditionally — contradicting --local-only's 'no GitHub Action' message and sending users to look for workflows that aren't there. Gated them behind !args.localOnly; under --local-only print a max-mode-accurate note instead (strict-mode/branch-protection apply to the Action path; max mode is advisory, findings surface in-session). Verified the 3 phrases are gone and the local-only lines present. Review otherwise confirmed clean (ordering, add-list, --with-design composition, tests, version lockstep).
+
+---
+

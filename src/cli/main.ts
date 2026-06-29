@@ -1455,11 +1455,19 @@ async function runInit(args) {
   }
   log('');
   log('Drop your own .claude/skills/<name>/SKILL.md files anytime — they get pinned automatically.');
-  log('For a whole-repo walk: Actions tab → Clud Bug 🐛 Audit → Run workflow.');
-  log('Self-update is on (weekly Mondays 12:00 UTC). Pin via "pinVersion" in .claude/skills/.clud-bug.json.');
+  // These reference the GitHub Action workflows, which --local-only does not write.
+  if (!args.localOnly) {
+    log('For a whole-repo walk: Actions tab → Clud Bug 🐛 Audit → Run workflow.');
+    log('Self-update is on (weekly Mondays 12:00 UTC). Pin via "pinVersion" in .claude/skills/.clud-bug.json.');
+  }
   log('');
-  log('Strict mode is ON by default (clud-bug-review fails the check on critical findings).');
-  log('  • Add `clud-bug-review` to your branch protection required checks for full enforcement.');
+  if (args.localOnly) {
+    log('Strict mode + branch-protection enforcement apply to the GitHub Action path; max mode is');
+    log('advisory by design — findings surface in your session for you to act on.');
+  } else {
+    log('Strict mode is ON by default (clud-bug-review fails the check on critical findings).');
+    log('  • Add `clud-bug-review` to your branch protection required checks for full enforcement.');
+  }
   log('  • Opt out by setting "strictMode": false in .claude/skills/.clud-bug.json.');
 
   // v0.6.33 — opt-in unified install (mirror of logmind v0.6.8). When
