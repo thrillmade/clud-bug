@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (58 decisions)
+## 2026-06 (59 decisions)
 
-- **2026-06-28** — dogfood: populate clud-bug's own .clud-bug.json with the 4 baseline skills *(dogfood-skill-manifest)* — [decisions-branches/dogfood-skill-manifest.md](decisions-branches/dogfood-skill-manifest.md)
-- *... 56 more decisions ...*
+- **2026-06-28** — rc.14 (6c): conditional Mantis arbiter — pure shouldEscalate in core + recipe prose *(rc14-arbiter)* — [decisions-branches/rc14-arbiter.md](decisions-branches/rc14-arbiter.md)
+- *... 57 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
