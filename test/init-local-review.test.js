@@ -66,15 +66,18 @@ test('init --with-hooks scaffolds the native commit-review hook + the slash comm
   assert.equal(r.status, 0, r.stderr);
   // --with-hooks implies --with-local-review, so the slash command is there too
   await access(join(dir, '.claude', 'commands', 'clud-bug-review.md'));
-  // the native `type: agent` commit-review hook, merged into .claude/settings.json
+  // the native `type: command` commit-review hook, merged into .claude/settings.json
   const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
   const entry = settings.hooks.PostToolUse[0];
   assert.equal(entry.matcher, 'Bash');
-  assert.equal(entry.hooks[0].type, 'agent');
+  assert.equal(entry.hooks[0].type, 'command');
   assert.equal(entry.hooks[0].if, 'Bash(git commit *)');
   assert.equal(entry.hooks[0].async, true);
-  assert.match(entry.hooks[0].prompt, /clud-bug-local-review/);
-  assert.match(entry.hooks[0].prompt, /review-prompt --trigger commit/);
+  assert.match(entry.hooks[0].command, /clud-bug-local-review/);
+  assert.match(entry.hooks[0].command, /review-prompt --trigger commit/);
+  // also fires on `logmind log` — the thrillmade commit primitive
+  assert.equal(entry.hooks[1].if, 'Bash(logmind log *)');
+  assert.equal(entry.hooks[1].type, 'command');
 });
 
 test('init --with-hooks does NOT clobber a pre-existing malformed settings.json', async () => {

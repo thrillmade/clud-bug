@@ -1,50 +1,57 @@
-// Wave 6b — Claude Code `type: agent` commit-review hook scaffolding.
+// Wave 6b (rc.17 fix) — Claude Code `type: command` commit-review hook scaffolding.
 //
 // `clud-bug init --with-hooks` writes a native Claude Code hook that, on every
-// `git commit` the agent makes, spawns a clud-bug review SUBAGENT in the same
-// session — so it runs on the session's subscription (no API key), in the
-// background (the commit never blocks), and surfaces findings back to the agent.
+// `git commit`, runs clud-bug's review recipe ON THIS SESSION'S SUBSCRIPTION
+// (no API key), in the background (the commit never blocks).
 //
-// The model (see the Wave 6b plan): clud-bug supplies the *recipe* (the
-// agent-hook `prompt`); Claude Code runs it as a subagent. This is the dynamic,
-// always-on counterpart to the `/clud-bug-review` slash command.
-//
-// `type: agent` hooks are documented as experimental; the same outcome is
-// reachable via a `type: command` hook + `additionalContext` if the API shifts.
+// WHY `type: command`, NOT `type: agent`: a Claude Code `type: agent` hook
+// spawns a subagent restricted to Read/Grep/Glob — it has NO Bash and the tool
+// set is not configurable (see code.claude.com/docs/en/hooks: "spawn a subagent
+// that can use tools like Read, Grep, and Glob"). The original Wave 6b hook used
+// `type: agent` and told the subagent to run `npx clud-bug review-prompt` — a
+// Bash CLI call an agent hook can never make — so the review NEVER ran for
+// anyone. A `type: command` hook CAN run the CLI: it fetches the engine's recipe
+// and surfaces it to the session via exit-2 (`asyncRewake`), so the MAIN agent —
+// which has Bash, git, gh, and the subscription — performs the review. The hook
+// exits 0 on any failure, so a review that can't run is a quiet no-op and the
+// commit is NEVER blocked.
 
-/** Stable marker embedded in our hook's prompt so re-runs replace it in place. */
+/** Stable marker embedded in our hook so re-runs — and upgrades from the old,
+ * broken `type: agent` hook — replace it in place. */
 export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
 
 /**
- * Build the `prompt` of the Claude Code `type: agent` commit-review hook,
- * pinned to the clud-bug VERSION that scaffolded it. Pinning matters: a bare
- * `npx clud-bug` resolves to the `latest` dist-tag, which can predate the
- * `review-prompt` verb (e.g. while v0.7 is prerelease on `next`); `@${version}`
- * guarantees the verb exists. `clud-bug update` refreshes the pin in place.
+ * Build the shell `command` of the commit-review hook, pinned to the clud-bug
+ * VERSION that scaffolded it (a bare `npx clud-bug` resolves to the `latest`
+ * dist-tag, which can predate the `review-prompt` verb; `@${version}` guarantees
+ * it). `clud-bug update` refreshes the pin in place.
  *
- * Rather than baking a static recipe (which would drift from the repo's
- * skills/config), it tells the subagent to run `clud-bug review-prompt` — the
- * engine-driven verb that emits a recipe tailored to THIS repo's resolved plan
- * — and follow it. The recipe is generated fresh at commit time, always current.
+ * The command, in order:
+ *   1. Idempotency — skip if this exact HEAD was already surfaced (avoids a
+ *      re-review on an amend-with-no-change or a double-fire). The reviewed SHA
+ *      is recorded under `.git/` (untracked), reusing the "last-reviewed-sha"
+ *      idea the hosted bot uses on PR comments.
+ *   2. Fetch a fresh recipe tailored to THIS repo: `review-prompt --trigger
+ *      commit` (an instruction recipe — `git show HEAD` + the skills + the
+ *      report format — NOT raw data; it is meant to be FOLLOWED by an agent).
+ *   3. Surface it to the session by printing it and `exit 2`, so `asyncRewake`
+ *      shows it to the main agent as a system reminder. The agent then reviews
+ *      the commit on the session subscription.
+ *   4. Any failure or empty output → `exit 0` (quiet; the commit is never blocked).
  */
-export function buildCommitReviewPrompt(version: string): string {
-  return `<!-- ${CLUD_BUG_HOOK_MARKER} v1 -->
-You are clud-bug's local commit review, running as a background subagent on this
-session's own subscription (no extra auth — you have git, gh, and file access).
-
-Step 1 — get your review recipe from clud-bug's engine:
-
-    npx clud-bug@${version} review-prompt --trigger commit
-
-That prints a structured review recipe tailored to THIS repo's skills + config (a
-fast single pass for a commit). If that command isn't available, run the repo's
-installed clud-bug CLI's \`review-prompt --trigger commit\` instead.
-
-Step 2 — follow that recipe exactly: review the commit that was just made against
-the skills it names, and surface any findings back into the session so they can be
-fixed. A clean commit needs only a one-line note.
-
-Keep it tight — this is the commit-time safety net; the deeper review runs at PR time.`;
+export function buildCommitReviewCommand(version: string): string {
+  return [
+    `: ${CLUD_BUG_HOOK_MARKER} v2 — clud-bug commit review on the session subscription`,
+    `sha=$(git rev-parse HEAD 2>/dev/null) || exit 0`,
+    `gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0`,
+    `marker="$gitdir/clud-bug-last-commit-review"`,
+    `[ "$(cat "$marker" 2>/dev/null)" = "$sha" ] && exit 0`,
+    `recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null) || exit 0`,
+    `[ -n "$recipe" ] || exit 0`,
+    `printf '%s' "$sha" > "$marker" 2>/dev/null || true`,
+    `printf '%s\\n\\n%s\\n' "clud-bug commit review (max mode — on this session's subscription): a commit was just made. Follow this recipe now — review that commit against the skills it names and surface any findings." "$recipe"`,
+    `exit 2`,
+  ].join('\n');
 }
 
 /** One Claude Code hook entry: a tool matcher plus its hook list. */
@@ -60,28 +67,32 @@ export interface ClaudeSettings {
 }
 
 /**
- * Builds the PostToolUse entry that spawns the commit-review subagent: a native
- * `type: agent` hook that is backgrounded (`async`), surfaces findings
- * (`asyncRewake`), and fires only on `git commit` (`if`).
+ * Builds the PostToolUse entry that runs the commit-review command: a native
+ * `type: command` hook, backgrounded (`async`), surfacing the recipe back to the
+ * session (`asyncRewake` + exit 2), firing only on `git commit` (`if`).
  */
-export function buildLocalReviewHook(recipe: string): HookMatcherEntry {
+export function buildLocalReviewHook(command: string): HookMatcherEntry {
+  const base = { type: 'command', async: true, asyncRewake: true, timeout: 180, command } as const;
   return {
     matcher: 'Bash',
     hooks: [
-      {
-        type: 'agent',
-        if: 'Bash(git commit *)',
-        async: true,
-        asyncRewake: true,
-        timeout: 180,
-        prompt: recipe,
-      },
+      { ...base, if: 'Bash(git commit *)' },
+      // thrillmade repos (and any logmind user) commit via `logmind log`, which
+      // wraps `git commit` inside its own binary — so the Bash tool call is
+      // `logmind log ...`, which `Bash(git commit *)` never matches. Fire on it
+      // too, or max mode never triggers in a logmind repo. The idempotency
+      // SHA-marker means whichever path runs, a commit is reviewed exactly once.
+      { ...base, if: 'Bash(logmind log *)' },
     ],
   };
 }
 
 function isOurHook(h: Record<string, unknown> | undefined): boolean {
-  return typeof h?.['prompt'] === 'string' && (h['prompt'] as string).includes(CLUD_BUG_HOOK_MARKER);
+  // Match our marker in `command` (current `type: command` hook) OR `prompt`
+  // (the old, broken `type: agent` hook) so a re-install / `clud-bug update`
+  // replaces either in place.
+  const field = h?.['command'] ?? h?.['prompt'];
+  return typeof field === 'string' && field.includes(CLUD_BUG_HOOK_MARKER);
 }
 
 function isCludBugReviewEntry(entry: HookMatcherEntry | undefined): boolean {
@@ -90,12 +101,12 @@ function isCludBugReviewEntry(entry: HookMatcherEntry | undefined): boolean {
 
 /**
  * Merges the clud-bug commit-review hook into an existing `.claude/settings.json`
- * object. **Idempotent** (replaces any prior clud-bug entry rather than
- * duplicating) and **non-clobbering** (preserves every other top-level key,
- * every other event, and every other hook). Tolerates a missing/malformed
+ * object. **Idempotent** (replaces any prior clud-bug entry — including the old
+ * `type: agent` one — rather than duplicating) and **non-clobbering** (preserves
+ * every other top-level key, event, and hook). Tolerates a missing/malformed
  * `existing` value.
  */
-export function mergeLocalReviewHook(existing: unknown, recipe: string): ClaudeSettings {
+export function mergeLocalReviewHook(existing: unknown, command: string): ClaudeSettings {
   const base: ClaudeSettings =
     existing && typeof existing === 'object' ? { ...(existing as ClaudeSettings) } : {};
   const hooks: Record<string, HookMatcherEntry[]> = { ...(base.hooks ?? {}) };
@@ -104,7 +115,7 @@ export function mergeLocalReviewHook(existing: unknown, recipe: string): ClaudeS
   // Preserve every non-clud-bug hook — including any the user co-located INSIDE
   // our own matcher entry: drop only the hook(s) carrying our marker, never the
   // whole entry.
-  const ours = buildLocalReviewHook(recipe);
+  const ours = buildLocalReviewHook(command);
   const otherEntries: HookMatcherEntry[] = [];
   const coLocatedUserHooks: Array<Record<string, unknown>> = [];
   for (const entry of priorPost) {
