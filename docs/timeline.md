@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (73 decisions)
+## 2026-06 (75 decisions)
 
-- **2026-06-29** — H2 security fixes: close the fence breakout + guard all passes + harden the base-ref contract *(h2-review-context)* — [decisions-branches/h2-review-context.md](decisions-branches/h2-review-context.md)
-- *... 71 more decisions ...*
+- **2026-06-29** — H4 review fix: clear $recipe on non-zero npx exit so partial/error stdout is never surfaced *(h4-hook-robustness)* — [decisions-branches/h4-hook-robustness.md](decisions-branches/h4-hook-robustness.md)
+- *... 73 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)

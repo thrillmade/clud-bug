@@ -5,6 +5,7 @@
 // merge-into-existing-settings logic (idempotent, non-clobbering).
 
 import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 
 import {
   buildLocalReviewHook,
@@ -124,5 +125,23 @@ describe('buildCommitReviewCommand', () => {
     // belt-and-suspenders gate (in case CC ignores the `if` field)
     expect(COMMIT_REVIEW_COMMAND).toMatch(/cat 2>\/dev\/null/);
     expect(COMMIT_REVIEW_COMMAND).toMatch(/git commit.*logmind log/);
+  });
+
+  it('H4: retries once on a transient failure and leaves a diagnostic marker', () => {
+    // one `sleep 1` retry before giving up on the recipe fetch
+    expect(COMMIT_REVIEW_COMMAND).toMatch(/sleep 1/);
+    // exactly two npx attempts (initial + retry)
+    expect(COMMIT_REVIEW_COMMAND.match(/npx clud-bug@[^ ]+ review-prompt --trigger commit/g)).toHaveLength(2);
+    // both attempts clear $recipe on a non-zero exit so partial/error stdout is
+    // never surfaced as a valid recipe (regression guard)
+    expect(COMMIT_REVIEW_COMMAND.match(/\|\| recipe=/g)).toHaveLength(2);
+    // a failed fetch is recorded distinctly from a clean review
+    expect(COMMIT_REVIEW_COMMAND).toMatch(/clud-bug-review-skipped/);
+  });
+
+  it('is valid POSIX sh (the retry + markers do not break the script)', () => {
+    const r = spawnSync('sh', ['-n'], { input: COMMIT_REVIEW_COMMAND, encoding: 'utf8' });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe('');
   });
 });
