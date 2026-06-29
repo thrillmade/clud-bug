@@ -9,7 +9,9 @@ clud-bug
 │   ├── workflow-ts.yml
 │   └── workflow.yml
 ├── .claude
-│   └── skills
+│   ├── commands
+│   ├── skills
+│   └── settings.json
 ├── .github
 │   ├── actions
 │   ├── workflows
