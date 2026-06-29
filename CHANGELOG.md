@@ -4,6 +4,39 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.15] — 2026-06-29
+
+Design-critic lens (B1) — the skill-driven review thesis pointed at pixels. OPTIONAL and
+off by default.
+
+### Added
+
+- **`kind: design` skills** (`core/skills.ts`) — a third skill lens alongside `rule` /
+  `voice`. Design skills review the *rendered* surface (screenshots) rather than the diff
+  text; they need no `voice_scope`. Ships a 3-skill design baseline kit under
+  `templates/skills/design/` (`design-system-consistency`, `visual-polish`, `frontend-a11y`)
+  encoding an elite bar (token/color discipline, optical centering & spacing, glyph/pattern
+  quality, light/dark parity, contrast/focus/tap-target a11y) and told to flag
+  "fine but not elite," not only broken.
+- **`core/design.ts`** — `readDesignConfig` (the `.clud-bug.json` `design` block; default
+  `{ enabled: false, gate: 'advisory', themes: ['light','dark'], viewports: ['desktop'] }`)
+  and `shouldRunDesign` (pure gate: opted-in + design skills present + `pr` trigger). A typo
+  can never silently *enable* the cost-bearing pass.
+- **`review-prompt` design-critic step** — when the gate passes, the local recipe emits an
+  optional "## 3b. Design-critic" step: find the deploy-preview URL, render the changed
+  routes (light + dark) via a browser MCP, and critique the screenshots against the design
+  skills (`<!-- pass: design -->`). Defers to runtime — no preview URL or no browser MCP →
+  skipped silently. Code (`kind != design`) and design skills are partitioned: code skills
+  drive the multi-pass plan, design skills drive this step.
+- `refresh` now preserves installed `kind: design` skills (like baseline), so a re-sync
+  can't drop a repo's design kit.
+
+### Notes
+
+- v1 is **local + advisory**. A repo opts in via the `design` block + installed design
+  skills. The `clud-bug init --with-design` installer and the hosted Vercel-Sandbox render
+  path (which feeds screenshots to AI-Gateway vision) are follow-ups. rc.15 → `next`.
+
 ## [0.7.0-rc.14] — 2026-06-28
 
 6c — the conditional Mantis arbiter (the decision lives in `core`; consumers wire the pass).

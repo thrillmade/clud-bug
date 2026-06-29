@@ -374,7 +374,10 @@ export function diffManifest(manifest: Manifest, recommended: RankableSkill[]): 
     }
   }
   for (const [key, entry] of installedByKey) {
-    if (entry.kind === 'baseline') continue; // baseline always stays
+    // Baseline + design-kit skills are first-party opt-ins, not skills.sh
+    // recommendations — `refresh` must never drop them just because they're
+    // absent from the recommended set.
+    if (entry.kind === 'baseline' || entry.kind === 'design') continue;
     if (!recByKey.has(key)) remove.push(entry);
   }
   return { add, remove, unchanged };

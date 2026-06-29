@@ -283,6 +283,13 @@ export {
   type EscalationInput,
 } from './multi-pass-aggregate.js';
 export {
+  readDesignConfig,
+  shouldRunDesign,
+  BUILTIN_DESIGN_CONFIG,
+  type DesignConfig,
+  type DesignGate,
+} from './design.js';
+export {
   API_BASE,
   MAX_SKILLS,
   SkillsClient,

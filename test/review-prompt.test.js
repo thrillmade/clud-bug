@@ -82,6 +82,38 @@ describe('renderReviewRecipe', () => {
     const consensusRecipe = renderReviewRecipe({ plan: consensusPlan, trigger: 'pr' });
     expect(consensusRecipe).not.toMatch(/arbiter sub-agent/i);
   });
+
+  it('renders the design-critic step only when the design lens is passed (gated on)', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
+    const design = {
+      skills: ['visual-polish', 'frontend-a11y'],
+      config: { enabled: true, gate: 'advisory', themes: ['light', 'dark'], viewports: ['desktop'] },
+    };
+
+    const withDesign = renderReviewRecipe({ plan, trigger: 'pr', design });
+    expect(withDesign).toMatch(/## 3b\. Design-critic/);
+    expect(withDesign).toMatch(/visual-polish/);
+    expect(withDesign).toMatch(/frontend-a11y/);
+    expect(withDesign).toMatch(/light \+ dark/);
+    expect(withDesign).toMatch(/Advisory/);
+    // preview-URL lookup must use gh's {owner}/{repo} placeholders (self-resolved
+    // from the cwd repo), NOT unset $OWNER/$REPO shell vars that would neuter the
+    // whole pass in local mode.
+    expect(withDesign).toMatch(/repos\/\{owner\}\/\{repo\}\/deployments/);
+    expect(withDesign).not.toMatch(/\$OWNER|\$REPO/);
+
+    // strict gate flips the wording to merge-blocking
+    const strict = renderReviewRecipe({
+      plan,
+      trigger: 'pr',
+      design: { ...design, config: { ...design.config, gate: 'strict' } },
+    });
+    expect(strict).toMatch(/blocks the merge/);
+
+    // no design arg → no design step at all
+    const withoutDesign = renderReviewRecipe({ plan, trigger: 'pr' });
+    expect(withoutDesign).not.toMatch(/Design-critic/);
+  });
 });
 
 describe('review-prompt verb (integration)', () => {

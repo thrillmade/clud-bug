@@ -13,11 +13,14 @@ import {
   planReview,
   roleForPass,
   readReviewPassesConfig,
+  readDesignConfig,
+  shouldRunDesign,
   parseFrontmatter,
   type ReviewPlan,
   type ReviewPlanSkill,
   type ReviewTrigger,
   type ReviewPassMode,
+  type DesignConfig,
 } from '../core/index.js';
 import { readManifest } from './skills.js';
 
@@ -46,8 +49,17 @@ const TRIGGER_INTRO: Record<ReviewTrigger, string> = {
  * and the skills all come from the plan, so the recipe scales from a single
  * fast commit pass up to the full multi-pass PR review without branching here.
  */
-export function renderReviewRecipe(input: { plan: ReviewPlan; trigger: ReviewTrigger }): string {
-  const { plan, trigger } = input;
+export function renderReviewRecipe(input: {
+  plan: ReviewPlan;
+  trigger: ReviewTrigger;
+  /**
+   * Design-critic lens (rc.15). Present only when the caller's gate passed
+   * (`shouldRunDesign`): the repo opted in, `kind: design` skills are installed,
+   * and this is a `pr` trigger. Renders the optional visual-review step.
+   */
+  design?: { skills: string[]; config: DesignConfig };
+}): string {
+  const { plan, trigger, design } = input;
   const slugs = plan.perSkill.map((p) => p.slug);
   const maxPasses = plan.perSkill.length
     ? Math.max(...plan.perSkill.map((p) => p.count))
@@ -121,6 +133,30 @@ export function renderReviewRecipe(input: { plan: ReviewPlan; trigger: ReviewTri
       : 'Surface the findings into the session, and — if an open PR exists — post or edit (in ' +
         'place, by integer comment id) the clud-bug summary comment on it.';
 
+  // 3b (rc.15) — the OPTIONAL design-critic visual pass. Rendered only when the
+  // caller gated it on (design.enabled + kind:design skills + pr trigger). The
+  // step itself defers to runtime: no deploy-preview URL or no browser MCP in
+  // the session → skip silently. This is the local counterpart of the hosted
+  // Vercel-Sandbox render path.
+  const designStep = design
+    ? `\n\n## 3b. Design-critic (visual review)
+This repo opted into design review. If this PR has a live deploy-preview, also review the **rendered** UI — skip this whole step silently if there is no preview, or no browser MCP in this session.
+
+1. **Find the preview URL** (GitHub deployments first, then a Vercel/Netlify status or bot comment):
+\`\`\`bash
+gh api "repos/{owner}/{repo}/deployments?per_page=10" --jq '.[].id' \\
+  | while read -r id; do gh api "repos/{owner}/{repo}/deployments/$id/statuses" --jq '.[0].environment_url // empty'; done | head -1
+\`\`\`
+2. **Render** each changed rendered surface (infer the route from the changed file path) on the preview, in ${design.config.themes.join(' + ')}, at the ${design.config.viewports.join(', ')} viewport(s). Hard-refresh to bypass cached assets, then take a full-page screenshot.
+3. **Critique** each screenshot against the design skills — cite the element you see + the skill, and flag what is *fine but not elite*, not only what is broken:
+${design.skills.map((s) => `  - \`.claude/skills/${s}/SKILL.md\``).join('\n')}
+   Record each finding with \`file\`, \`severity\` (\`critical\` | \`minor\` | \`preexisting\`), the design \`skill\`, and a one-line \`summary\`; tag design findings \`<!-- pass: design -->\`. ${
+     design.config.gate === 'strict'
+       ? 'Gated: a design `critical` blocks the merge (`design.gate: strict`).'
+       : 'Advisory: design findings inform, they do not block the merge.'
+   }`
+    : '';
+
   return `<!-- ${CLUD_BUG_RECIPE_MARKER} v1 -->
 You are **clud-bug**, running ${TRIGGER_INTRO[trigger]} inside this Claude Code session, on
 this session's own model tokens — no hosted App, no extra auth (you already have \`git\`,
@@ -142,7 +178,7 @@ or performance bugs — skip nits), **evidence-based-review** (quote the exact l
 and **respect-existing-conventions** (don't fight the codebase's patterns).
 
 ## 3. Review
-${reviewStep}
+${reviewStep}${designStep}
 
 ## 4. Report
 Render the body in clud-bug's standard shape (§1.8.1) — omit any empty section:
@@ -203,16 +239,32 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
     }
   }
 
+  // Partition by lens: `kind: design` skills drive the visual design-critic
+  // pass, not the code-correctness multi-pass plan. Code skills go to
+  // planReview; design skills go to the (gated) design step.
+  const designSkills = skills.filter((s) => s.frontmatter.kind === 'design');
+  const codeSkills = skills.filter((s) => s.frontmatter.kind !== 'design');
+
   const config = readReviewPassesConfig(manifest);
   const plan = planReview({
-    skills,
+    skills: codeSkills,
     config,
     trigger,
     rawSkillMd,
     ...(args.diffSizeBytes !== undefined ? { diffSizeBytes: args.diffSizeBytes } : {}),
   });
 
-  process.stdout.write(renderReviewRecipe({ plan, trigger }) + '\n');
+  // The design-critic is gated: opted-in (`design.enabled`) + at least one
+  // installed design skill + a `pr` trigger. The deploy-preview + browser-MCP
+  // preconditions are deferred to the agent at runtime (see the rendered step).
+  const designConfig = readDesignConfig(manifest);
+  const design = shouldRunDesign(designConfig, designSkills.length, trigger)
+    ? { skills: designSkills.map((s) => s.slug), config: designConfig }
+    : undefined;
+
+  process.stdout.write(
+    renderReviewRecipe({ plan, trigger, ...(design ? { design } : {}) }) + '\n',
+  );
 }
 
 function normalizeTrigger(raw: string | undefined): ReviewTrigger {
