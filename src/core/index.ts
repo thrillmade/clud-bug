@@ -290,6 +290,14 @@ export {
   type DesignGate,
 } from './design.js';
 export {
+  readReviewContext,
+  extractPrContext,
+  fenceUntrustedContext,
+  EMPTY_REVIEW_CONTEXT,
+  MAX_REVIEW_CONTEXT_BYTES,
+  type ReviewContextConfig,
+} from './review-context.js';
+export {
   API_BASE,
   MAX_SKILLS,
   SkillsClient,
