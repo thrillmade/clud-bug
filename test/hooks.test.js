@@ -132,6 +132,9 @@ describe('buildCommitReviewCommand', () => {
     expect(COMMIT_REVIEW_COMMAND).toMatch(/sleep 1/);
     // exactly two npx attempts (initial + retry)
     expect(COMMIT_REVIEW_COMMAND.match(/npx clud-bug@[^ ]+ review-prompt --trigger commit/g)).toHaveLength(2);
+    // both attempts clear $recipe on a non-zero exit so partial/error stdout is
+    // never surfaced as a valid recipe (regression guard)
+    expect(COMMIT_REVIEW_COMMAND.match(/\|\| recipe=/g)).toHaveLength(2);
     // a failed fetch is recorded distinctly from a clean review
     expect(COMMIT_REVIEW_COMMAND).toMatch(/clud-bug-review-skipped/);
   });

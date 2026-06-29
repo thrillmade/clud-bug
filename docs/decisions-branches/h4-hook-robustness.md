@@ -9,3 +9,12 @@
 
 ---
 
+## 2026-06-29 15:50 - H4 review fix: clear $recipe on non-zero npx exit so partial/error stdout is never surfaced
+
+**Reasoning:** The adversarial review caught a semantic regression: dropping the original '|| exit 0' meant a non-zero npx that wrote PARTIAL stdout (a mid-run review-prompt crash, or an old npm warning routed to stdout) would leave $recipe non-empty — bypassing both [ -z ] guards, stamping the idempotency marker, and surfacing the partial/error text as a valid recipe (and never retrying). Added '|| recipe=' to BOTH npx attempts so a non-zero exit clears it → treated as empty → retry then skip-marker. Only a clean exit-0 run surfaces. Test asserts both guards present.
+
+**Implications:**
+- Part of H4 (no version bump)
+
+---
+

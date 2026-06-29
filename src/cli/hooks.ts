@@ -58,8 +58,11 @@ export function buildCommitReviewCommand(version: string): string {
     `[ "$(cat "$marker" 2>/dev/null)" = "$sha" ] && exit 0`,
     // H4 — one retry on a transient npx/network blip (a stale lock, a slow
     // registry) before giving up, so a hiccup doesn't silently skip the review.
-    `recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null)`,
-    `if [ -z "$recipe" ]; then sleep 1; recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null); fi`,
+    // `|| recipe=` clears it on a NON-ZERO exit so partial/error stdout from a
+    // mid-run crash (or an old npm warning on stdout) is never mistaken for a
+    // valid recipe — only a clean, exit-0 run surfaces.
+    `recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null) || recipe=`,
+    `if [ -z "$recipe" ]; then sleep 1; recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null) || recipe=; fi`,
     // H4 — when the recipe still can't be fetched, leave a diagnostic marker so a
     // FAILED review is distinguishable from a CLEAN one (a clean review surfaces
     // the recipe + the agent reports clean). Never blocks the commit.
