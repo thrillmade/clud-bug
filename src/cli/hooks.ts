@@ -56,8 +56,14 @@ export function buildCommitReviewCommand(version: string): string {
     `gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0`,
     `marker="$gitdir/clud-bug-last-commit-review"`,
     `[ "$(cat "$marker" 2>/dev/null)" = "$sha" ] && exit 0`,
-    `recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null) || exit 0`,
-    `[ -n "$recipe" ] || exit 0`,
+    // H4 — one retry on a transient npx/network blip (a stale lock, a slow
+    // registry) before giving up, so a hiccup doesn't silently skip the review.
+    `recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null)`,
+    `if [ -z "$recipe" ]; then sleep 1; recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null); fi`,
+    // H4 — when the recipe still can't be fetched, leave a diagnostic marker so a
+    // FAILED review is distinguishable from a CLEAN one (a clean review surfaces
+    // the recipe + the agent reports clean). Never blocks the commit.
+    `if [ -z "$recipe" ]; then printf '%s' "$sha" > "$gitdir/clud-bug-review-skipped" 2>/dev/null || true; exit 0; fi`,
     `printf '%s' "$sha" > "$marker" 2>/dev/null || true`,
     `printf '%s\\n\\n%s\\n' "clud-bug commit review (max mode — on this session's subscription): a commit was just made. Follow this recipe now — review that commit against the skills it names and surface any findings." "$recipe"`,
     `exit 2`,
