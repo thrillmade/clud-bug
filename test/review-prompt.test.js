@@ -64,6 +64,24 @@ describe('renderReviewRecipe', () => {
     const recipe = renderReviewRecipe({ plan, trigger: 'commit' });
     expect(recipe).toContain(plan.summary);
   });
+
+  it('describes the conditional 3rd Mantis arbiter for a 2-pass cross-check (6c), and omits it otherwise', () => {
+    // 2-pass cross-check on a pr → the arbiter escalation prose appears.
+    const ccPlan = planReview({
+      skills: SKILLS,
+      config: { count: 2, mode: 'cross-check' },
+      trigger: 'pr',
+    });
+    const ccRecipe = renderReviewRecipe({ plan: ccPlan, trigger: 'pr' });
+    expect(ccRecipe).toMatch(/dispatch 2 reviewer/i);
+    expect(ccRecipe).toMatch(/3rd \*\*Mantis\*\* arbiter/i);
+    expect(ccRecipe).toMatch(/disagree/i);
+
+    // A 3-pass consensus plan must NOT get the arbiter prose (gate correctness).
+    const consensusPlan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
+    const consensusRecipe = renderReviewRecipe({ plan: consensusPlan, trigger: 'pr' });
+    expect(consensusRecipe).not.toMatch(/arbiter sub-agent/i);
+  });
 });
 
 describe('review-prompt verb (integration)', () => {

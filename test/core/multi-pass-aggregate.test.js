@@ -10,6 +10,7 @@ import {
   aggregatePasses,
   deriveConsensus,
   resolveVerdict,
+  shouldEscalate,
 } from '../../src/core/multi-pass-aggregate.js';
 import { buildReviewFromFindings } from '../../src/core/review-schema-zod.js';
 
@@ -667,5 +668,110 @@ describe('aggregator populates UnifiedFinding.consensus', () => {
 
     expect(agg.findings).toHaveLength(1);
     expect(agg.findings[0]?.consensus).toBe('2-of-2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6c — shouldEscalate (conditional Mantis-arbiter gate)
+// ---------------------------------------------------------------------------
+
+describe('shouldEscalate', () => {
+  // Pass 1 (flattenFindings order: critical → minor → preexisting):
+  //   index 0 = critical, 1 = minor, 2 = preexisting.
+  const firstPass = reviewWith([
+    f('critical', 'race-conditions', 'auth.ts', 42, 'Race condition'),
+    f('minor', 'magic-numbers', 'utils.ts', 18, 'Magic number'),
+    f('preexisting', 'legacy', 'old.ts', 5, 'Legacy pattern'),
+  ]);
+  const pass2 = (verdicts) => ({
+    passNumber: 2,
+    role: ROLE_WASP,
+    crossCheck: { verdicts, independentFindings: [] },
+  });
+
+  it('escalates when a 2-pass cross-check disagrees on a critical finding', () => {
+    expect(
+      shouldEscalate({
+        mode: 'cross-check',
+        passCount: 2,
+        firstPass,
+        subsequentPasses: [pass2([{ pass1Index: 0, verdict: 'disagreed' }])],
+      }),
+    ).toBe(true);
+  });
+
+  it('escalates when a 2-pass cross-check disagrees on a minor finding', () => {
+    expect(
+      shouldEscalate({
+        mode: 'cross-check',
+        passCount: 2,
+        firstPass,
+        subsequentPasses: [pass2([{ pass1Index: 1, verdict: 'disagreed' }])],
+      }),
+    ).toBe(true);
+  });
+
+  it('does NOT escalate when the only disagreement is on a preexisting finding', () => {
+    expect(
+      shouldEscalate({
+        mode: 'cross-check',
+        passCount: 2,
+        firstPass,
+        subsequentPasses: [pass2([{ pass1Index: 2, verdict: 'disagreed' }])],
+      }),
+    ).toBe(false);
+  });
+
+  it('does NOT escalate when every verdict agrees', () => {
+    expect(
+      shouldEscalate({
+        mode: 'cross-check',
+        passCount: 2,
+        firstPass,
+        subsequentPasses: [
+          pass2([
+            { pass1Index: 0, verdict: 'agreed' },
+            { pass1Index: 1, verdict: 'agreed' },
+          ]),
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('does NOT escalate for consensus or independent modes', () => {
+    for (const mode of ['consensus', 'independent']) {
+      expect(
+        shouldEscalate({
+          mode,
+          passCount: 2,
+          firstPass,
+          subsequentPasses: [pass2([{ pass1Index: 0, verdict: 'disagreed' }])],
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('does NOT escalate at passCount 1 or 3 (a static 3-pass already runs Mantis)', () => {
+    for (const passCount of [1, 3]) {
+      expect(
+        shouldEscalate({
+          mode: 'cross-check',
+          passCount,
+          firstPass,
+          subsequentPasses: [pass2([{ pass1Index: 0, verdict: 'disagreed' }])],
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('does NOT escalate when the disagreed pass1Index is out of range', () => {
+    expect(
+      shouldEscalate({
+        mode: 'cross-check',
+        passCount: 2,
+        firstPass,
+        subsequentPasses: [pass2([{ pass1Index: 99, verdict: 'disagreed' }])],
+      }),
+    ).toBe(false);
   });
 });
