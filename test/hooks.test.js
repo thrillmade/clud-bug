@@ -121,5 +121,8 @@ describe('buildCommitReviewCommand', () => {
     expect(COMMIT_REVIEW_COMMAND).toMatch(/git rev-parse HEAD/);
     expect(COMMIT_REVIEW_COMMAND).toMatch(/exit 0/); // quiet degrade
     expect(COMMIT_REVIEW_COMMAND).toMatch(/exit 2/); // surface via asyncRewake
+    // belt-and-suspenders gate (in case CC ignores the `if` field)
+    expect(COMMIT_REVIEW_COMMAND).toMatch(/cat 2>\/dev\/null/);
+    expect(COMMIT_REVIEW_COMMAND).toMatch(/git commit.*logmind log/);
   });
 });

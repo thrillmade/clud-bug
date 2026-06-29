@@ -41,7 +41,17 @@ export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
  */
 export function buildCommitReviewCommand(version: string): string {
   return [
-    `: ${CLUD_BUG_HOOK_MARKER} v2 — clud-bug commit review on the session subscription`,
+    // Marker as a `#` comment (NOT a `:` no-op) so its free text can never break
+    // `sh` — a paren / quote / `$` in the marker line would be a syntax error
+    // under `: ...`. The dogfood caught this. `isOurHook` finds the marker here.
+    `# ${CLUD_BUG_HOOK_MARKER} v2 — clud-bug commit review on the session subscription`,
+    // Belt-and-suspenders gate. The `if: Bash(git commit *)` / `Bash(logmind log *)`
+    // field filters at the platform on Claude Code >= 2.1.85; OLDER CC ignores
+    // `if` and would fire this on EVERY Bash call (a review recipe after every
+    // command). Command hooks get the event JSON on stdin — re-check it here. If
+    // stdin is empty (a CC that doesn't pipe it), fall through and trust `if`.
+    `ev=$(cat 2>/dev/null)`,
+    `if [ -n "$ev" ]; then case "$ev" in *'git commit'*|*'logmind log'*) ;; *) exit 0 ;; esac; fi`,
     `sha=$(git rev-parse HEAD 2>/dev/null) || exit 0`,
     `gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0`,
     `marker="$gitdir/clud-bug-last-commit-review"`,

@@ -12,3 +12,12 @@
 
 ---
 
+## 2026-06-29 13:16 - rc.17 hardening (dogfood-found): #-comment marker + stdin gate vs if-less Claude Code
+
+**Reasoning:** Dogfooding the rebuilt hook IN-SESSION caught two real issues. (1) The ': marker' line is sh-fragile — a paren/quote/dollar in the marker text breaks sh (a syntax error stalled the hook in my test). Switched to a '# comment' marker (sh -n validated; isOurHook still finds the marker). (2) The hook over-fired: Claude Code only honors the 'if' arg-gate on >=2.1.85; older CC ignores it and fires on EVERY Bash call — a review recipe after every command would make max mode unusable. Added a belt-and-suspenders stdin gate: command hooks receive the event JSON on stdin, so re-check it and exit 0 unless the command is git commit / logmind log; if stdin is empty (a CC that doesn't pipe it), fall through and trust 'if'. Verified a non-commit event (ls) now exits 0, gated out.
+
+**Implications:**
+- Both fixes ship in rc.17. The max-mode hook now fires only on commits regardless of CC version, and the marker can never break sh. This is exactly the value of dogfooding — running max mode on itself surfaced both.
+
+---
+
