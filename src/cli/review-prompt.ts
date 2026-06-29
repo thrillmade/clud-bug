@@ -29,11 +29,18 @@ export const CLUD_BUG_RECIPE_MARKER = 'clud-bug-local-review';
 
 const MODE_AGGREGATION: Record<ReviewPassMode, string> = {
   'cross-check':
-    "Pass 1 reviews the diff against all the skills; each later pass re-reviews AND checks pass 1's findings (agree / disagree), adding any new ones it finds.",
+    "Pass 1 (broad scan) reviews the diff against all the skills — optimize for recall, surface every " +
+    "candidate. Each later pass is ADVERSARIAL: re-read the diff and try to REFUTE pass 1's findings — " +
+    "for each, ask 'can I prove this is a false positive, already handled elsewhere, or not actually in " +
+    "this diff?' Keep only findings that survive refutation, record an explicit agree/disagree verdict " +
+    "per finding, and add any real issues pass 1 missed. Skepticism is the job — do not just confirm.",
   consensus:
-    'Run all passes independently against all the skills, then keep only findings that two or more passes agree on.',
+    'Run all passes independently against all the skills, each attacking the diff from a different angle. ' +
+    'Then keep only findings two or more passes independently land on; a finding only one pass sees is ' +
+    'dropped (or downgraded to a note). This trades recall for precision.',
   independent:
-    'Run all passes independently against all the skills, then take the union of their findings, each attributed to its pass.',
+    'Run all passes independently against all the skills, each from a distinct lens, then take the union ' +
+    'of their findings (attributed to its pass) — but drop any that a quick adversarial re-read refutes.',
 };
 
 const TRIGGER_INTRO: Record<ReviewTrigger, string> = {
@@ -91,10 +98,12 @@ export function renderReviewRecipe(input: {
   let reviewStep: string;
   if (maxPasses <= 1) {
     reviewStep =
-      'Review the diff against every loaded skill in a single pass. For each REAL issue, ' +
-      'record `file`, `line`, `severity` (`critical` | `minor` | `preexisting`), the `skill` ' +
-      'that motivated it, and a one-line `summary` with the quoted offending line. Finding ' +
-      'nothing is the normal outcome — be precise, not exhaustive.';
+      'Review the diff against the three lenses above in a single pass. VERIFY before you record: ' +
+      'quote the exact offending line from the diff and confirm the `line` number matches that ' +
+      'quote — if you cannot ground a finding in a line you actually see in this diff, DROP it ' +
+      '(default to silence over a false positive). Record `file`, `line`, `severity` (`critical` | ' +
+      '`minor` | `preexisting`), the `skill`, and a one-line `summary`. Finding nothing is the ' +
+      'normal, common outcome — be precise, not exhaustive.';
   } else {
     const passLines = Array.from({ length: maxPasses }, (_, i) => {
       const role = roleForPass(plan.roles, i, 'Reviewer');
@@ -116,14 +125,19 @@ export function renderReviewRecipe(input: {
           `3rd **${arbiter}** arbiter sub-agent (opus-class, read-only tools) that re-examines ONLY ` +
           `the disputed findings against the diff + the cited skill and records the deciding verdict ` +
           `with a one-line rationale. Skip the arbiter if the passes agree, or disagree only on ` +
-          `\`preexisting\` findings. The arbiter's verdict sets each disputed finding's consensus ` +
-          `marker (\`2-of-2\` if upheld, \`arbitrated\` if not) and its rationale — it does not change ` +
-          `which findings gate the merge.`
+          `\`preexisting\` findings. **Tiebreak:** when a dispute is genuinely unresolvable from the ` +
+          `diff + the cited skill, severity decides — surface at the higher severity ` +
+          `(\`critical\` > \`minor\` > \`preexisting\`) rather than suppress. The arbiter's verdict sets ` +
+          `each disputed finding's consensus marker (\`2-of-2\` if upheld, \`arbitrated\` if not) and its ` +
+          `rationale — it does not change which findings gate the merge.`
         : '';
     reviewStep =
       `Dispatch ${maxPasses} reviewer sub-agents — a ${maxPasses}-pass **${mode}** review on this ` +
       `session's subscription (bind each tier to a Claude Code model: a fast model for \`beetle\`, ` +
-      `a strong model for \`wasp\`/\`mantis\`):\n\n${passLines}\n\n${MODE_AGGREGATION[mode]}${escalation}`;
+      `a strong model for \`wasp\`/\`mantis\`). Each pass applies the three lenses above:\n\n${passLines}\n\n` +
+      `${MODE_AGGREGATION[mode]}${escalation}\n\n` +
+      "**Grounding rule (every pass):** a finding only counts if it quotes the exact line from the diff " +
+      "and its `line` number matches that quote — drop anything you cannot ground.";
   }
 
   const surface =
@@ -173,9 +187,16 @@ ${diffStep}
 Read each skill's discipline from the checkout:
 ${skillsList}
 
-Apply them strictly — at minimum **critical-issues-only** (flag only correctness, security,
-or performance bugs — skip nits), **evidence-based-review** (quote the exact line you flag),
-and **respect-existing-conventions** (don't fight the codebase's patterns).
+Apply them as three disciplined lenses — every finding must earn its place under one:
+  - **Correctness** (critical-issues-only): real bugs only — wrong logic, broken contracts,
+    unhandled cases, race conditions, performance cliffs. Skip nits and style.
+  - **Security** (evidence-based-review): injection, auth/authz gaps, secret or PII exposure,
+    SSRF, unsafe input — and quote the exact line that proves it.
+  - **Regression** (respect-existing-conventions): does the change break an existing pattern,
+    invariant, or caller? Flag where the diff fights the codebase — don't fight its conventions.
+
+Run each lens deliberately; a generic "looks fine" is not a review. Findings that don't fit a
+lens are noise — drop them.
 
 ## 3. Review
 ${reviewStep}${designStep}
