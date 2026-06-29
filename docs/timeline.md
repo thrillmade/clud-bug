@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (71 decisions)
+## 2026-06 (72 decisions)
 
-- **2026-06-29** — H1 review fixes: skill-agnostic lenses + correct the local arbiter-gate consequence *(h1-recipe-depth)* — [decisions-branches/h1-recipe-depth.md](decisions-branches/h1-recipe-depth.md)
-- *... 69 more decisions ...*
+- **2026-06-29** — H2: contextual review instructions — trusted reviewContext + local session edge + fenced untrusted per-PR channel *(h2-review-context)* — [decisions-branches/h2-review-context.md](decisions-branches/h2-review-context.md)
+- *... 70 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
