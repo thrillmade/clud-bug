@@ -14,7 +14,12 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 
-import { SkillsClient, type RankableSkill, type SkillDescriptor } from '../core/skills.js';
+import {
+  SkillsClient,
+  parseFrontmatter,
+  type RankableSkill,
+  type SkillDescriptor,
+} from '../core/skills.js';
 
 export const MANIFEST_FILE = '.clud-bug.json';
 export const MANIFEST_VERSION = 1;
@@ -118,6 +123,38 @@ async function readBundled(baselineDir: string): Promise<BaselineSkill[]> {
       kind: 'baseline',
       content,
     });
+  }
+  return skills;
+}
+
+/**
+ * Reads the bundled design-kit skills from the npm-package directory. Unlike
+ * `loadBaseline`, these are first-party and **bundled-only** — no skills.sh
+ * fetch (there's no upstream for them). Stamped `kind: 'design'` + `source:
+ * 'clud-bug-design'` so `diffManifest` / `refresh` never drop them.
+ */
+export async function loadDesignKit(designDir: string): Promise<WritableSkill[]> {
+  const skills: WritableSkill[] = [];
+  let entries;
+  try {
+    entries = await readdir(designDir, { withFileTypes: true });
+  } catch {
+    return skills;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    const content = await readFile(join(designDir, entry.name), 'utf8');
+    const fallbackName = entry.name.replace(/\.md$/, '');
+    let name = fallbackName;
+    let description = '(design kit)';
+    try {
+      const fm = parseFrontmatter(content);
+      if (fm.name) name = fm.name;
+      if (fm.description) description = fm.description;
+    } catch {
+      // Malformed frontmatter on a first-party file — fall back to the filename.
+    }
+    skills.push({ source: 'clud-bug-design', name, description, installs: 0, kind: 'design', content });
   }
   return skills;
 }

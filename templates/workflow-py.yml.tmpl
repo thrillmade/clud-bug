@@ -213,6 +213,19 @@ jobs:
           echo "::error::Set it: Settings → Secrets and variables → Actions → New repository secret."
           exit 1
 
+      # ── Design-critic (optional, opt-in) ─────────────────────────────────
+      # clud-bug can also review the *rendered* UI of your PR's preview deploy.
+      # The hosted clud-bug[bot] does this for you on Team installs (Browserless).
+      # To run it here on the Action reviewer instead — Claude drives a real
+      # browser on this runner, no paid render service — enable it in 3 steps:
+      #   1. clud-bug init --with-design   (installs the design kit + flips the
+      #      `design` block in .claude/skills/.clud-bug.json to enabled: true)
+      #   2. add a browser MCP to claude_args below, e.g.:
+      #        --mcp-config '{"mcpServers":{"playwright":{"command":"npx","args":["-y","@playwright/mcp@latest"]}}}'
+      #   3. append the browser tools to --allowedTools, e.g.:
+      #        ,mcp__playwright__browser_navigate,mcp__playwright__browser_take_screenshot
+      # Off by default. See the §3b design step in `clud-bug review-prompt`.
+      # ──────────────────────────────────────────────────────────────────────
       - uses: anthropics/claude-code-action@{{CCA_VERSION}}
         if: steps.guard.outputs.skip != 'true'
         env:
@@ -400,7 +413,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.15
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.16
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].

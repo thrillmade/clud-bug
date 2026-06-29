@@ -66,6 +66,7 @@ clud-bug
 │   ├── formal-review.test.js
 │   ├── hooks.test.js
 │   ├── init-local-review.test.js
+│   ├── init-with-design.test.js
 │   ├── init-with-skdd.test.js
 │   ├── inline-threads.test.js
 │   ├── prompt-builder.test.js
