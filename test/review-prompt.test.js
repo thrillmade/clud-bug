@@ -57,6 +57,15 @@ describe('renderReviewRecipe', () => {
     expect(recipe).toMatch(/wasp/i);
     // pr reviews the branch against its base (not a single commit)
     expect(recipe).toMatch(/gh pr diff|origin\//);
+    // H3: a PR recipe posts the self-attested merge-gate check
+    expect(recipe).toMatch(/post-check-run --sha/);
+    expect(recipe).toMatch(/--source local/);
+  });
+
+  it('H3: the merge-gate step is PR-only — a commit recipe never posts a check', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'commit' });
+    const recipe = renderReviewRecipe({ plan, trigger: 'commit' });
+    expect(recipe).not.toMatch(/post-check-run/);
   });
 
   it('carries the plan summary so the operator sees what was resolved', () => {

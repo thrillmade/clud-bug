@@ -298,6 +298,16 @@ export {
   type ReviewContextConfig,
 } from './review-context.js';
 export {
+  deriveCheck,
+  normalizeVerdict,
+  CLUD_BUG_CHECK_NAME,
+  type ReviewVerdict,
+  type CheckConclusion,
+  type CheckSource,
+  type DerivedCheck,
+  type DeriveCheckInput,
+} from './check-verdict.js';
+export {
   API_BASE,
   MAX_SKILLS,
   SkillsClient,
