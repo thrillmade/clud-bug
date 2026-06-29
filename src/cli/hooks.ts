@@ -21,10 +21,13 @@
 export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
 
 /**
- * Build the shell `command` of the commit-review hook, pinned to the clud-bug
- * VERSION that scaffolded it (a bare `npx clud-bug` resolves to the `latest`
- * dist-tag, which can predate the `review-prompt` verb; `@${version}` guarantees
- * it). `clud-bug update` refreshes the pin in place.
+ * Build the shell `command` of the commit-review hook. Pins to a FLOATING npm
+ * dist-tag (`next` by default) rather than an exact version, so every repo's hook
+ * auto-fetches the latest review recipe — no per-release re-pin rollout. (The
+ * original exact-pin guarded against a `latest` that predated the `review-prompt`
+ * verb; that verb now ships in every channel, so floating is safe + frictionless.)
+ * Max mode is advisory, so "always newest recipe" is the right default for a
+ * review tool. `pin` is overridable for a repo that wants a frozen, exact version.
  *
  * The command, in order:
  *   1. Idempotency — skip if this exact HEAD was already surfaced (avoids a
@@ -39,7 +42,7 @@ export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
  *      the commit on the session subscription.
  *   4. Any failure or empty output → `exit 0` (quiet; the commit is never blocked).
  */
-export function buildCommitReviewCommand(version: string): string {
+export function buildCommitReviewCommand(pin: string = 'next'): string {
   return [
     // Marker as a `#` comment (NOT a `:` no-op) so its free text can never break
     // `sh` — a paren / quote / `$` in the marker line would be a syntax error
@@ -61,8 +64,8 @@ export function buildCommitReviewCommand(version: string): string {
     // `|| recipe=` clears it on a NON-ZERO exit so partial/error stdout from a
     // mid-run crash (or an old npm warning on stdout) is never mistaken for a
     // valid recipe — only a clean, exit-0 run surfaces.
-    `recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null) || recipe=`,
-    `if [ -z "$recipe" ]; then sleep 1; recipe=$(npx clud-bug@${version} review-prompt --trigger commit 2>/dev/null) || recipe=; fi`,
+    `recipe=$(npx clud-bug@${pin} review-prompt --trigger commit 2>/dev/null) || recipe=`,
+    `if [ -z "$recipe" ]; then sleep 1; recipe=$(npx clud-bug@${pin} review-prompt --trigger commit 2>/dev/null) || recipe=; fi`,
     // H4 — when the recipe still can't be fetched, leave a diagnostic marker so a
     // FAILED review is distinguishable from a CLEAN one (a clean review surfaces
     // the recipe + the agent reports clean). Never blocks the commit.

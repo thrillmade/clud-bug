@@ -68,17 +68,25 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
   const unchanged: UpdateChangeRecord[] = [];
   const skipped: UpdateSkippedRecord[] = [];
 
-  // 1. Re-render review workflow with the latest template.
-  const signals = await detect(cwd);
-  const tmplName = pickTemplate(signals.languages);
-  // REVIEW_SCHEMA + CCA_VERSION + CLUD_BUG_VERSION come from render.js DEFAULTS.
-  const newReview = await renderFile(join(templatesDir, tmplName), {
-    REVIEW_PROMPT: reviewPrompt({
-      projectDescription: buildDescriptionLine(signals),
-      language: templateLanguage(tmplName),
-    }),
-  });
-  await maybeRefreshVersioned(join(cwd, '.github/workflows/clud-bug-review.yml'), newReview, changed, unchanged, skipped, 'review workflow');
+  // 1. Re-render the review workflow with the latest template — ONLY if it is
+  //    already installed. A `--local-only` (max-mode) repo has no review
+  //    workflow and must NOT have one created by `update`: that would
+  //    re-introduce the ANTHROPIC_API_KEY Action the local install deliberately
+  //    skips (dogfood caught `update` doing exactly this). Mirrors the
+  //    pathExists-gating the audit + self-update workflows already use below.
+  const reviewPath = join(cwd, '.github/workflows/clud-bug-review.yml');
+  if (await pathExists(reviewPath)) {
+    const signals = await detect(cwd);
+    const tmplName = pickTemplate(signals.languages);
+    // REVIEW_SCHEMA + CCA_VERSION + CLUD_BUG_VERSION come from render.js DEFAULTS.
+    const newReview = await renderFile(join(templatesDir, tmplName), {
+      REVIEW_PROMPT: reviewPrompt({
+        projectDescription: buildDescriptionLine(signals),
+        language: templateLanguage(tmplName),
+      }),
+    });
+    await maybeRefreshVersioned(reviewPath, newReview, changed, unchanged, skipped, 'review workflow');
+  }
 
   // 2. Re-render audit workflow if it's installed (init from v0.3+ ships it).
   // Routed through renderFile (was raw readFile pre-v0.5.11) so
@@ -172,7 +180,7 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
     const prior = await readSafe(settingsPath);
     if (prior && prior.includes(CLUD_BUG_HOOK_MARKER)) {
       try {
-        const merged = mergeLocalReviewHook(JSON.parse(prior), buildCommitReviewCommand(ourVersion));
+        const merged = mergeLocalReviewHook(JSON.parse(prior), buildCommitReviewCommand());
         await maybeWrite(settingsPath, JSON.stringify(merged, null, 2) + '\n', changed, unchanged, 'commit-review hook');
       } catch {
         skipped.push({

@@ -231,3 +231,29 @@ test('runUpdate: re-renders audit + self-update workflows when installed (stale 
     assert.doesNotMatch(selfUpd, /\{\{[A-Z_]+\}\}/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('runUpdate: a --local-only repo (manifest, no workflow) does NOT get a review workflow created', async () => {
+  // Max-mode install: installed skills + a hook, but NO clud-bug-review.yml.
+  // update must REFRESH what is installed, never ADD the API-key Action.
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+    '.claude/skills/.clud-bug.json': JSON.stringify({
+      version: 1,
+      installed: [{ slug: 'critical-issues-only', kind: 'baseline' }],
+    }),
+    '.claude/skills/critical-issues-only/SKILL.md': '# baseline\n',
+  });
+  try {
+    await runUpdate({
+      cwd: dir, templatesDir: TEMPLATES, baselineDir: BASELINE, ourVersion: '0.3.0',
+      loadBaselineOpts: offlineLoadBaseline,
+    });
+    let created = true;
+    try {
+      await readFile(join(dir, '.github/workflows/clud-bug-review.yml'), 'utf8');
+    } catch {
+      created = false;
+    }
+    assert.equal(created, false, 'update must not create the review workflow in a workflow-less (local-only) repo');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
