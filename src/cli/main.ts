@@ -25,7 +25,7 @@ import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { reviewPrompt } from '../core/prompts.js';
 import { SkillsClient, rankAndCap } from '../core/skills.js';
 import {
-  writeSkills, writeSkill, loadBaseline,
+  writeSkills, writeSkill, loadBaseline, loadDesignKit,
   readManifest, writeManifest, removeSkill, listInstalled, diffManifest,
 } from './skills.js';
 import { computeAuditFileSet } from './audit.js';
@@ -44,6 +44,7 @@ import { computeReviewCost, costPerLOC, cacheHitRate, extractTokensFromLog, roll
 const PKG_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const TEMPLATES = join(PKG_ROOT, 'templates');
 const BASELINE_DIR = join(TEMPLATES, 'skills', 'baseline');
+const DESIGN_DIR = join(TEMPLATES, 'skills', 'design');
 
 function parseArgs(argv) {
   const args = {
@@ -68,6 +69,10 @@ function parseArgs(argv) {
     // Claude Code session (reviews the current PR with the session's tokens).
     withLocalReview: false,
     withHooks: false,
+    // rc.16: `clud-bug init --with-design` installs the design-critic kit
+    // (3 `kind: design` skills) and flips the off-by-default `design` block to
+    // enabled so the visual review lens runs (local recipe + hosted bot).
+    withDesign: false,
     // v0.7.0-rc.4: `clud-bug configure-github` flags.
     // --dry-run prints the diff but skips PATCH; --branch overrides "main".
     dryRun: false,
@@ -96,6 +101,7 @@ function parseArgs(argv) {
     else if (a === '--with-skdd') args.withSkdd = true;
     else if (a === '--with-local-review') args.withLocalReview = true;
     else if (a === '--with-hooks') args.withHooks = true;
+    else if (a === '--with-design') args.withDesign = true;
     else if (a === '--dry-run') args.dryRun = true;
     else if (a === '--branch') args.branch = argv[++i];
     else if (a === '--trigger') args.trigger = argv[++i];
@@ -209,6 +215,9 @@ Options:
                         \`git commit\` the agent makes, a backgrounded clud-bug
                         review subagent runs on the session's subscription.
                         Implies --with-local-review. Off by default.
+  --with-design         (init) Install the design-critic kit (3 \`kind: design\`
+                        skills) and enable the off-by-default visual review
+                        lens — renders changed UI and critiques it. Off by default.
   --quiet,-q            Token-frugal mode for agent invocations. Suppresses
                         progress chatter; emits exactly one final
                         \`ok <key-value>\` summary line per command. Errors
@@ -1315,6 +1324,21 @@ async function runInit(args) {
     }
   }
 
+  // rc.16: --with-design installs the bundled design-critic kit (3 `kind:
+  // design` skills) and enables the off-by-default design lens. writeSkills
+  // writes the SKILL.md files + merges the manifest entries; the `design` block
+  // is flipped on the manifest read below so the local recipe + hosted bot both
+  // run the visual pass. Idempotent — re-runs replace the skills in place.
+  if (args.withDesign) {
+    const designKit = await loadDesignKit(DESIGN_DIR);
+    if (designKit.length > 0) {
+      await writeSkills(join(cwd, '.claude', 'skills'), designKit, client);
+      log(`    pinned ${designKit.length} design specimens (visual review lens enabled)`);
+    } else {
+      warn('No design-kit skills found to install (templates/skills/design/ empty?).');
+    }
+  }
+
   // Stamp the manifest. Sets strictMode: true ONLY on fresh installs —
   // a manifest that's never been touched by clud-bug init/update has no
   // lastUpdate field. Existing v0.3.x advisory installs (where strictMode
@@ -1323,6 +1347,12 @@ async function runInit(args) {
   // fresh inits. Users opt out by setting strictMode: false.
   const skillsDirPath = join(cwd, '.claude', 'skills');
   const manifest = await readManifest(skillsDirPath);
+  if (args.withDesign) {
+    // Flip the off-by-default design lens on; preserve any existing knobs
+    // (gate / themes / viewports) the user already set.
+    const prior = (manifest.design as Record<string, unknown> | undefined) ?? {};
+    manifest.design = { ...prior, enabled: true };
+  }
   const isFreshInstall = manifest.lastUpdate === undefined;
   manifest.lastUpdateVersion = await readPkgVersion();
   manifest.lastUpdate = new Date().toISOString();
