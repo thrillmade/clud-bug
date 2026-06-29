@@ -210,11 +210,11 @@ Options:
                         \`/clud-bug-review\` works in a Claude Code session —
                         reviews the current branch's PR using that session's
                         own tokens (no hosted App, no extra auth).
-  --with-hooks          (init) Also scaffold a native Claude Code \`type: agent\`
+  --with-hooks          (init) Scaffold a native Claude Code \`type: command\`
                         commit-review hook into .claude/settings.json — on every
-                        \`git commit\` the agent makes, a backgrounded clud-bug
-                        review subagent runs on the session's subscription.
-                        Implies --with-local-review. Off by default.
+                        \`git commit\` / \`logmind log\`, it fetches a review recipe and
+                        surfaces it to the agent (on this session's subscription)
+                        via asyncRewake. Implies --with-local-review. Off by default.
   --with-design         (init) Install the design-critic kit (3 \`kind: design\`
                         skills) and enable the off-by-default visual review
                         lens — renders changed UI and critiques it. Off by default.

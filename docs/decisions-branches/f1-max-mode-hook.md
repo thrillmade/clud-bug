@@ -21,3 +21,9 @@
 
 ---
 
+## 2026-06-29 13:27 - rc.17 review fixes: correct --with-hooks help text + assert asyncRewake in the integration test
+
+**Reasoning:** F1 adversarial review found two real gaps: (1) the --with-hooks --help text still described the old broken type:agent / 'subagent runs' behavior — corrected to type:command that fetches a recipe and surfaces it via asyncRewake (on git commit / logmind log); (2) the integration test asserted type/if/async/command but NOT asyncRewake — the field that actually surfaces the recipe (exit 2); without it the whole mechanism silently no-ops. Added asyncRewake assertions for both triggers. Review otherwise cleared shell-safety, idempotency, the stdin gate, the merge logic, and the version lockstep.
+
+---
+
