@@ -5,7 +5,7 @@ import { reviewPrompt } from '../core/prompts.js';
 import { detect, buildDescriptionLine } from '../core/detect.js';
 import { loadBaseline, readManifest, writeManifest, type LoadBaselineOptions } from './skills.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
-import { mergeLocalReviewHook, buildCommitReviewPrompt, CLUD_BUG_HOOK_MARKER } from './hooks.js';
+import { mergeLocalReviewHook, buildCommitReviewCommand, CLUD_BUG_HOOK_MARKER } from './hooks.js';
 
 // Re-render the user's workflow + refresh baseline skills using the
 // templates / baseline shipped with the currently-installed clud-bug.
@@ -172,7 +172,7 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
     const prior = await readSafe(settingsPath);
     if (prior && prior.includes(CLUD_BUG_HOOK_MARKER)) {
       try {
-        const merged = mergeLocalReviewHook(JSON.parse(prior), buildCommitReviewPrompt(ourVersion));
+        const merged = mergeLocalReviewHook(JSON.parse(prior), buildCommitReviewCommand(ourVersion));
         await maybeWrite(settingsPath, JSON.stringify(merged, null, 2) + '\n', changed, unchanged, 'commit-review hook');
       } catch {
         skipped.push({

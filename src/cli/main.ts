@@ -210,11 +210,11 @@ Options:
                         \`/clud-bug-review\` works in a Claude Code session —
                         reviews the current branch's PR using that session's
                         own tokens (no hosted App, no extra auth).
-  --with-hooks          (init) Also scaffold a native Claude Code \`type: agent\`
+  --with-hooks          (init) Scaffold a native Claude Code \`type: command\`
                         commit-review hook into .claude/settings.json — on every
-                        \`git commit\` the agent makes, a backgrounded clud-bug
-                        review subagent runs on the session's subscription.
-                        Implies --with-local-review. Off by default.
+                        \`git commit\` / \`logmind log\`, it fetches a review recipe and
+                        surfaces it to the agent (on this session's subscription)
+                        via asyncRewake. Implies --with-local-review. Off by default.
   --with-design         (init) Install the design-critic kit (3 \`kind: design\`
                         skills) and enable the off-by-default visual review
                         lens — renders changed UI and critiques it. Off by default.
@@ -1289,14 +1289,16 @@ async function runInit(args) {
     log(`    wrote ${rel(cwd, commandPath)}`);
   }
 
-  // v0.7.0 (Wave 6b): optional native commit-review hook. Merges a Claude Code
-  // `type: agent` PostToolUse hook into `.claude/settings.json` (preserving any
-  // existing settings + hooks) that, on every `git commit` the agent makes,
-  // spawns a clud-bug review subagent on the session's subscription, in the
-  // background — the hook's prompt runs `clud-bug review-prompt` and follows it.
+  // v0.7.0 (Wave 6b; rc.17 fix): optional native commit-review hook. Merges a
+  // Claude Code `type: command` PostToolUse hook into `.claude/settings.json`
+  // (preserving any existing settings + hooks) that, on every `git commit`, runs
+  // `clud-bug review-prompt` and surfaces the recipe back to the session so the
+  // agent reviews the commit on the session's subscription, in the background.
+  // (`type: command`, not `type: agent` — agent hooks get no Bash, so they could
+  // never run the CLI; see hooks.ts.)
   if (args.withHooks) {
-    const { mergeLocalReviewHook, buildCommitReviewPrompt } = await import('./hooks.js');
-    const hookPrompt = buildCommitReviewPrompt(await readPkgVersion());
+    const { mergeLocalReviewHook, buildCommitReviewCommand } = await import('./hooks.js');
+    const hookCommand = buildCommitReviewCommand(await readPkgVersion());
     const settingsPath = join(cwd, '.claude', 'settings.json');
     await mkdir(dirname(settingsPath), { recursive: true });
     // Read-then-parse so we can tell "no file yet" (fresh merge) from "file
@@ -1318,7 +1320,7 @@ async function runInit(args) {
       }
     }
     if (proceed) {
-      const merged = mergeLocalReviewHook(existing, hookPrompt);
+      const merged = mergeLocalReviewHook(existing, hookCommand);
       await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
       log(`    wrote ${rel(cwd, settingsPath)} (commit-review hook)`);
     }

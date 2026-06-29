@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (63 decisions)
+## 2026-06 (66 decisions)
 
-- **2026-06-29** — rc.16: clud-bug init --with-design — install the design kit + enable the lens; Action browser-MCP opt-in *(rc16-design-installer)* — [decisions-branches/rc16-design-installer.md](decisions-branches/rc16-design-installer.md)
-- *... 61 more decisions ...*
+- **2026-06-29** — rc.17 review fixes: correct --with-hooks help text + assert asyncRewake in the integration test *(f1-max-mode-hook)* — [decisions-branches/f1-max-mode-hook.md](decisions-branches/f1-max-mode-hook.md)
+- *... 64 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
