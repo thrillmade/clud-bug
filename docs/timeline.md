@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (67 decisions)
+## 2026-06 (68 decisions)
 
-- **2026-06-29** — rc.18: clud-bug init --local-only — max mode without the GitHub Action (no API key) *(rc18-local-only)* — [decisions-branches/rc18-local-only.md](decisions-branches/rc18-local-only.md)
-- *... 65 more decisions ...*
+- **2026-06-29** — rc.18 review fix: gate the post-init Action/branch-protection log lines under --local-only *(rc18-local-only)* — [decisions-branches/rc18-local-only.md](decisions-branches/rc18-local-only.md)
+- *... 66 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
