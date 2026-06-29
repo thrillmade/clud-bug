@@ -100,6 +100,11 @@ export async function runPostCheckRun(args: PostCheckRunArgs): Promise<void> {
 
   if (!owner || !repo) return void warn('could not resolve owner/repo (pass --owner/--repo or run inside a gh-authed repo); skipping.');
 
+  // NB: this POSTs a fresh check-run each call (no list+update like the hosted
+  // bot). Branch protection evaluates the MOST RECENT check-run for a name on a
+  // SHA, so the gate stays correct — a re-run after a fix overrides a prior
+  // failure. The only cost is cosmetic: repeated runs on one SHA stack entries
+  // in the PR's checks UI. (A list+update upsert is a possible future refinement.)
   const r = sh('gh', ['api', `repos/${owner}/${repo}/check-runs`, '-X', 'POST', '--input', '-'], JSON.stringify(body));
   if (!r.ok) {
     // Most common: the token lacks `checks: write`. Never fatal.

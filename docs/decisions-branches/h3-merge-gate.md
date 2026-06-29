@@ -11,3 +11,12 @@
 
 ---
 
+## 2026-06-29 16:09 - H3 review fixes: CLI-level false-green guard tests + document the check-run stacking tradeoff
+
+**Reasoning:** The adversarial review confirmed no false-green path + best-effort intact, with two notes: (1) the false-green guards (failed/garbage/critical+no-strict -> neutral) were only unit-tested, not through the full CLI wiring — added 3 post-check-run --dry-run tests so a regression that bypassed normalizeVerdict would be caught; (2) the verb POSTs a fresh check-run each call (no list+update) — gate integrity is zero-risk (GitHub uses the latest conclusion) but it stacks UI entries; documented the latest-wins + cosmetic-stacking tradeoff at the post site.
+
+**Implications:**
+- Part of H3. Idempotency upsert is a possible future refinement; not needed for gate correctness
+
+---
+

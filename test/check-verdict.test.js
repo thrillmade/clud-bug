@@ -64,4 +64,15 @@ describe('post-check-run --dry-run', () => {
   it('clean → success in dry-run', () => {
     expect(dryRun(['--verdict', 'clean']).stdout).toMatch(/conclusion=success/);
   });
+  // The false-green guards, exercised through the FULL CLI wiring (normalizeVerdict
+  // → deriveCheck), not just the pure functions — these inputs must never post success.
+  it('failed verdict → neutral (does not block)', () => {
+    expect(dryRun(['--verdict', 'failed']).stdout).toMatch(/conclusion=neutral/);
+  });
+  it('garbage verdict → neutral (no false-green)', () => {
+    expect(dryRun(['--verdict', 'garbage']).stdout).toMatch(/conclusion=neutral/);
+  });
+  it('critical + --no-strict → neutral (advisory)', () => {
+    expect(dryRun(['--verdict', 'critical', '--no-strict']).stdout).toMatch(/conclusion=neutral/);
+  });
 });
