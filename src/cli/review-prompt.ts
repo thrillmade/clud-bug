@@ -89,10 +89,29 @@ export function renderReviewRecipe(input: { plan: ReviewPlan; trigger: ReviewTri
       const tier = role.tier ? ` · ${role.tier} tier` : '';
       return `  ${i + 1}. **${role.name}**${tier}`;
     }).join('\n');
+    // 6c: a 2-pass cross-check escalates to a conditional 3rd Mantis arbiter
+    // only when the first two passes disagree on a gate-relevant finding. Gate
+    // the prose to the same shape as `shouldEscalate` (cross-check + exactly 2
+    // passes) so a 3-pass or consensus plan doesn't get redundant instructions.
+    // Resolve the arbiter by tier (not positional index) so a custom <3-role
+    // `roles` config can't make `roleForPass`'s modulo wrap name a fast tier as
+    // the opus-class arbiter. Falls back to the canonical name when no mantis
+    // tier is configured.
+    const arbiter = plan.roles.find((r) => r.tier === 'mantis')?.name ?? 'Mantis';
+    const escalation =
+      mode === 'cross-check' && maxPasses === 2
+        ? `\n\nIf passes 1 and 2 **disagree** on any \`critical\` or \`minor\` finding, dispatch a ` +
+          `3rd **${arbiter}** arbiter sub-agent (opus-class, read-only tools) that re-examines ONLY ` +
+          `the disputed findings against the diff + the cited skill and records the deciding verdict ` +
+          `with a one-line rationale. Skip the arbiter if the passes agree, or disagree only on ` +
+          `\`preexisting\` findings. The arbiter's verdict sets each disputed finding's consensus ` +
+          `marker (\`2-of-2\` if upheld, \`arbitrated\` if not) and its rationale — it does not change ` +
+          `which findings gate the merge.`
+        : '';
     reviewStep =
       `Dispatch ${maxPasses} reviewer sub-agents — a ${maxPasses}-pass **${mode}** review on this ` +
       `session's subscription (bind each tier to a Claude Code model: a fast model for \`beetle\`, ` +
-      `a strong model for \`wasp\`/\`mantis\`):\n\n${passLines}\n\n${MODE_AGGREGATION[mode]}`;
+      `a strong model for \`wasp\`/\`mantis\`):\n\n${passLines}\n\n${MODE_AGGREGATION[mode]}${escalation}`;
   }
 
   const surface =

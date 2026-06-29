@@ -276,9 +276,11 @@ export {
   aggregatePasses,
   deriveConsensus,
   resolveVerdict,
+  shouldEscalate,
   type CrossCheckVerdict,
   type CrossCheckPassResult,
   type AggregateInput,
+  type EscalationInput,
 } from './multi-pass-aggregate.js';
 export {
   API_BASE,

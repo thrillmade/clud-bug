@@ -4,6 +4,31 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.14] — 2026-06-28
+
+6c — the conditional Mantis arbiter (the decision lives in `core`; consumers wire the pass).
+
+### Added
+
+- **`shouldEscalate(...)` in `core/multi-pass-aggregate.ts`** — a pure gate that returns true
+  only when a 2-pass `cross-check` disagreed on a `critical` or `minor` Pass-1 finding (the
+  SPEC §6.10.1 `arbitrated` case). It reads the verdicts Pass 2 already produced — no I/O, no
+  AI call. Scope: cross-check only, exactly `passCount === 2` (a statically-configured 3-pass
+  plan already runs Mantis as pass 3 via the loop), severity `critical | minor` (a
+  `preexisting` dispute can't flip the merge gate, so it doesn't earn an Opus arbiter).
+  Authority is marker-only — the arbiter sets the disputed finding's consensus marker +
+  rationale; it does not change which findings gate the merge (that stays `resolveVerdict`).
+  Exported from `core` so the hosted bot and the local recipe share one decision (SPEC §11.5).
+- **`review-prompt` recipe describes the arbiter.** A 2-pass cross-check plan now appends a
+  conditional "dispatch a 3rd Mantis arbiter on disagreement" paragraph, gated to
+  `cross-check` + exactly 2 passes so 3-pass / consensus plans don't get redundant prose.
+
+### Notes
+
+- The 2-pass cross-check default ships as a **Team-tier repo default in the hosted app**, not a
+  `BUILTIN_DEFAULT` flip — OSS / free / Solo keep the 1-pass floor (small commits/diffs still
+  tier down to 1). rc.14 publishes to the `next` dist-tag.
+
 ## [0.7.0-rc.13] — 2026-06-28
 
 Wave 6b — SPEC render conformance + the hook version-pin.

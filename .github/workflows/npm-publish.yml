@@ -126,7 +126,17 @@ jobs:
         # generation. --access public is required for unscoped packages.
         # prepublishOnly runs npm test first, so a broken tag fails the
         # publish loudly instead of silently shipping.
-        run: npm publish --provenance --access public
+        #
+        # Prerelease-aware dist-tag: npm does NOT auto-route a `-rc.N`
+        # prerelease away from `latest` — a bare `npm publish` would point
+        # `latest` (the `npm i clud-bug` stable channel) at the prerelease.
+        # Derive the tag from the version: anything with a `-` (e.g.
+        # 0.7.0-rc.14) → `next`; a clean semver → `latest`.
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "${VERSION}" == *-* ]]; then DIST_TAG=next; else DIST_TAG=latest; fi
+          echo "Publishing clud-bug@${VERSION} to dist-tag '${DIST_TAG}'"
+          npm publish --provenance --access public --tag "${DIST_TAG}"
 
   promote-tag:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'promote-tag'

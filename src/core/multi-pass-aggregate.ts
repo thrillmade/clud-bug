@@ -166,6 +166,52 @@ export function aggregatePasses(input: AggregateInput): MultiPassReview {
 }
 
 // ---------------------------------------------------------------------------
+// 6c — conditional Mantis-arbiter escalation
+// ---------------------------------------------------------------------------
+
+export interface EscalationInput {
+  /** Active aggregation mode — escalation only applies to cross-check. */
+  mode: ReviewPassMode;
+  /** Resolved pass count — escalation only when the plan ran exactly 2. */
+  passCount: number;
+  /** Pass 1's review; its findings are indexed by the cross-check verdicts. */
+  firstPass: Review;
+  /** Subsequent passes — the cross-check verdicts live here. */
+  subsequentPasses: AggregateInput['subsequentPasses'];
+}
+
+/**
+ * 6c arbiter gate (SPEC §6.10.1 `arbitrated`). Returns true when a 2-pass
+ * cross-check disagreed on a gate-relevant (`critical` | `minor`) Pass-1
+ * finding — the only case worth spending a 3rd Mantis arbiter pass on. Pure:
+ * it reads the verdicts Pass 2 already produced; no I/O, no AI call.
+ *
+ * Scope rationale:
+ *   - cross-check only — `consensus` already runs Mantis as its final pass and
+ *     `independent` has no arbiter; both return false.
+ *   - `passCount === 2` (not `>= 2`) — a statically-configured 3-pass
+ *     cross-check already runs Mantis as pass 3 via the loop, so escalating
+ *     there would stack a redundant 4th pass past MAX_PASSES.
+ *   - severity `critical | minor` — a `preexisting` dispute can never flip the
+ *     merge gate, so it doesn't earn an Opus-class arbiter.
+ *
+ * Authority is marker-only: the arbiter's verdict sets the disputed finding's
+ * consensus marker + rationale; it does not change which findings gate the
+ * merge (that stays `resolveVerdict`'s job).
+ */
+export function shouldEscalate(input: EscalationInput): boolean {
+  if (input.mode !== 'cross-check' || input.passCount !== 2) return false;
+  const pass1 = flattenFindings(input.firstPass);
+  return input.subsequentPasses.some((pass) =>
+    (pass.crossCheck?.verdicts ?? []).some((v) => {
+      if (v.verdict !== 'disagreed') return false;
+      const severity = pass1[v.pass1Index]?.severity;
+      return severity === 'critical' || severity === 'minor';
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Mode: cross-check
 // ---------------------------------------------------------------------------
 
