@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (69 decisions)
+## 2026-06 (70 decisions)
 
-- **2026-06-29** — max mode: init --local-only — /clud-bug-review slash command + commit hook (F4 rollout) *(f4-maxmode-clud-bug)* — [decisions-branches/f4-maxmode-clud-bug.md](decisions-branches/f4-maxmode-clud-bug.md)
-- *... 67 more decisions ...*
+- **2026-06-29** — H1: harden the max-mode review recipe to adversarial quality (refute + 3 lenses + ground + tiebreak) *(h1-recipe-depth)* — [decisions-branches/h1-recipe-depth.md](decisions-branches/h1-recipe-depth.md)
+- *... 68 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
