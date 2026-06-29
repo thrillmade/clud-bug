@@ -11,3 +11,12 @@
 
 ---
 
+## 2026-06-29 15:41 - H2 security fixes: close the fence breakout + guard all passes + harden the base-ref contract
+
+**Reasoning:** The adversarial review caught a CRITICAL prompt-injection breakout: a PR-description marker containing '--- end untrusted focus ---' + a forged '## Reviewer context (trusted)' header could escape the fence — worsened because system rule 7 tells the model to trust that header, and the cross-check/consensus system prompts had no such guard. Hardened fenceUntrustedContext with two layers: (1) neutralize any literal fence marker + trusted-section header in the input, (2) line-prefix every untrusted line with U+2503 so even an unanticipated marker stays visibly inside the block (the real fence markers are the only unprefixed --- lines). Added the untrusted-section guard to CROSS_CHECK + CONSENSUS system prompts so every pass defends. Reworded the reviewContext JSDoc: removed the false 'a PR can't rewrite its own' (implied enforcement) and made base-ref provenance a loud caller-responsibility security warning. Added adversarial tests: the breakout payload + the multiple-marker invariant.
+
+**Implications:**
+- Part of H2. The app-wiring follow-up MUST read reviewContext from the base ref (reuse the strictMode base-ref read). No version bump
+
+---
+
