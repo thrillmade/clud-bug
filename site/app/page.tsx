@@ -52,10 +52,11 @@ export default async function Home() {
               Install the GitHub App
             </a>
             <p className="cta-fineprint">
-              Free on public repos. See{' '}
+              Managed tiers — see{' '}
               <a href={APP_PRICING_URL} rel="noopener">pricing</a> and{' '}
-              <a href={APP_COMPARE_URL} rel="noopener">compare</a> tiers on{' '}
-              <a href={APP_ROOT_URL} rel="noopener">app.cludbug.dev</a>.
+              <a href={APP_COMPARE_URL} rel="noopener">compare</a> on{' '}
+              <a href={APP_ROOT_URL} rel="noopener">app.cludbug.dev</a>, or{' '}
+              <a href="#self-hosted">self-host the open-source workflow</a> for free.
             </p>
             <p className="cta-fineprint cta-secondary">
               <a href="#self-hosted">Self-hosted? Use the open-source workflow →</a>
@@ -99,9 +100,9 @@ export default async function Home() {
               <p className="howto-desc">
                 Pick a plan on the{' '}
                 <a href={APP_DASHBOARD_URL} rel="noopener">dashboard</a>{' '}
-                — free on public repos, or a Marketplace tier for private
-                ones. Skills are auto-curated from your repository on the
-                first PR.
+                — managed tiers for any repo, public or private. The bot
+                reviews against the skills in <code>.claude/skills/</code>,
+                starting with the baseline kit.
               </p>
             </li>
             <li className="howto-step">
@@ -198,15 +199,17 @@ export default async function Home() {
         </header>
         <div className="section-body">
           <aside className="marginalia">
-            Available on the Pro tier. Each pass writes to the same PR but
+            Available on the Team tier. Each pass writes to the same PR but
             signs its own comments. Disagreements get adjudicated, not
             averaged. <a href={APP_PRICING_URL} rel="noopener">Pricing →</a>
           </aside>
           <div className="section-prose">
             <p>
-              The default review is a single pass — fast, skill-aware, cited.
-              On the Pro tier, Clud Bug runs three passes that each see the
-              previous one&rsquo;s findings and react to them:
+              Most reviews are a single fast pass — skill-aware and cited. On
+              the Team tier, Clud Bug runs a two-pass cross-check: a second
+              naturalist re-reads the first one&rsquo;s findings against the
+              diff, and a third — the arbiter — is called in only when the two
+              disagree:
             </p>
             <div className="passes">
               <article className="pass">

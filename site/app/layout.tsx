@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Clud Bug — AI PR review with project-aware skills',
     description:
-      'Install the GitHub App. Reviews land on every PR within two minutes, cited against the skills your team writes. Three-pass review on the Pro tier. Self-hosted workflow optional.',
+      'Install the GitHub App. Reviews land on every PR within two minutes, cited against the skills your team writes. Multi-pass review on the Team tier. Self-hosted workflow optional.',
     url: 'https://cludbug.dev',
     siteName: 'Clud Bug',
     type: 'website',
