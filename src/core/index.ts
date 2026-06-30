@@ -201,8 +201,10 @@ export {
 } from './auto-resolve.js';
 export {
   VERIFIER_SYSTEM,
+  buildVerifierSystem,
   buildVerifierPrompt,
   parseVerifierResponse,
+  type VerifierOutputMode,
   type VerifySingleFindingInput,
 } from './resolve-verifier.js';
 // SPEC §7 canonical-ruleset applier. Pure diff + idempotent-PATCH logic;

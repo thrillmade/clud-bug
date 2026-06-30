@@ -27,7 +27,7 @@ import type { PriorFinding, VerifyOutcome } from './auto-resolve.js';
 // System prompt — hard-coded, NOT derived from user content (anti-injection)
 // ---------------------------------------------------------------------------
 
-export const VERIFIER_SYSTEM = [
+const VERIFIER_SYSTEM_BODY = [
   'You are a code-review fix verifier. Your only job is to decide whether a',
   'specific code change addressed a specific prior reviewer concern.',
   '',
@@ -51,12 +51,33 @@ export const VERIFIER_SYSTEM = [
   'judging the finding. You are judging whether the new code resolves what it',
   'said. If the finding asked for X and the change does X, mark ADDRESSED even',
   'if X is unnecessary.',
-  '',
-  'Reply with a JSON object on a single line, no markdown fence, no surrounding',
-  'prose. Shape:',
-  '  {"verdict":"ADDRESSED"|"NOT_ADDRESSED"|"UNCERTAIN","rationale":"<one sentence>"}',
-  'Rationale MUST be one sentence, max 500 characters.',
-].join('\n');
+];
+
+/** Output contract for the verifier prompt + system message (C1 dedup). */
+export type VerifierOutputMode = 'json' | 'structured';
+
+// The verdict-shape tail differs by surface: the CLI/raw path asks the model to
+// emit the JSON itself; the hosted App constrains output via an AI-SDK schema, so
+// its prompt only names the verdict + rationale. Everything above is shared.
+function verifierSystemTail(outputMode: VerifierOutputMode): string[] {
+  if (outputMode === 'structured') {
+    return ['Reply with the structured object only. Rationale must be one sentence.'];
+  }
+  return [
+    'Reply with a JSON object on a single line, no markdown fence, no surrounding',
+    'prose. Shape:',
+    '  {"verdict":"ADDRESSED"|"NOT_ADDRESSED"|"UNCERTAIN","rationale":"<one sentence>"}',
+    'Rationale MUST be one sentence, max 500 characters.',
+  ];
+}
+
+/** Build the verifier system prompt for the given output mode. */
+export function buildVerifierSystem(outputMode: VerifierOutputMode = 'json'): string {
+  return [...VERIFIER_SYSTEM_BODY, '', ...verifierSystemTail(outputMode)].join('\n');
+}
+
+/** Raw-JSON system prompt — the CLI default. Back-compat for existing consumers. */
+export const VERIFIER_SYSTEM = buildVerifierSystem('json');
 
 // ---------------------------------------------------------------------------
 // Input shape
@@ -89,7 +110,10 @@ export interface VerifySingleFindingInput {
  *     A model coerced to emit "ADDRESSED!" outside the JSON shape
  *     gets routed to UNCERTAIN+api-error (fail-closed).
  */
-export function buildVerifierPrompt(input: VerifySingleFindingInput): string {
+export function buildVerifierPrompt(
+  input: VerifySingleFindingInput,
+  opts: { outputMode?: VerifierOutputMode } = {},
+): string {
   const f = input.finding;
   const anchor = f.line !== undefined ? `${f.file}:${f.line}` : f.file;
   const sev = f.severity === 'critical' ? '🔴 critical' : '🟡 minor';
@@ -129,7 +153,9 @@ export function buildVerifierPrompt(input: VerifySingleFindingInput): string {
   parts.push('');
   parts.push('Did this change ADDRESS the original finding?');
   parts.push(
-    'Reply with the JSON object only — single line, no markdown fence, no prose.',
+    (opts.outputMode ?? 'json') === 'structured'
+      ? 'Reply with the structured verdict + one-sentence rationale.'
+      : 'Reply with the JSON object only — single line, no markdown fence, no prose.',
   );
 
   return parts.join('\n');

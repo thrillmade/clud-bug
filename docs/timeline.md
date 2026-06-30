@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-06 (80 decisions)
+## 2026-06 (81 decisions)
 
-- **2026-06-29** — re-pin: float the max-mode hook to @next (auto-update; last manual re-pin) *(repin-next-floating)* — [decisions-branches/repin-next-floating.md](decisions-branches/repin-next-floating.md)
-- *... 78 more decisions ...*
+- **2026-06-29** — rc.21 (C1): parameterize buildVerifierPrompt + VERIFIER_SYSTEM by outputMode (json|structured) *(cl2-rc21)* — [decisions-branches/cl2-rc21.md](decisions-branches/cl2-rc21.md)
+- *... 79 more decisions ...*
 - **2026-06-01** — chore: self-propagate v0.6.30 (cross-review aggregation) *(chore/self-propagate-v0.6.30)* — [decisions-branches/chore__self-propagate-v0.6.30.md](decisions-branches/chore__self-propagate-v0.6.30.md)
 
 ## 2026-05 (108 decisions)
