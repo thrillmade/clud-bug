@@ -13,6 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-07
+
+- **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
+
 ## 2026-06 (81 decisions)
 
 - **2026-06-29** — rc.21 (C1): parameterize buildVerifierPrompt + VERIFIER_SYSTEM by outputMode (json|structured) *(cl2-rc21)* — [decisions-branches/cl2-rc21.md](decisions-branches/cl2-rc21.md)
