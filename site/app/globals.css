@@ -430,7 +430,7 @@ main { position: relative; z-index: 1; }
    Mono fonts ship visually larger than serif body text; without this the
    inline tokens overpower their surroundings. Applies to every `code` that
    isn't inside a `pre` (terminal blocks have their own scaling). */
-:where(.section-prose, .marginalia, .observation, .actions, .specimen-desc, .specimens-footer) code {
+:where(.section-prose, .section-prose-lead, .marginalia, .observation, .actions, .specimen-desc, .specimens-footer) code {
   font-family: var(--mono);
   font-size: 0.86em;
   background: var(--paper-warm);
