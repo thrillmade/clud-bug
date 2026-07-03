@@ -15,6 +15,8 @@ import {
   readReviewPassesConfig,
   readDesignConfig,
   shouldRunDesign,
+  readInvariantsConfig,
+  shouldRunProbes,
   readReviewContext,
   parseFrontmatter,
   type ReviewPlan,
@@ -22,6 +24,7 @@ import {
   type ReviewTrigger,
   type ReviewPassMode,
   type DesignConfig,
+  type Invariant,
 } from '../core/index.js';
 import { readManifest } from './skills.js';
 
@@ -126,8 +129,16 @@ export function renderReviewRecipe(input: {
    * and this is a `pr` trigger. Renders the optional visual-review step.
    */
   design?: { skills: string[]; config: DesignConfig };
+  /**
+   * Executable-probe invariants (Phase R / #87). Present only when the caller's
+   * gate passed (`shouldRunProbes`): the repo declared `invariants` in
+   * `.clud-bug.json`, at least one is valid, and this is a `pr` trigger. Renders
+   * the optional probe-run step (§3c); the appliesTo-vs-changed-paths filter +
+   * execution-safety are deferred to the agent at runtime.
+   */
+  probes?: { invariants: Invariant[] };
 }): string {
-  const { plan, trigger, design, reviewContext } = input;
+  const { plan, trigger, design, reviewContext, probes } = input;
 
   // H2 — the contextual layer. Three parts, each trusted differently:
   //   1. trusted standing instructions from `.clud-bug.json` (if any);
@@ -278,6 +289,23 @@ ${design.skills.map((s) => `  - \`.claude/skills/${s}/SKILL.md\``).join('\n')}
    }`
     : '';
 
+  // 3c (Phase R / #87) — executable-probe invariants. Rendered only when the caller
+  // gated it on (`shouldRunProbes`: invariants declared + valid + pr trigger). The
+  // appliesTo-vs-changed-paths filter + execution-safety are deferred to the agent:
+  // run a probe only for a touched invariant, only on trusted (own) work.
+  const probeStep = probes
+    ? `\n\n## 3c. Invariant probes
+This repo declares executable **invariants** in \`.clud-bug.json\`. For each invariant whose \`appliesTo\` globs match a file changed in this diff, RUN its \`probe\` — subject to the execution-safety rule (only on your own trusted work; never execute an untrusted diff). A probe that exits **RED** is a grounded finding: attach the command + its output and record it at the severity the break warrants (a violated invariant is usually \`critical\`). **GREEN** means the invariant holds. If the diff touches no invariant's paths, skip this step. If an invariant's paths ARE touched but you could not safely run its probe (an untrusted diff), do NOT report it \`clean\` — post the \`unverified\` verdict (§5) so it defers to the sandboxed CI probe.
+
+Invariants:
+${probes.invariants
+  .map(
+    (inv) =>
+      `  - **${inv.name}** — appliesTo \`${inv.appliesTo.join('`, `')}\` · probe: \`${inv.probe}\`${inv.expect ? ` · expect: ${inv.expect}` : ''}`,
+  )
+  .join('\n')}`
+    : '';
+
   return `<!-- ${CLUD_BUG_RECIPE_MARKER} v1 -->
 You are **clud-bug**, running ${TRIGGER_INTRO[trigger]} inside this Claude Code session, on
 this session's own model tokens — no hosted App, no extra auth (you already have \`git\`,
@@ -320,7 +348,7 @@ a review.
 ${contextStep}
 
 ## 3. Review
-${reviewStep}${designStep}
+${reviewStep}${designStep}${probeStep}
 
 ## 4. Report
 Render the body in clud-bug's standard shape (§1.8.1) — omit any empty section:
@@ -407,12 +435,23 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
   // H2 — trusted standing review instructions (`.clud-bug.json` `reviewContext`).
   const reviewContext = readReviewContext(manifest).instructions;
 
+  // Phase R (#87) — executable-probe invariants. Gated like design: opted-in
+  // (invariants declared + valid) + a `pr` trigger. The appliesTo-vs-changed-paths
+  // filter + execution-safety are deferred to the agent at runtime. `applicableCount`
+  // is the total invariant count here (paths aren't known until the agent fetches
+  // the diff); the rendered step filters by the touched files.
+  const invariantsConfig = readInvariantsConfig(manifest);
+  const probes = shouldRunProbes(invariantsConfig, invariantsConfig.invariants.length, trigger)
+    ? { invariants: invariantsConfig.invariants }
+    : undefined;
+
   process.stdout.write(
     renderReviewRecipe({
       plan,
       trigger,
       ...(reviewContext ? { reviewContext } : {}),
       ...(design ? { design } : {}),
+      ...(probes ? { probes } : {}),
     }) + '\n',
   );
 }

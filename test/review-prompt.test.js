@@ -171,6 +171,31 @@ describe('renderReviewRecipe', () => {
     const withoutDesign = renderReviewRecipe({ plan, trigger: 'pr' });
     expect(withoutDesign).not.toMatch(/Design-critic/);
   });
+
+  it('renders the invariant-probe step (§3c) only when probes are passed (R6, #87)', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
+    const withProbes = renderReviewRecipe({
+      plan,
+      trigger: 'pr',
+      probes: {
+        invariants: [
+          { name: 'byte-parity', appliesTo: ['docs/**', 'templates/**'], probe: 'npm run render:check', expect: 'no diff vs golden' },
+          { name: 'no-token-push', appliesTo: ['.github/**'], probe: 'grep -rq X .github' },
+        ],
+      },
+    });
+    expect(withProbes).toMatch(/## 3c\. Invariant probes/);
+    expect(withProbes).toMatch(/byte-parity/);
+    expect(withProbes).toMatch(/npm run render:check/);
+    expect(withProbes).toMatch(/no diff vs golden/); // expect rendered when present
+    expect(withProbes).toMatch(/no-token-push/);
+    expect(withProbes).toMatch(/execution-safety/i); // never run an untrusted diff
+    expect(withProbes).toMatch(/unverified/); // ties to the R3 verdict
+
+    // no probes arg → no §3c
+    const noProbes = renderReviewRecipe({ plan, trigger: 'pr' });
+    expect(noProbes).not.toMatch(/## 3c\. Invariant probes/);
+  });
 });
 
 describe('review-prompt verb (integration)', () => {

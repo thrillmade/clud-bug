@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (7 decisions)
+## 2026-07 (8 decisions)
 
-- **2026-07-03** — Phase R7: seeded review-hardening benchmark + first scoreboard — 9/9 catch on the 3 miss classes *(phase-r7-benchmark)* — [decisions-branches/phase-r7-benchmark.md](decisions-branches/phase-r7-benchmark.md)
-- *... 5 more decisions ...*
+- **2026-07-03** — Phase R6-local: wire .clud-bug.json invariants into the recipe's §3c probe-run step *(phase-r6-local-probes)* — [decisions-branches/phase-r6-local-probes.md](decisions-branches/phase-r6-local-probes.md)
+- *... 6 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
