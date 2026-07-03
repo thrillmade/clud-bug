@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (14 decisions)
+## 2026-07 (16 decisions)
 
-- **2026-07-03** — Phase S: landing-page refresh — surface max-mode, hardened review, auto-fix/resolve, design-critic *(phase-s-landing)* — [decisions-branches/phase-s-landing.md](decisions-branches/phase-s-landing.md)
-- *... 12 more decisions ...*
+- **2026-07-03** — chore: sync the strict-mode-gate composite pin to v0.7.0-rc.22 (release discipline) *(chore-bump-rc22)* — [decisions-branches/chore-bump-rc22.md](decisions-branches/chore-bump-rc22.md)
+- *... 14 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
