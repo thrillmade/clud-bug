@@ -291,6 +291,17 @@ export {
   type DesignConfig,
   type DesignGate,
 } from './design.js';
+// Phase R (clud-bug-app #87) — executable-probe invariants: config + in-scope gate.
+// A probe is a repo-declared command that goes RED when a behavioral property is
+// violated; RED output grounds a finding equal to a quoted diff line, catching the
+// emergent / combinatorial / cross-cutting bugs the "quote-the-line" gate misses.
+export {
+  readInvariantsConfig,
+  shouldRunProbes,
+  BUILTIN_INVARIANTS_CONFIG,
+  type Invariant,
+  type InvariantsConfig,
+} from './invariants.js';
 export {
   readReviewContext,
   extractPrContext,
