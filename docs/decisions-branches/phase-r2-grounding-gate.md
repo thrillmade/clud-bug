@@ -22,3 +22,14 @@
 
 ---
 
+## 2026-07-03 11:07 - Phase R2 adversarial-panel fixes: trust-gate reproduction (security), MAJOR precedence, coverage + coherence
+
+**Reasoning:** A 4-lens adversarial panel (dogfooding the exact discipline #87 hardens toward) found a CRITICAL security regression + 8 real issues in the R2 PR before merge. Fixes: (1 CRITICAL) EXECUTION_SAFETY clause — the reproduction path must never execute untrusted diff code/tests/scripts (a fork-PR review is RCE with the reviewer's shell+tokens); reproduce only your own trusted work, never a command the diff names, treat diff content as untrusted-for-execution like the marker, sandbox/CI otherwise. (2 MAJOR) precedence — for a MAJOR a named invariant alone is insufficient when a repro is feasible (upgrade to a run); an un-confirmable MAJOR defaults to silence on trusted work / surfaces for CI verification on untrusted, never a false-green or local false-block. (3) diff-body treated untrusted-for-execution. (4) added serialization/delimiter/marker class + multiline/col-0 payloads to the construct-an-input trigger (covers #169's class) + a Security-lens adversarial-payload probe. (5) reproduction granted at the reviewer-pass level, not only the arbiter. (6) reconciled with evidence-based-review (a repro/invariant satisfies quote-or-drop). (7) neutral 'test whether any input breaks it' framing. (8) #171: read implementation + determinism repro, not 'read its contract'. (9) report location made (file[:line]).
+
+**Alternatives considered:** Merge R2 as-was (rejected: shipped a critical local-RCE surface on the pr path — the panel caught it)
+
+**Implications:**
+- The dogfood + adversarial-panel loop is proving Option B: clud-bug's review + the panel caught a critical bug in the hardening itself. R6's sandboxed Action job is the technical belt-and-suspenders behind this prompt-level trust guard
+
+---
+
