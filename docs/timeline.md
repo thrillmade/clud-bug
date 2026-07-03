@@ -13,9 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07
+## 2026-07 (3 decisions)
 
-- **2026-07-03** — Phase R2: grounding gate = quoted line OR reproduction OR named invariant; no MAJOR watch-item (local recipe) *(phase-r2-grounding-gate)* — [decisions-branches/phase-r2-grounding-gate.md](decisions-branches/phase-r2-grounding-gate.md)
+- **2026-07-03** — Phase R2 self-review fix: arbiter resolves a disputed MAJOR by reproduction, not static doubt *(phase-r2-grounding-gate)* — [decisions-branches/phase-r2-grounding-gate.md](decisions-branches/phase-r2-grounding-gate.md)
+- *... 1 more decision ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
