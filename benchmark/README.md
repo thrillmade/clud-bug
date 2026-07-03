@@ -25,12 +25,21 @@ line. This benchmark proves the fix works.
 - `SCENARIO.md` — the **answer key** (class, severity, the invariant, the correct
   finding). Withheld from reviewers during scoring.
 
-Current scenarios (the 3 regression cases, one per class):
-| id | class | models | severity |
+Current corpus: **9 scenarios** — 6 true-positive (2 per class) + 3 clean decoys
+(precision controls). A `clean` scenario is correct code with a bug-prone *shape*;
+flagging it is a false positive. See `RESULTS.md` for the scoreboard.
+
+| id | class / kind | models / shape | severity |
 |---|---|---|---|
 | `s1-emergent-marker` | emergent | logmind #169 (forged col-0 marker) | MAJOR |
-| `s2-combinatorial-union` | combinatorial | logmind #165 (duplicate key on collision × literal `-N`) | MED-HIGH |
+| `s2-combinatorial-union` | combinatorial | logmind #165 (dup key on collision × literal `-N`) | MED-HIGH |
 | `s3-crosscutting-sort` | cross-cutting | logmind #171 (date-only sort in another module) | MED-HIGH |
+| `b4-emergent-accumulator` | emergent | shared-mutable-state leak (shallow spread of frozen template) | MAJOR |
+| `b5-combinatorial-boundary` | combinatorial | half-open vs inclusive boundary mismatch | MED-HIGH |
+| `b6-crosscutting-timezone` | cross-cutting | local-time `dayKey` in a pre-existing module | MED-HIGH |
+| `c1-clean-escaped-marker` | clean decoy | marker serializer that base64-encodes bodies (no forge) | — |
+| `c2-clean-union` | clean decoy | key-merge that checks all emitted keys (no dup) | — |
+| `c3-clean-sort` | clean decoy | comparator falls through to the full timestamp (stable) | — |
 
 ## Running
 
