@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (11 decisions)
+## 2026-07 (12 decisions)
 
-- **2026-07-03** — Phase S: add privacy/terms/pricing pages + fix the pricing-link inconsistency *(phase-s-marketplace-pages)* — [decisions-branches/phase-s-marketplace-pages.md](decisions-branches/phase-s-marketplace-pages.md)
-- *... 9 more decisions ...*
+- **2026-07-03** — Phase R7: 20-scenario benchmark scoreboard — 100% recall + 100% precision (60 reviews) *(phase-r7-scoreboard-20)* — [decisions-branches/phase-r7-scoreboard-20.md](decisions-branches/phase-r7-scoreboard-20.md)
+- *... 10 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
