@@ -33,12 +33,16 @@ const MODE_AGGREGATION: Record<ReviewPassMode, string> = {
     "Pass 1 (broad scan) reviews the diff against all the skills — optimize for recall, surface every " +
     "candidate. Each later pass is ADVERSARIAL: re-read the diff and try to REFUTE pass 1's findings — " +
     "for each, ask 'can I prove this is a false positive, already handled elsewhere, or not actually in " +
-    "this diff?' Keep only findings that survive refutation, record an explicit agree/disagree verdict " +
-    "per finding, and add any real issues pass 1 missed. Skepticism is the job — do not just confirm.",
+    "this diff?' Prefer an EXECUTED check over an argument: reproduce a finding to keep it, or run a " +
+    "check that comes back clean to refute it. Keep only findings that survive refutation, record an " +
+    "explicit agree/disagree verdict per finding, and add any real issues pass 1 missed. Skepticism is " +
+    "the job — do not just confirm.",
   consensus:
     'Run all passes independently against all the skills, each attacking the diff from a different angle. ' +
     'Then keep only findings two or more passes independently land on; a finding only one pass sees is ' +
-    'dropped (or downgraded to a note). This trades recall for precision.',
+    'dropped — EXCEPT a `critical`/MAJOR, which is NEVER silently downgraded to a note: reproduce it to ' +
+    'keep it (→ blocking) or refute it with a clean check to drop it. This trades recall for precision ' +
+    'without burying a MAJOR.',
   independent:
     'Run all passes independently against all the skills, each from a distinct lens, then take the union ' +
     'of their findings (attributed to its pass) — but drop any that a quick adversarial re-read refutes.',
@@ -49,6 +53,32 @@ const TRIGGER_INTRO: Record<ReviewTrigger, string> = {
   push: 'a review of the branch you are about to push',
   pr: "a review of this branch's open PR",
 };
+
+// Phase R (clud-bug-app #87) — grounding + severity discipline shared by the
+// single-pass and multi-pass review steps. The old gate ("quote the exact line or
+// DROP") is a correct floor for nit-suppression but a CEILING: an emergent /
+// combinatorial / cross-cutting bug lives on no single changed line, so the very
+// rule that kills false positives silenced 3 real bugs (#169/#165/#171). A
+// REPRODUCTION (a command run + its output) or a NAMED VIOLATED INVARIANT grounds a
+// finding as strongly as a quoted line — and the local agent has a shell, so it can
+// actually run one. A MAJOR may no longer hide as a soft "watch-item" on static doubt.
+const GROUNDING_RULE =
+  'Ground every finding in EVIDENCE — any ONE of: (a) the exact offending line quoted from the diff ' +
+  '(with a matching `line`); (b) a REPRODUCTION you actually ran — the command plus the observed ' +
+  'output that demonstrates the bug (a repro is STRONGER evidence than a quote, not weaker); or (c) a ' +
+  'named VIOLATED INVARIANT — a one-sentence property the change breaks, plus the input that breaks it. ' +
+  'Drop only what NONE of these can ground (default to silence over a false positive). Many real bugs ' +
+  'live on no single changed line — emergent (bad data flowing through individually-correct lines), ' +
+  'combinatorial (an invariant broken by a constructed multi-condition input), or cross-cutting (the ' +
+  'cause is in another file the diff merely exposes) — for these, reproduce the failure or name the ' +
+  'invariant instead of staying silent.';
+
+const SEVERITY_RULE =
+  '**Severity discipline:** a `critical`/MAJOR concern may NOT be filed as a soft "watch-item", ' +
+  '"robustness note", or advisory on static doubt. Resolve it — REPRODUCE it (→ record `critical`) or ' +
+  'REFUTE it with a check that comes back clean (→ drop it, noting the check you ran). "Concerning but ' +
+  'I could not confirm it" is not a valid terminal state for a MAJOR; run the reproduction. A `minor` ' +
+  'or `preexisting` finding may still rest on a quoted line alone.';
 
 /**
  * Render the local-review recipe from a resolved plan. Pure — all I/O (loading
@@ -127,12 +157,13 @@ export function renderReviewRecipe(input: {
   let reviewStep: string;
   if (maxPasses <= 1) {
     reviewStep =
-      'Review the diff against the three lenses above in a single pass. VERIFY before you record: ' +
-      'quote the exact offending line from the diff and confirm the `line` number matches that ' +
-      'quote — if you cannot ground a finding in a line you actually see in this diff, DROP it ' +
-      '(default to silence over a false positive). Record `file`, `line`, `severity` (`critical` | ' +
-      '`minor` | `preexisting`), the `skill`, and a one-line `summary`. Finding nothing is the ' +
-      'normal, common outcome — be precise, not exhaustive.';
+      'Review the diff against the three lenses above in a single pass. ' +
+      GROUNDING_RULE +
+      ' ' +
+      SEVERITY_RULE +
+      ' Record `file`, `line` (when a line applies), `severity` (`critical` | `minor` | ' +
+      '`preexisting`), the `skill`, how you grounded it (quote / repro / invariant), and a one-line ' +
+      '`summary`. Finding nothing is the normal, common outcome — be precise, not exhaustive.';
   } else {
     const passLines = Array.from({ length: maxPasses }, (_, i) => {
       const role = roleForPass(plan.roles, i, 'Reviewer');
@@ -166,8 +197,7 @@ export function renderReviewRecipe(input: {
       `session's subscription (bind each tier to a Claude Code model: a fast model for \`beetle\`, ` +
       `a strong model for \`wasp\`/\`mantis\`). Each pass applies the three lenses above:\n\n${passLines}\n\n` +
       `${MODE_AGGREGATION[mode]}${escalation}\n\n` +
-      "**Grounding rule (every pass):** a finding only counts if it quotes the exact line from the diff " +
-      "and its `line` number matches that quote — drop anything you cannot ground.";
+      `**Grounding rule (every pass):** ${GROUNDING_RULE}\n\n${SEVERITY_RULE}`;
   }
 
   const surface =
@@ -237,12 +267,16 @@ Apply them through three disciplined lenses — every finding must earn its plac
     conditions, performance cliffs. Skip nits and style.
   - **Security**: injection, auth/authz gaps, secret or PII exposure, SSRF, unsafe input.
   - **Regression**: does the change break an existing pattern, invariant, or caller? Flag
-    where the diff fights the codebase — don't fight its conventions.
+    where the diff fights the codebase — don't fight its conventions. For a keying / union /
+    dedup / ordering change, state the invariant in one sentence and construct an input that
+    breaks it; if the change relies on or exposes behavior in **another file or package**, name
+    that \`file:symbol\` and read its contract — the cause may live there, not in the diff.
 
 The installed skills above are your authority — apply each skill's specific discipline within
 whichever lens it speaks to (a skill may sharpen more than one). Two rules cut across all three:
-**quote the exact line** every finding flags (evidence), and **drop anything that fits no lens**
-(noise). A generic "looks fine" is not a review.
+**ground every finding in evidence** — a quoted line, a reproduction you ran, or a named violated
+invariant (see §3) — and **drop anything that fits no lens** (noise). A generic "looks fine" is not
+a review.
 
 ## 2b. Reviewer context
 ${contextStep}
@@ -260,7 +294,7 @@ Render the body in clud-bug's standard shape (§1.8.1) — omit any empty sectio
 
 Found: N 🔴 / N 🟡 / N 🟣
 
-<per-finding: 🔴 [skill]: <summary> (file:line) — with the quoted line + a one-line fix>
+<per-finding: 🔴 [skill]: <summary> (file:line) — with its grounding (quoted line / reproduction / named invariant) + a one-line fix>
 
 Skills referenced: [<the skills you applied>]
 

@@ -102,8 +102,13 @@ describe('renderReviewRecipe', () => {
     expect(single).toMatch(/Correctness/);
     expect(single).toMatch(/Security/);
     expect(single).toMatch(/Regression/);
-    expect(single).toMatch(/VERIFY before you record/i);
-    expect(single).toMatch(/cannot ground/i);
+    // R2 (#87): grounding = quoted line OR reproduction OR named invariant
+    expect(single).toMatch(/Ground every finding in EVIDENCE/i);
+    expect(single).toMatch(/REPRODUCTION/);
+    expect(single).toMatch(/named VIOLATED INVARIANT/i);
+    // R4 (#87): a MAJOR may not hide as a soft watch-item
+    expect(single).toMatch(/watch-item/i);
+    expect(single).toMatch(/Severity discipline/i);
 
     // multi-pass cross-check (pr): adversarial refute framing + grounding rule + arbiter tiebreak
     const multi = renderReviewRecipe({
@@ -118,6 +123,8 @@ describe('renderReviewRecipe', () => {
     expect(multi).toMatch(/ADVERSARIAL/);
     expect(multi).toMatch(/REFUTE/);
     expect(multi).toMatch(/Grounding rule/i);
+    expect(multi).toMatch(/REPRODUCTION/); // grounding reaches multi-pass too (#87)
+    expect(multi).toMatch(/watch-item/i); // severity discipline reaches multi-pass too
     expect(multi).toMatch(/Tiebreak/);
     expect(multi).toMatch(/severity decides/i);
     // the local arbiter consequence is stated, NOT the hosted "doesn't gate" invariant
