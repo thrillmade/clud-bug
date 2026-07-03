@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (6 decisions)
+## 2026-07 (7 decisions)
 
-- **2026-07-03** — Phase R2-hosted: expand the hosted bot's grounding to named-invariant reasoning (no execution) — #87 across both modes *(phase-r2h-hosted-grounding)* — [decisions-branches/phase-r2h-hosted-grounding.md](decisions-branches/phase-r2h-hosted-grounding.md)
-- *... 4 more decisions ...*
+- **2026-07-03** — Phase R7: seeded review-hardening benchmark + first scoreboard — 9/9 catch on the 3 miss classes *(phase-r7-benchmark)* — [decisions-branches/phase-r7-benchmark.md](decisions-branches/phase-r7-benchmark.md)
+- *... 5 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
