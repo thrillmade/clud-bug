@@ -895,3 +895,141 @@ main { position: relative; z-index: 1; }
   .title { font-size: clamp(2.2rem, 13vw, 4rem); }
   .install-box { font-size: 0.88rem; padding: 0.75rem 0.9rem; }
 }
+
+
+/* ─────────────────── DOCUMENT PAGES (privacy / terms / pricing) ─────────────────── */
+
+/* A single centred reading column — the monograph, not the field plate. */
+.doc { max-width: 46rem; margin: 0 auto; }
+
+.doc-head { margin-bottom: 3rem; }
+.doc-eyebrow {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--leaf);
+  margin-bottom: 0.9rem;
+}
+.doc-title {
+  font-family: var(--display);
+  font-weight: 380;
+  font-size: clamp(2.2rem, 6vw, 3.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin-bottom: 1rem;
+}
+.doc-title em { font-style: italic; color: var(--leaf); }
+.doc-lede {
+  font-family: var(--body);
+  font-size: 1.18rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  max-width: 38rem;
+}
+
+/* DRAFT / status banner — honest about what is and isn't legal copy. */
+.doc-status {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  background: var(--paper-warm);
+  border: var(--rule);
+  border-left: 3px solid var(--citrus);
+  padding: 0.85rem 1.1rem;
+  margin: 2rem 0;
+}
+.doc-status strong { color: var(--ink); font-weight: 600; }
+
+.doc-body { font-family: var(--body); }
+.doc-body h2 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1.55rem;
+  color: var(--ink);
+  margin: 2.6rem 0 0.9rem;
+  padding-top: 1.6rem;
+  border-top: var(--rule);
+}
+.doc-body h2:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.doc-body h3 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 1.12rem;
+  color: var(--ink);
+  margin: 1.8rem 0 0.6rem;
+}
+.doc-body p { font-size: 1.04rem; line-height: 1.62; color: var(--ink); margin-bottom: 1.05em; }
+.doc-body ul, .doc-body ol { margin: 0 0 1.2em 1.3em; }
+.doc-body li { font-size: 1.04rem; line-height: 1.55; color: var(--ink); margin-bottom: 0.45em; }
+.doc-body strong { font-weight: 600; }
+.doc-body a { color: var(--moss); text-decoration: none; border-bottom: 1px solid var(--leaf-soft); }
+.doc-body a:hover { color: var(--citrus); border-bottom-color: var(--citrus); }
+.doc-body code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--paper-warm);
+  border: 1px solid var(--paper-shadow);
+  border-radius: 3px;
+  padding: 0.05em 0.35em;
+}
+.doc-body em.binomial { display: block; font-style: italic; color: var(--ink-faint); margin-top: 0.3rem; }
+
+/* Tables — sub-processors, retention, pricing rows. */
+.doc-table { width: 100%; border-collapse: collapse; margin: 1.4rem 0 1.8rem; font-size: 0.96rem; }
+.doc-table th, .doc-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.6rem 0.8rem;
+  border-bottom: var(--rule);
+  line-height: 1.45;
+}
+.doc-table th {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom: var(--rule-bold);
+}
+.doc-table code { background: transparent; border: 0; padding: 0; }
+
+/* Pricing tiers — field-guide specimen cards. */
+.tiers { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--ink-faint); border: var(--rule); margin: 2rem 0; }
+@media (min-width: 760px) { .tiers { grid-template-columns: repeat(3, 1fr); } }
+.tier { background: var(--paper); padding: 1.6rem 1.4rem; display: flex; flex-direction: column; }
+.tier.feature { background: var(--paper-warm); }
+.tier-name {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--leaf);
+  margin-bottom: 0.7rem;
+}
+.tier-price { font-family: var(--display); font-weight: 420; font-size: 2rem; color: var(--ink); line-height: 1; }
+.tier-price small { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--ink-soft); letter-spacing: 0.02em; }
+.tier-includes { font-family: var(--body); font-size: 0.98rem; line-height: 1.5; color: var(--ink-soft); margin-top: 0.8rem; }
+
+.doc-back {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--ink-faint);
+  margin-bottom: 3rem;
+}
+.doc-back:hover { color: var(--citrus); border-bottom-color: var(--citrus); }
+
+@media (max-width: 600px) {
+  .doc-body h2 { font-size: 1.35rem; }
+  .doc-table { font-size: 0.88rem; }
+  .doc-table th, .doc-table td { padding: 0.5rem 0.55rem; }
+}

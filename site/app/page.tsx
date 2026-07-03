@@ -10,7 +10,9 @@ const APP_ROOT_URL = 'https://app.cludbug.dev';
 // Specific routes get specific URLs (used where the visible text is the
 // route name, e.g. "dashboard").
 const APP_DASHBOARD_URL = 'https://app.cludbug.dev/dashboard';
-const APP_PRICING_URL = 'https://app.cludbug.dev/pricing';
+// Pricing lives on the marketing site itself (cludbug.dev/pricing) — the canonical
+// URL the GitHub Marketplace listing requires. (Previously app.cludbug.dev/pricing.)
+const SITE_PRICING_URL = '/pricing';
 const APP_COMPARE_URL = 'https://app.cludbug.dev/compare';
 
 export default async function Home() {
@@ -53,7 +55,7 @@ export default async function Home() {
             </a>
             <p className="cta-fineprint">
               Managed tiers — see{' '}
-              <a href={APP_PRICING_URL} rel="noopener">pricing</a> and{' '}
+              <a href={SITE_PRICING_URL} rel="noopener">pricing</a> and{' '}
               <a href={APP_COMPARE_URL} rel="noopener">compare</a> on{' '}
               <a href={APP_ROOT_URL} rel="noopener">app.cludbug.dev</a>, or{' '}
               <a href="#self-hosted">self-host the open-source workflow</a> for free.
@@ -201,7 +203,7 @@ export default async function Home() {
           <aside className="marginalia">
             Available on the Team tier. Each pass writes to the same PR but
             signs its own comments. Disagreements get adjudicated, not
-            averaged. <a href={APP_PRICING_URL} rel="noopener">Pricing →</a>
+            averaged. <a href={SITE_PRICING_URL} rel="noopener">Pricing →</a>
           </aside>
           <div className="section-prose">
             <p>
