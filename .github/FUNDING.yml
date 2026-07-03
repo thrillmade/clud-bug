@@ -1,0 +1,5 @@
+# clud-bug forages on your own subscription (max mode) and self-hosted Actions are
+# free — no metered charge fits the free tiers. If the specimens earn their keep,
+# you can feed the bug. GitHub renders these as the repo's "Sponsor" button.
+github: [thrillmade]
+# custom: ["https://buy.stripe.com/REPLACE_ME"]  # Stripe "buy me a coffee" — add the Payment Link URL

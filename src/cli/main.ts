@@ -1498,6 +1498,13 @@ async function runInit(args) {
   }
   log('  • Opt out by setting "strictMode": false in .claude/skills/.clud-bug.json.');
 
+  // Phase M — a quiet, on-voice support nudge for the free tiers (max mode +
+  // self-hosted Action run on the user's own resources; no metered charge fits).
+  // The GitHub "Sponsor" button + the Stripe "coffee" link both live in FUNDING.yml.
+  log('');
+  log('clud-bug forages on your own subscription — free, and meant to stay that way.');
+  log('If the specimens earn their keep, you can feed the bug: github.com/sponsors/thrillmade');
+
   // v0.6.33 — opt-in unified install (mirror of logmind v0.6.8). When
   // --with-skdd is passed, subprocess to `pip install logmind` + `logmind init`
   // so Node-first users get the same one-command bootstrap as Python-first
