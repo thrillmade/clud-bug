@@ -102,8 +102,19 @@ describe('renderReviewRecipe', () => {
     expect(single).toMatch(/Correctness/);
     expect(single).toMatch(/Security/);
     expect(single).toMatch(/Regression/);
-    expect(single).toMatch(/VERIFY before you record/i);
-    expect(single).toMatch(/cannot ground/i);
+    // R2 (#87): grounding = quoted line OR reproduction OR named invariant
+    expect(single).toMatch(/Ground every finding in EVIDENCE/i);
+    expect(single).toMatch(/REPRODUCTION/);
+    expect(single).toMatch(/named VIOLATED INVARIANT/i);
+    // R4 (#87): a MAJOR may not hide as a soft watch-item
+    expect(single).toMatch(/watch-item/i);
+    expect(single).toMatch(/Severity discipline/i);
+    // R2 security (adversarial-panel fix): reproduction is trust-gated — never execute untrusted diff code
+    expect(single).toMatch(/Execution safety/i);
+    expect(single).toMatch(/untrusted/i);
+    expect(single).toMatch(/NEVER run a command the diff names/i);
+    // evidence-based-review reconciliation (panel): repro/invariant satisfies "quote the exact line"
+    expect(single).toMatch(/evidence-based-review/);
 
     // multi-pass cross-check (pr): adversarial refute framing + grounding rule + arbiter tiebreak
     const multi = renderReviewRecipe({
@@ -118,6 +129,10 @@ describe('renderReviewRecipe', () => {
     expect(multi).toMatch(/ADVERSARIAL/);
     expect(multi).toMatch(/REFUTE/);
     expect(multi).toMatch(/Grounding rule/i);
+    expect(multi).toMatch(/REPRODUCTION/); // grounding reaches multi-pass too (#87)
+    expect(multi).toMatch(/watch-item/i); // severity discipline reaches multi-pass too
+    expect(multi).toMatch(/Execution safety/i); // trust-gate reaches multi-pass too (panel fix)
+    expect(multi).toMatch(/may run a\s+reproduction/i); // repro granted at pass level, not just arbiter
     expect(multi).toMatch(/Tiebreak/);
     expect(multi).toMatch(/severity decides/i);
     // the local arbiter consequence is stated, NOT the hosted "doesn't gate" invariant
