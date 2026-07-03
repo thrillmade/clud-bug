@@ -20,7 +20,7 @@
 export const CLUD_BUG_CHECK_NAME = 'clud-bug-review';
 
 /** Outcome of a review, as the posting surface sees it. */
-export type ReviewVerdict = 'clean' | 'critical' | 'failed';
+export type ReviewVerdict = 'clean' | 'critical' | 'failed' | 'unverified';
 
 /** The narrowed check-run conclusion set we emit. */
 export type CheckConclusion = 'success' | 'neutral' | 'failure';
@@ -75,6 +75,18 @@ export function deriveCheck(input: DeriveCheckInput): DerivedCheck {
       title = `clud-bug review — ${n}critical (advisory)`;
       summary = `${n}critical finding(s); advisory only (strict mode off) — does not block merge.${selfAttested}`;
     }
+  } else if (verdict === 'unverified') {
+    // R3 (#87) — the review ran, but an invariant/probe-touching change could not be
+    // VERIFIED here (no probe ran, or a finding could not be safely reproduced —
+    // e.g. an untrusted diff the local reviewer must not execute). It is NOT clean
+    // (never a false-green) and NOT a hard block (never an outage on our own
+    // inability to verify): a `neutral` signal that defers to an independent
+    // sandbox/CI probe, which resolves it to clean or critical.
+    conclusion = 'neutral';
+    title = 'clud-bug review — unverified';
+    summary =
+      `This change touched a probe/invariant surface that could not be verified in this review; it ` +
+      `needs independent sandbox/CI verification. Not a pass, not a block.${selfAttested}`;
   } else {
     // failed — never block on our own inability to run.
     conclusion = 'neutral';
@@ -87,7 +99,7 @@ export function deriveCheck(input: DeriveCheckInput): DerivedCheck {
 
 /** Normalize a free-form verdict string (CLI input) to a `ReviewVerdict`. */
 export function normalizeVerdict(raw: string | undefined): ReviewVerdict {
-  if (raw === 'clean' || raw === 'critical' || raw === 'failed') return raw;
+  if (raw === 'clean' || raw === 'critical' || raw === 'failed' || raw === 'unverified') return raw;
   // Unknown/empty → 'failed' (safe: neutral check, never a false-green).
   return 'failed';
 }

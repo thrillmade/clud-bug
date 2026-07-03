@@ -3,7 +3,7 @@
 // merge on those surfaces too (the hosted bot already posts it).
 //
 // Usage:
-//   clud-bug post-check-run --sha <sha> --verdict clean|critical|failed \
+//   clud-bug post-check-run --sha <sha> --verdict clean|critical|failed|unverified \
 //     [--critical-count N] [--source local|ci] [--strict|--no-strict] \
 //     [--owner O --repo R] [--details-url URL] [--dry-run]
 //

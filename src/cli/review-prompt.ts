@@ -249,9 +249,9 @@ export function renderReviewRecipe(input: {
       ? `\n\n## 5. Post the merge-gate check
 After reporting, post the self-attested \`clud-bug-review\` check so branch protection can gate on it:
 \`\`\`bash
-clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical> --critical-count <N> --source local
+clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical|unverified> --critical-count <N> --source local
 \`\`\`
-\`clean\` → the check passes (merge unblocked); \`critical\` → it fails when the repo is in strict mode. This is a **self-attested** local review (this session), not independent CI — post it honestly from what you actually found. Skip silently if \`gh\` lacks \`checks: write\`.`
+\`clean\` → passes (merge unblocked); \`critical\` → fails when the repo is in strict mode; \`unverified\` → neutral (does not block, but is NOT a pass) — post it when the change touched a probe/invariant surface you could not verify here (no probe ran, or a MAJOR you could not safely reproduce under execution-safety), so it defers to the sandboxed CI probe. **Do NOT post \`clean\` on an invariant-touching change you did not actually verify.** This is a **self-attested** local review (this session), not independent CI — post it honestly from what you actually found. Skip silently if \`gh\` lacks \`checks: write\`.`
       : '';
 
   // 3b (rc.15) — the OPTIONAL design-critic visual pass. Rendered only when the
