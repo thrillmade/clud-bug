@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (9 decisions)
+## 2026-07 (10 decisions)
 
-- **2026-07-03** — Phase R7 corpus expansion: 9-scenario benchmark — 100% recall + 100% precision *(phase-r7-corpus-expansion)* — [decisions-branches/phase-r7-corpus-expansion.md](decisions-branches/phase-r7-corpus-expansion.md)
-- *... 7 more decisions ...*
+- **2026-07-03** — Phase M: monetize the free tiers — FUNDING.yml (Sponsors) + on-voice init nudge *(phase-m-monetization)* — [decisions-branches/phase-m-monetization.md](decisions-branches/phase-m-monetization.md)
+- *... 8 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)

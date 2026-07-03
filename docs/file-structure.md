@@ -15,7 +15,8 @@ clud-bug
 ├── .github
 │   ├── actions
 │   ├── workflows
-│   └── dependabot.yml
+│   ├── dependabot.yml
+│   └── FUNDING.yml
 ├── .logmind
 │   └── config.yml
 ├── benchmark
