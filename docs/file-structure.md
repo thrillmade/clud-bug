@@ -18,6 +18,10 @@ clud-bug
 │   └── dependabot.yml
 ├── .logmind
 │   └── config.yml
+├── benchmark
+│   ├── scenarios
+│   ├── README.md
+│   └── RESULTS.md
 ├── bin
 │   └── clud-bug.js
 ├── data
