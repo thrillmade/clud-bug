@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (12 decisions)
+## 2026-07 (13 decisions)
 
-- **2026-07-03** — Phase R7: 20-scenario benchmark scoreboard — 100% recall + 100% precision (60 reviews) *(phase-r7-scoreboard-20)* — [decisions-branches/phase-r7-scoreboard-20.md](decisions-branches/phase-r7-scoreboard-20.md)
-- *... 10 more decisions ...*
+- **2026-07-03** — Phase S: /docs self-service pages (skills, config, auto-fix, multi-pass) *(phase-s-docs)* — [decisions-branches/phase-s-docs.md](decisions-branches/phase-s-docs.md)
+- *... 11 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)

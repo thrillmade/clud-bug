@@ -979,6 +979,33 @@ main { position: relative; z-index: 1; }
 }
 .doc-body em.binomial { display: block; font-style: italic; color: var(--ink-faint); margin-top: 0.3rem; }
 
+/* Code blocks — the JSON examples + recipe snippets in the docs entries.
+   The doc pages carried no `pre` style, so a bare <pre><code> fell through to
+   the inline-code pill (background + border) and let long lines spill past the
+   reading column. Give the block its own field-note frame and scroll long
+   lines internally; reset the inner <code> so it isn't re-pilled. */
+.doc-body pre {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--paper-warm);
+  border: var(--rule);
+  border-left: 3px solid var(--leaf-soft);
+  padding: 1rem 1.15rem;
+  margin: 1.2rem 0 1.7rem;
+  overflow-x: auto;
+}
+.doc-body pre code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  white-space: pre;
+}
+
 /* Tables — sub-processors, retention, pricing rows. */
 .doc-table { width: 100%; border-collapse: collapse; margin: 1.4rem 0 1.8rem; font-size: 0.96rem; }
 .doc-table th, .doc-table td {
@@ -1032,4 +1059,5 @@ main { position: relative; z-index: 1; }
   .doc-body h2 { font-size: 1.35rem; }
   .doc-table { font-size: 0.88rem; }
   .doc-table th, .doc-table td { padding: 0.5rem 0.55rem; }
+  .doc-body pre { font-size: 0.74rem; padding: 0.85rem 0.95rem; }
 }
