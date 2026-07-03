@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (10 decisions)
+## 2026-07 (11 decisions)
 
-- **2026-07-03** — Phase M: monetize the free tiers — FUNDING.yml (Sponsors) + on-voice init nudge *(phase-m-monetization)* — [decisions-branches/phase-m-monetization.md](decisions-branches/phase-m-monetization.md)
-- *... 8 more decisions ...*
+- **2026-07-03** — Phase S: add privacy/terms/pricing pages + fix the pricing-link inconsistency *(phase-s-marketplace-pages)* — [decisions-branches/phase-s-marketplace-pages.md](decisions-branches/phase-s-marketplace-pages.md)
+- *... 9 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
