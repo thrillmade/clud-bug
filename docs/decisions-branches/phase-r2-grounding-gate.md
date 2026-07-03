@@ -11,3 +11,14 @@
 
 ---
 
+## 2026-07-03 10:55 - Phase R2 self-review fix: arbiter resolves a disputed MAJOR by reproduction, not static doubt
+
+**Reasoning:** The clud-bug max-mode dogfood review of the R2 commit caught a coherence gap I introduced: the multi-pass arbiter tiebreak still said 'when unresolvable from the diff + cited skill, surface at higher severity' AND specced the arbiter as 'read-only tools' — both inconsistent with R2's new rule that a MAJOR may not rest on static doubt. Fix: grant the arbiter the ability to run a reproduction (build/test/command, no repo mutations) and make the tiebreak RESOLVE a disputed critical/MAJOR by reproduction (upheld→blocking, clean-check→dropped); surface-at-higher-severity is now the fallback only when a repro is impossible, and stays the rule for a minor dispute.
+
+**Alternatives considered:** Leave the arbiter read-only + surface-on-doubt (rejected: the exact static-doubt terminal state R2 forbids — the dogfood flagged it)
+
+**Implications:**
+- The dogfood loop is working: clud-bug's own hardened review caught a real gap in the hardening PR before merge
+
+---
+

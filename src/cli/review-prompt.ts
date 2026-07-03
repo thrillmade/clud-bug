@@ -182,15 +182,18 @@ export function renderReviewRecipe(input: {
     const escalation =
       mode === 'cross-check' && maxPasses === 2
         ? `\n\nIf passes 1 and 2 **disagree** on any \`critical\` or \`minor\` finding, dispatch a ` +
-          `3rd **${arbiter}** arbiter sub-agent (opus-class, read-only tools) that re-examines ONLY ` +
-          `the disputed findings against the diff + the cited skill and records the deciding verdict ` +
-          `with a one-line rationale. Skip the arbiter if the passes agree, or disagree only on ` +
-          `\`preexisting\` findings. **Tiebreak:** when a dispute is genuinely unresolvable from the ` +
-          `diff + the cited skill, severity decides — surface at the higher severity ` +
-          `(\`critical\` > \`minor\` > \`preexisting\`) rather than suppress. The arbiter records each ` +
-          `disputed finding's verdict + a one-line rationale and sets its consensus marker (\`2-of-2\` ` +
-          `if upheld, \`arbitrated\` if overturned): an upheld finding stays in the report; one the ` +
-          `arbiter judges a false positive is dropped.`
+          `3rd **${arbiter}** arbiter sub-agent (opus-class; read-only inspection PLUS the ability to ` +
+          `run a REPRODUCTION — a build / test / command that observes behavior, no repo mutations) ` +
+          `that re-examines ONLY the disputed findings against the diff + the cited skill and records ` +
+          `the deciding verdict with a one-line rationale. Skip the arbiter if the passes agree, or ` +
+          `disagree only on \`preexisting\` findings. **Tiebreak:** a disputed \`critical\`/MAJOR is ` +
+          `RESOLVED BY REPRODUCTION — run the repro (→ upheld, blocking) or a check that comes back ` +
+          `clean (→ dropped); surface-at-higher-severity is the fallback ONLY when a reproduction is ` +
+          `genuinely impossible. For a \`minor\` dispute unresolvable from the diff + the cited skill, ` +
+          `severity decides — surface at the higher severity (\`critical\` > \`minor\` > \`preexisting\`) ` +
+          `rather than suppress. The arbiter records each disputed finding's verdict + a one-line ` +
+          `rationale and sets its consensus marker (\`2-of-2\` if upheld, \`arbitrated\` if overturned): ` +
+          `an upheld finding stays in the report; one the arbiter judges a false positive is dropped.`
         : '';
     reviewStep =
       `Dispatch ${maxPasses} reviewer sub-agents — a ${maxPasses}-pass **${mode}** review on this ` +
