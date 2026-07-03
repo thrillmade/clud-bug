@@ -147,7 +147,7 @@ Commands:
   configure-github <owner>/<repo>
                         Apply the SPEC §7 canonical branch protection ruleset to a repo.
                         Auth: GITHUB_TOKEN env first, then \`gh auth token\`. Use
-                        --dry-run to print the diff without PATCH-ing; --branch to
+                        --dry-run to print the diff without writing; --branch to
                         target a non-main branch. Idempotent — already-canonical
                         repos exit 0 with no changes.
   edit-workflow         Helper for editing .github/workflows/clud-bug-*.yml in an isolated
@@ -253,7 +253,7 @@ Options:
                         required_conversation_resolution on the default
                         branch (init only). Use for repos that manage
                         branch protection via ruleset or org policy.
-  --dry-run             Print the canonical-v1 diff without PATCH-ing
+  --dry-run             Print the canonical-v1 diff without writing
                         (configure-github only).
   --branch <name>       Target branch for configure-github (default: main).
   --trigger <ctx>       review-prompt context: commit (default) | push | pr.
@@ -1974,7 +1974,7 @@ async function runUpdateCmd(_args) {
 // SPEC §7 canonical ruleset applier from src/cli/configure-github.ts;
 // thin wrapper here just maps CLI args into the typed entry point. The
 // command is idempotent — re-runs on a converged repo exit 0 with no
-// PATCH calls. See `src/core/configure-github.ts` for the diff + rule
+// create/update calls. See `src/core/configure-github.ts` for the diff + rule
 // table.
 async function runConfigureGithubCmd(args) {
   const { runConfigureGithub } = await import('./configure-github.js');

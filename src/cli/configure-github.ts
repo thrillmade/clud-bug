@@ -56,7 +56,7 @@ Usage:
   clud-bug configure-github <owner>/<repo> [options]
 
 Options:
-  --dry-run         Compute diff and print it, but do NOT call PATCH endpoints.
+  --dry-run         Compute diff and print it, but do NOT create/update the ruleset.
   --branch <name>   Target branch (default: main).
   --quiet,-q        Suppress progress chatter; emit only the final summary.
   --json            Emit the status payload as JSON (machine consumption).
@@ -68,7 +68,7 @@ Auth (resolved in order):
 
 Exit codes:
   0  success or already-canonical
-  1  auth missing, PATCH error, or unrecoverable transport failure
+  1  auth missing, ruleset write error, or unrecoverable transport failure
   2  CLI usage error (missing target, bad flag)
 `;
 
@@ -93,11 +93,11 @@ export function formatConfigureSummary(summary: ConfigureSummary, json: boolean)
   const { owner, repo, alreadyCanonical, dryRun, changes } = summary;
   if (json) {
     return (
-      JSON.stringify({ owner, repo, alreadyCanonical, rulesetVersion: 'v1', dryRun, changes }) + '\n'
+      JSON.stringify({ owner, repo, alreadyCanonical, rulesetVersion: 'v2', dryRun, changes }) + '\n'
     );
   }
   if (alreadyCanonical) {
-    return `ok configure-github: owner: ${owner} repo: ${repo} alreadyCanonical: true rulesetVersion: v1\n`;
+    return `ok configure-github: owner: ${owner} repo: ${repo} alreadyCanonical: true rulesetVersion: v2\n`;
   }
   const plural = changes === 1 ? '' : 's';
   if (dryRun) {
@@ -178,7 +178,7 @@ export async function runConfigureGithub(
     });
   } catch (err) {
     stderr(
-      `clud-bug configure-github: ${dryRun ? 'failed to read current state' : 'PATCH failed'}: ${stringifyError(err)}\n`,
+      `clud-bug configure-github: ${dryRun ? 'failed to read current state' : 'ruleset write failed'}: ${stringifyError(err)}\n`,
     );
     return 1;
   }
@@ -242,9 +242,9 @@ export function ghCliOctokit(token: string): OctokitLike {
         args.push('--input', '-');
       }
       args.push(path);
-      // Add an Accept header so 404s return the structured error, not a
-      // friendlier shell hint. The wrapping err.message detection in
-      // `isBranchNotProtected` keys on the structured form.
+      // Pin the rulesets API media type; the wrapping error carries the
+      // parsed HTTP status (from `HTTP NNN` in gh's stderr) so transport
+      // failures surface with a real status code, not a shell hint.
       args.push('-H', 'Accept: application/vnd.github+json');
       const child = spawn('gh', args, {
         env,
@@ -289,29 +289,56 @@ export function ghCliOctokit(token: string): OctokitLike {
 
   return {
     repos: {
-      async getBranchProtection({ owner, repo, branch }) {
+      async getRepoRulesets({ owner, repo, includes_parents }) {
+        // `?per_page=100` (not `--paginate`) to grab all rulesets in one
+        // call — a repo realistically has a handful, and --paginate emits
+        // multiple concatenated JSON arrays that our single JSON.parse can't
+        // consume (see the v0.6.30 --paginate → ?per_page=100 decision).
+        const parents = includes_parents === undefined ? false : includes_parents;
         const data = await ghApi<unknown>(
           'GET',
-          `/repos/${owner}/${repo}/branches/${branch}/protection`,
+          `/repos/${owner}/${repo}/rulesets?per_page=100&includes_parents=${parents}`,
         );
-        return { data: data as Awaited<ReturnType<OctokitLike['repos']['getBranchProtection']>>['data'] };
+        return {
+          data: (Array.isArray(data) ? data : []) as Awaited<
+            ReturnType<OctokitLike['repos']['getRepoRulesets']>
+          >['data'],
+        };
       },
-      async updateBranchProtection({ owner, repo, branch, ...rest }) {
-        return ghApi(
+      async getRepoRuleset({ owner, repo, ruleset_id }) {
+        const data = await ghApi<unknown>(
+          'GET',
+          `/repos/${owner}/${repo}/rulesets/${ruleset_id}`,
+        );
+        return {
+          data: data as Awaited<
+            ReturnType<OctokitLike['repos']['getRepoRuleset']>
+          >['data'],
+        };
+      },
+      async createRepoRuleset({ owner, repo, ...body }) {
+        const data = await ghApi<unknown>(
+          'POST',
+          `/repos/${owner}/${repo}/rulesets`,
+          body,
+        );
+        return {
+          data: data as Awaited<
+            ReturnType<OctokitLike['repos']['createRepoRuleset']>
+          >['data'],
+        };
+      },
+      async updateRepoRuleset({ owner, repo, ruleset_id, ...body }) {
+        const data = await ghApi<unknown>(
           'PUT',
-          `/repos/${owner}/${repo}/branches/${branch}/protection`,
-          rest,
+          `/repos/${owner}/${repo}/rulesets/${ruleset_id}`,
+          body,
         );
-      },
-      async get({ owner, repo }) {
-        const data = await ghApi<unknown>(
-          'GET',
-          `/repos/${owner}/${repo}`,
-        );
-        return { data: data as Awaited<ReturnType<OctokitLike['repos']['get']>>['data'] };
-      },
-      async update({ owner, repo, ...rest }) {
-        return ghApi('PATCH', `/repos/${owner}/${repo}`, rest);
+        return {
+          data: data as Awaited<
+            ReturnType<OctokitLike['repos']['updateRepoRuleset']>
+          >['data'],
+        };
       },
     },
   };

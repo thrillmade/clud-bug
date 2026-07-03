@@ -1,37 +1,51 @@
 {
-  "$comment": "Canonical branch protection ruleset for SkDD-conformant repos. Applied by `logmind init --configure-github`, `clud-bug init --configure-github`, and `reporulez`. Implements thrillmade/protocol SPEC §7. Schema-locked at v1; major bumps require coordinated tool releases.",
-  "version": "v1",
-  "spec_version": "0.1.2",
-  "branch_protection": {
-    "required_status_checks": {
-      "strict": true,
-      "contexts": [
-        "clud-bug-review",
-        "check-decisions",
-        "check-derived-docs",
-        "check-links",
-        "test"
-      ]
-    },
-    "required_pull_request_reviews": {
-      "required_approving_review_count": 1,
-      "dismiss_stale_reviews": false,
-      "require_code_owner_reviews": false
-    },
-    "required_conversation_resolution": true,
-    "enforce_admins": false,
-    "allow_force_pushes": false,
-    "allow_deletions": false,
-    "required_linear_history": false,
-    "allow_auto_merge": true,
-    "delete_branch_on_merge": true,
-    "squash_merge_commit_title": "PR_TITLE",
-    "squash_merge_commit_message": "PR_BODY"
+  "$comment": "Canonical branch-protection RULESET for SkDD-conformant repos (thrillmade/protocol SPEC §7), vendored into clud-bug. Applied by `clud-bug configure-github <owner>/<repo>` (and the App's auto-setup); mirrors `reporulez apply <repo> skdd` and `logmind init --configure-github`. v2: migrated from the retired classic branch-protection payload to GitHub's rulesets API (POST/PUT repos/{owner}/{repo}/rulesets) — modern, layerable, org-portable. Tools MUST source this file; they MUST NOT redefine the ruleset in-tool. Filename kept as canonical-v1.json for link stability (stable fetch path); the `version` field is the authority.",
+  "version": "v2",
+  "spec_version": "0.7.2",
+  "name": "skdd-canonical",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] }
   },
+  "bypass_actors": [
+    { "actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always" }
+  ],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "required_linear_history" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": true,
+        "dismiss_stale_reviews_on_push": true,
+        "allowed_merge_methods": ["squash"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          { "context": "clud-bug-review" },
+          { "context": "check-decisions" },
+          { "context": "check-derived-docs" },
+          { "context": "check-links" }
+        ]
+      }
+    }
+  ],
   "$notes": {
-    "required_approving_review_count": "1 — auto-satisfied by clud-bug[bot]'s APPROVE vote on clean reviews for org-member PRs (per SPEC §7.2.1). External-contributor PRs still need a human reviewer because the bot's APPROVE on first-time contributors is policy-gated. Repo-owners MAY raise above 1; tools MUST NOT lower below 1.",
-    "enforce_admins": "false so maintainers can land hotfixes outside the gate; the dogfood discipline expects this only for genuine emergencies (clud-bug review still runs but doesn't block)",
-    "contexts": "the four logmind workflow check names + clud-bug-review + a generic 'tests' context. Repos may add more, but MUST keep these. If a context name is renamed in workflow YAML, update the ruleset.",
-    "required_conversation_resolution": "true is the dogfood-defining rule: clud-bug findings must be resolved before merge"
+    "format": "GitHub rulesets API (POST repos/{owner}/{repo}/rulesets), NOT the retired classic branch-protection PUT. Rulesets layer and are org-portable; classic protection is legacy. The v1 classic schema is retired.",
+    "required_approving_review_count": "0 — the merge GATE is the required `clud-bug-review` STATUS CHECK (green only when the review ran and passed), NOT a human approval vote. This SUPERSEDES the v1 model (1 approval auto-satisfied by clud-bug[bot]'s APPROVE). 0 approvals keeps the solo + AI-maintainer flow friction-free; external-contributor safety comes from the repo's 'require approval for first-time contributors' setting plus a maintainer merging. Repo-owners MAY raise above 0; tools MUST NOT raise it by default and MUST NOT lower an owner-raised floor.",
+    "required_status_checks": "the four canonical contexts every SkDD repo ships. Repos add project-specific contexts (e.g. `test`, `ci`, a pytest matrix) via `reporulez --extra-check`. A universal `test` context was REMOVED in v2 — not every repo ships one (e.g. protocol), and a missing context deadlocks merges.",
+    "bypass_actors": "Repository admin (RepositoryRole id 5), bypass_mode always — the self-mod escape hatch. clud-bug's review action 401s on PRs that edit its own workflow files, and max-mode repos don't always post `clud-bug-review`, so an admin can merge without disabling the whole ruleset. Non-admins (including external contributors) get the full gate.",
+    "required_review_thread_resolution": "true is the dogfood-defining rule: clud-bug findings posted as review threads MUST be resolved before merge.",
+    "interim_note": "Until a repo reliably posts `clud-bug-review` (the hosted bot, or the local self-attested `post-check-run`), tools MAY apply the structural rules only (omit the required_status_checks rule, per the `external` variant) and add the checks once posting is confirmed. A repo MUST NOT permanently require a check that no producer posts."
   }
 }
