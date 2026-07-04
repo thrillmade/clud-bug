@@ -71,7 +71,7 @@ function parseArgs(argv) {
     withLocalReview: false,
     withHooks: false,
     // rc.16: `clud-bug init --with-design` installs the design-critic kit
-    // (3 `kind: design` skills) and flips the off-by-default `design` block to
+    // (4 `kind: design` skills) and flips the off-by-default `design` block to
     // enabled so the visual review lens runs (local recipe + hosted bot).
     withDesign: false,
     // rc.18: `clud-bug init --local-only` installs MAX MODE (skills + slash
@@ -243,7 +243,7 @@ Options:
                         \`git commit\` / \`logmind log\`, it fetches a review recipe and
                         surfaces it to the agent (on this session's subscription)
                         via asyncRewake. Implies --with-local-review. Off by default.
-  --with-design         (init) Install the design-critic kit (3 \`kind: design\`
+  --with-design         (init) Install the design-critic kit (4 \`kind: design\`
                         skills) and enable the off-by-default visual review
                         lens — renders changed UI and critiques it. Off by default.
   --local-only          (init) MAX MODE: install the slash command + commit hook
@@ -1388,7 +1388,7 @@ async function runInit(args) {
     }
   }
 
-  // rc.16: --with-design installs the bundled design-critic kit (3 `kind:
+  // rc.16: --with-design installs the bundled design-critic kit (4 `kind:
   // design` skills) and enables the off-by-default design lens. writeSkills
   // writes the SKILL.md files + merges the manifest entries; the `design` block
   // is flipped on the manifest read below so the local recipe + hosted bot both
