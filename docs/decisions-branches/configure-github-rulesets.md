@@ -14,3 +14,17 @@
 
 ---
 
+## 2026-07-03 22:49 - configure-github: one-stop repo setup — reporulez preset taxonomy (--preset) + restored universal repo-conveniences PATCH
+
+**Reasoning:** PR #223 rewrote configure-github to the v2 rulesets API but loaded a single bundled canonical (skdd shape) and dropped the repo-conveniences PATCH. Reporulez just merged a purpose-named preset taxonomy (baseline/clud-bug/skdd/public-guard); this vendors those 4 JSONs into data/rulesets/ (canonical source = reporulez; a CI drift-check is a follow-up), adds --preset (default skdd = prior behavior) wired through loadPreset(name) into applyCanonicalRuleset, and restores the repo-conveniences PATCH (squash-only merges, auto-merge, delete-branch-on-merge, PR title/body squash message) applied for ALL presets BEFORE the ruleset apply.
+
+**Alternatives considered:** Keep the single skdd canonical with no preset selection — rejected: the task requires consuming reporulez's new taxonomy so repos can pick baseline/clud-bug/skdd/public-guard, Re-derive conveniences from the ruleset JSON like the old classic canonical — rejected: v2 rulesets can't express repo-level merge settings, so conveniences are a fixed CANONICAL_REPO_CONVENIENCES constant, not sourced from the ruleset
+
+**Implications:**
+- loadCanonicalV1() is now a back-compat alias of loadPreset('skdd'); data/canonical-v1.json kept on disk as a copy of the skdd preset for the stable external fetch path
+- applyCanonicalRuleset now GET/PATCHes repo settings (repos.get/update restored on OctokitLike + gh adapter) before the ruleset, and gates the ruleset PUT on ruleset-only drift so conveniences drift alone no longer forces a spurious ruleset write
+- vendored preset rulesets are named reporulez-default (find-by-name idempotent across reporulez + clud-bug) with empty bypass_actors; existing repo bypass actors are preserved as a superset on PUT
+- core barrel (src/core/index.ts) now exports loadPreset/isPresetName/PRESET_NAMES/DEFAULT_PRESET/CANONICAL_REPO_CONVENIENCES + PresetName/RepoConveniences so the App can consume presets; a reporulez→data/rulesets CI drift-check remains a follow-up
+
+---
+

@@ -82,8 +82,10 @@ function parseArgs(argv) {
     localOnly: false,
     // v0.7.0-rc.4: `clud-bug configure-github` flags.
     // --dry-run prints the diff but skips PATCH; --branch overrides "main".
+    // --preset selects the vendored ruleset variant (default: skdd).
     dryRun: false,
     branch: null,
+    preset: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -112,6 +114,7 @@ function parseArgs(argv) {
     else if (a === '--local-only') args.localOnly = true;
     else if (a === '--dry-run') args.dryRun = true;
     else if (a === '--branch') args.branch = argv[++i];
+    else if (a === '--preset') args.preset = argv[++i];
     else if (a === '--trigger') args.trigger = argv[++i];
     else if (a === '--diff-size') args.diffSizeBytes = Number(argv[++i]);
     // H3: `clud-bug post-check-run` flags.
@@ -145,11 +148,14 @@ Commands:
   update                Re-render workflows + refresh baseline specimens to the latest shipped
                         templates. Custom and skills.sh-installed specimens left alone.
   configure-github <owner>/<repo>
-                        Apply the SPEC §7 canonical branch protection ruleset to a repo.
-                        Auth: GITHUB_TOKEN env first, then \`gh auth token\`. Use
-                        --dry-run to print the diff without writing; --branch to
-                        target a non-main branch. Idempotent — already-canonical
-                        repos exit 0 with no changes.
+                        One-stop repo setup: repo conveniences (squash-only merges,
+                        auto-merge, delete-branch-on-merge, PR title/body squash
+                        message — ALL presets) + the SPEC §7 canonical branch
+                        ruleset. \`--preset baseline|clud-bug|skdd|public-guard\`
+                        picks the variant (default: skdd). Auth: GITHUB_TOKEN env
+                        first, then \`gh auth token\`. Use --dry-run to print the
+                        diff without writing; --branch to target a non-main branch.
+                        Idempotent — already-canonical repos exit 0 with no changes.
   edit-workflow         Helper for editing .github/workflows/clud-bug-*.yml in an isolated
                         PR (the action refuses to review PRs that modify its own workflow).
   usage                 Read recent clud-bug-review run JSON + normalize cost per LOC.
@@ -256,6 +262,8 @@ Options:
   --dry-run             Print the canonical-v1 diff without writing
                         (configure-github only).
   --branch <name>       Target branch for configure-github (default: main).
+  --preset <name>       configure-github ruleset preset: baseline | clud-bug |
+                        skdd | public-guard (default: skdd).
   --trigger <ctx>       review-prompt context: commit (default) | push | pr.
   --repo <owner/name>   Restrict \`usage\` to a single repo. Default: all repos
                         with clud-bug-review.yml in the gh user's auth scope.
@@ -1981,6 +1989,7 @@ async function runConfigureGithubCmd(args) {
   const target = args._[1] ?? null;
   const code = await runConfigureGithub({
     target,
+    preset: args.preset || undefined,
     branch: args.branch || 'main',
     dryRun: Boolean(args.dryRun),
     quiet: QUIET,

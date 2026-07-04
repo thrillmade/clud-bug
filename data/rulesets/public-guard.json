@@ -1,0 +1,29 @@
+{
+  "$comment": "VENDORED from reporulez (canonical source): https://raw.githubusercontent.com/thrillmade/reporulez/main/rulesets/public-guard.json. Do NOT hand-edit — a CI drift-check against upstream is a follow-up. Applied by `clud-bug configure-github <owner>/<repo> --preset public-guard`. Consumers ignore $-prefixed keys. public-guard = stricter posture for public repos with external contributors: 1 required approval, code-owner review, require-last-push approval. No CI-check rule (repos add their own via reporulez --extra-check).",
+  "name": "reporulez-default",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["~DEFAULT_BRANCH"],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "required_linear_history" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true,
+        "dismiss_stale_reviews_on_push": true,
+        "allowed_merge_methods": ["squash"]
+      }
+    }
+  ]
+}

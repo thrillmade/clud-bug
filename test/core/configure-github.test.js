@@ -16,6 +16,8 @@ import { strict as assert } from 'node:assert';
 import {
   applyCanonicalRuleset,
   loadCanonicalV1,
+  loadPreset,
+  CANONICAL_REPO_CONVENIENCES,
 } from '../../src/core/configure-github.js';
 import { runConfigureGithub } from '../../src/cli/configure-github.js';
 
@@ -33,18 +35,24 @@ import { runConfigureGithub } from '../../src/cli/configure-github.js';
  * The list endpoint returns SUMMARIES (id + name only), matching GitHub;
  * the get-by-id endpoint returns the full ruleset.
  */
-function makeOctokitMock({ rulesets = [] } = {}) {
+function makeOctokitMock({ rulesets = [], repoSettings } = {}) {
   const state = {
     rulesets: rulesets.map((r) => structuredClone(r)),
+    // Default to the canonical conveniences so the ruleset-focused tests stay
+    // no-ops on the repo-settings path; pass `repoSettings` to drift fields.
+    repoSettings: { ...CANONICAL_REPO_CONVENIENCES, ...(repoSettings ?? {}) },
     nextId: 1000,
   };
   const calls = {
+    get: 0,
+    update: 0,
     getRepoRulesets: 0,
     getRepoRuleset: 0,
     createRepoRuleset: 0,
     updateRepoRuleset: 0,
     lastCreatePayload: null,
     lastUpdatePayload: null,
+    lastRepoPatch: null,
   };
 
   return {
@@ -52,6 +60,17 @@ function makeOctokitMock({ rulesets = [] } = {}) {
     calls,
     octokit: {
       repos: {
+        // Repo-level conveniences (universal hygiene) — GET/PATCH pair.
+        async get() {
+          calls.get++;
+          return { data: structuredClone(state.repoSettings) };
+        },
+        async update({ owner, repo, ...patch }) {
+          calls.update++;
+          calls.lastRepoPatch = patch;
+          Object.assign(state.repoSettings, patch);
+          return {};
+        },
         async getRepoRulesets() {
           calls.getRepoRulesets++;
           return {
@@ -81,20 +100,20 @@ function makeOctokitMock({ rulesets = [] } = {}) {
   };
 }
 
-// A full canonical ruleset object matching data/canonical-v1.json. Used to
-// seed the mock's "already-canonical" state. Kept inline (not derived from
-// loadCanonicalV1) so the test also documents the NORMATIVE contract:
-// name skdd-canonical, 0 approvals, clud-bug-review as a required check.
+// A full canonical ruleset object matching the vendored skdd preset
+// (data/rulesets/skdd.json). Used to seed the mock's "already-canonical"
+// state. Kept inline (not derived from loadPreset) so the test also documents
+// the NORMATIVE contract: the ruleset is named `reporulez-default` (vendored
+// from reporulez), 0 approvals, clud-bug-review as a required check, empty
+// bypass_actors (repo extras are preserved as a superset on PUT).
 function canonicalRuleset(overrides = {}) {
   return {
     id: 42,
-    name: 'skdd-canonical',
+    name: 'reporulez-default',
     target: 'branch',
     enforcement: 'active',
     conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
-    bypass_actors: [
-      { actor_type: 'RepositoryRole', actor_id: 5, bypass_mode: 'always' },
-    ],
+    bypass_actors: [],
     rules: [
       { type: 'deletion' },
       { type: 'non_fast_forward' },
@@ -140,30 +159,27 @@ function contextsOf(rules) {
 }
 
 // ---------------------------------------------------------------------------
-// loadCanonicalV1
+// loadPreset / loadCanonicalV1 (vendored-from-reporulez presets)
 // ---------------------------------------------------------------------------
 
-test('loadCanonicalV1: returns the v2 rulesets schema from the bundled file', async () => {
+test('loadCanonicalV1: back-compat alias resolves the DEFAULT skdd preset', async () => {
   const ruleset = await loadCanonicalV1();
-  assert.equal(ruleset.version, 'v2');
-  assert.equal(ruleset.name, 'skdd-canonical');
+  const skdd = await loadPreset('skdd');
+  // Alias returns the same memoized object as the skdd preset.
+  assert.equal(ruleset, skdd);
+  assert.equal(ruleset.name, 'reporulez-default');
   assert.equal(ruleset.target, 'branch');
   assert.equal(ruleset.enforcement, 'active');
-  assert.ok(ruleset.spec_version);
   // 0 approvals — the clud-bug-review CHECK is the gate (SPEC §7.2.1).
   const pr = ruleOf(ruleset.rules, 'pull_request');
   assert.equal(pr.parameters.required_approving_review_count, 0);
   assert.equal(pr.parameters.required_review_thread_resolution, true);
-  // The four canonical contexts; the universal `test` context is gone in v2.
-  assert.deepEqual(contextsOf(ruleset.rules), [
-    'clud-bug-review',
+  // The four canonical skdd contexts (order-agnostic; the `test` context is gone).
+  assert.deepEqual(contextsOf(ruleset.rules).sort(), [
     'check-decisions',
     'check-derived-docs',
     'check-links',
-  ]);
-  // Repository-admin bypass (RepositoryRole id 5, always) — the self-mod escape hatch.
-  assert.deepEqual(ruleset.bypass_actors, [
-    { actor_type: 'RepositoryRole', actor_id: 5, bypass_mode: 'always' },
+    'clud-bug-review',
   ]);
 });
 
@@ -171,6 +187,51 @@ test('loadCanonicalV1: result is memoized (same object on second call)', async (
   const a = await loadCanonicalV1();
   const b = await loadCanonicalV1();
   assert.equal(a, b);
+});
+
+test('loadPreset: baseline = structural hygiene only (no required checks)', async () => {
+  const baseline = await loadPreset('baseline');
+  assert.equal(baseline.name, 'reporulez-default');
+  assert.deepEqual(baseline.bypass_actors, []);
+  assert.equal(ruleOf(baseline.rules, 'required_status_checks'), undefined);
+  assert.equal(
+    ruleOf(baseline.rules, 'pull_request').parameters
+      .required_approving_review_count,
+    0,
+  );
+  // Structural rules present.
+  for (const t of ['deletion', 'non_fast_forward', 'required_linear_history']) {
+    assert.ok(ruleOf(baseline.rules, t), `expected ${t} rule`);
+  }
+});
+
+test('loadPreset: clud-bug = baseline + the single clud-bug-review check', async () => {
+  const cludbug = await loadPreset('clud-bug');
+  assert.deepEqual(contextsOf(cludbug.rules), ['clud-bug-review']);
+});
+
+test('loadPreset: skdd = clud-bug + the SkDD derived-docs checks', async () => {
+  const skdd = await loadPreset('skdd');
+  const ctx = contextsOf(skdd.rules).sort();
+  assert.deepEqual(ctx, [
+    'check-decisions',
+    'check-derived-docs',
+    'check-links',
+    'clud-bug-review',
+  ]);
+});
+
+test('loadPreset: public-guard = 1 approval + code-owner + last-push, no checks', async () => {
+  const guard = await loadPreset('public-guard');
+  const pr = ruleOf(guard.rules, 'pull_request');
+  assert.equal(pr.parameters.required_approving_review_count, 1);
+  assert.equal(pr.parameters.require_code_owner_review, true);
+  assert.equal(pr.parameters.require_last_push_approval, true);
+  assert.equal(ruleOf(guard.rules, 'required_status_checks'), undefined);
+});
+
+test('loadPreset: unknown preset name throws', async () => {
+  await assert.rejects(loadPreset('nope'), /unknown preset/);
 });
 
 // ---------------------------------------------------------------------------
@@ -194,13 +255,11 @@ test('apply: fresh repo — create payload carries the canonical contract', asyn
   const { octokit, calls } = makeOctokitMock({ rulesets: [] });
   await applyCanonicalRuleset(octokit, { owner: 'octo', repo: 'demo' });
   const payload = calls.lastCreatePayload;
-  assert.equal(payload.name, 'skdd-canonical');
+  assert.equal(payload.name, 'reporulez-default');
   assert.equal(payload.target, 'branch');
   assert.equal(payload.enforcement, 'active');
   assert.deepEqual(payload.conditions.ref_name.include, ['~DEFAULT_BRANCH']);
-  assert.deepEqual(payload.bypass_actors, [
-    { actor_type: 'RepositoryRole', actor_id: 5, bypass_mode: 'always' },
-  ]);
+  assert.deepEqual(payload.bypass_actors, []);
   const pr = ruleOf(payload.rules, 'pull_request');
   assert.equal(pr.parameters.required_approving_review_count, 0);
   assert.deepEqual(pr.parameters.allowed_merge_methods, ['squash']);
@@ -383,12 +442,130 @@ test('apply: respects --branch override (narrows the ref condition)', async () =
 });
 
 // ---------------------------------------------------------------------------
+// applyCanonicalRuleset: repo conveniences (universal hygiene, all presets)
+// ---------------------------------------------------------------------------
+
+test('apply: repo-conveniences drift → repos.update PATCHes the delta', async () => {
+  // Ruleset already canonical; only the repo-level settings drifted.
+  const { octokit, calls } = makeOctokitMock({
+    rulesets: [canonicalRuleset()],
+    repoSettings: {
+      delete_branch_on_merge: false,
+      allow_merge_commit: true,
+      allow_rebase_merge: true,
+      squash_merge_commit_title: 'COMMIT_OR_PR_TITLE',
+    },
+  });
+  const result = await applyCanonicalRuleset(octokit, {
+    owner: 'octo',
+    repo: 'demo',
+  });
+  assert.equal(result.alreadyCanonical, false);
+  // Conveniences are reported (they precede the ruleset in the change list).
+  assert.ok(
+    result.changes.some((c) => /delete_branch_on_merge: false → true/.test(c)),
+    `expected delete_branch_on_merge diff; got: ${result.changes.join(' | ')}`,
+  );
+  assert.ok(result.changes.some((c) => /allow_merge_commit: true → false/.test(c)));
+  assert.ok(result.changes.some((c) => /allow_rebase_merge: true → false/.test(c)));
+  assert.ok(
+    result.changes.some((c) =>
+      /squash_merge_commit_title: COMMIT_OR_PR_TITLE → PR_TITLE/.test(c),
+    ),
+  );
+  // Exactly one repos.update (PATCH) carrying the converged conveniences.
+  assert.equal(calls.update, 1);
+  assert.equal(calls.lastRepoPatch.delete_branch_on_merge, true);
+  assert.equal(calls.lastRepoPatch.allow_merge_commit, false);
+  assert.equal(calls.lastRepoPatch.allow_rebase_merge, false);
+  assert.equal(calls.lastRepoPatch.squash_merge_commit_title, 'PR_TITLE');
+  // Ruleset already canonical → no ruleset write.
+  assert.equal(calls.createRepoRuleset, 0);
+  assert.equal(calls.updateRepoRuleset, 0);
+});
+
+test('apply: conveniences are idempotent — canonical repo settings → no repos.update', async () => {
+  const { octokit, calls } = makeOctokitMock({ rulesets: [canonicalRuleset()] });
+  const result = await applyCanonicalRuleset(octokit, {
+    owner: 'octo',
+    repo: 'demo',
+  });
+  assert.equal(result.alreadyCanonical, true);
+  assert.equal(calls.update, 0);
+  assert.equal(calls.updateRepoRuleset, 0);
+});
+
+test('apply: conveniences fire for EVERY preset (baseline included)', async () => {
+  const { octokit, calls } = makeOctokitMock({
+    rulesets: [],
+    repoSettings: { allow_squash_merge: false },
+  });
+  await applyCanonicalRuleset(octokit, {
+    owner: 'octo',
+    repo: 'demo',
+    preset: 'baseline',
+  });
+  // baseline still gets the universal repo hygiene PATCH.
+  assert.equal(calls.update, 1);
+  assert.equal(calls.lastRepoPatch.allow_squash_merge, true);
+});
+
+// ---------------------------------------------------------------------------
+// applyCanonicalRuleset: preset selection
+// ---------------------------------------------------------------------------
+
+test('apply: default preset is skdd (four canonical contexts)', async () => {
+  const { octokit, calls } = makeOctokitMock({ rulesets: [] });
+  await applyCanonicalRuleset(octokit, { owner: 'octo', repo: 'demo' });
+  assert.equal(calls.createRepoRuleset, 1);
+  assert.deepEqual(contextsOf(calls.lastCreatePayload.rules).sort(), [
+    'check-decisions',
+    'check-derived-docs',
+    'check-links',
+    'clud-bug-review',
+  ]);
+});
+
+test('apply: --preset clud-bug creates the single-check variant', async () => {
+  const { octokit, calls } = makeOctokitMock({ rulesets: [] });
+  await applyCanonicalRuleset(octokit, {
+    owner: 'octo',
+    repo: 'demo',
+    preset: 'clud-bug',
+  });
+  assert.deepEqual(contextsOf(calls.lastCreatePayload.rules), ['clud-bug-review']);
+});
+
+test('apply: --preset public-guard creates the 1-approval variant (no checks)', async () => {
+  const { octokit, calls } = makeOctokitMock({ rulesets: [] });
+  await applyCanonicalRuleset(octokit, {
+    owner: 'octo',
+    repo: 'demo',
+    preset: 'public-guard',
+  });
+  const pr = ruleOf(calls.lastCreatePayload.rules, 'pull_request');
+  assert.equal(pr.parameters.required_approving_review_count, 1);
+  assert.equal(pr.parameters.require_code_owner_review, true);
+  assert.equal(
+    ruleOf(calls.lastCreatePayload.rules, 'required_status_checks'),
+    undefined,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // applyCanonicalRuleset: error propagation
 // ---------------------------------------------------------------------------
 
 test('apply: transport error from getRepoRulesets bubbles up', async () => {
   const octokit = {
     repos: {
+      // Conveniences read succeeds; the ruleset list is what 403s.
+      async get() {
+        return { data: {} };
+      },
+      async update() {
+        throw new Error('should not be called');
+      },
       async getRepoRulesets() {
         const err = new Error('HTTP 403 Forbidden');
         err.status = 403;
@@ -458,6 +635,60 @@ test('runConfigureGithub: malformed target → exit 2', async () => {
   });
   assert.equal(code, 2);
   assert.match(stderrBuf, /owner\/repo/);
+});
+
+test('runConfigureGithub: invalid --preset → exit 2 (usage error, no network)', async () => {
+  let stderrBuf = '';
+  const code = await runConfigureGithub({
+    target: 'octo/demo',
+    preset: 'bogus',
+    resolveToken: async () => {
+      throw new Error('token resolution should not run');
+    },
+    octokitFactory: () => {
+      throw new Error('should not be called');
+    },
+    stdout: () => {},
+    stderr: (m) => {
+      stderrBuf += m;
+    },
+  });
+  assert.equal(code, 2);
+  assert.match(stderrBuf, /unknown preset "bogus"/);
+});
+
+test('runConfigureGithub: default preset (skdd) surfaces in the summary', async () => {
+  let stdoutBuf = '';
+  const { octokit } = makeOctokitMock({ rulesets: [canonicalRuleset()] });
+  const code = await runConfigureGithub({
+    target: 'octo/demo',
+    resolveToken: async () => 'token',
+    octokitFactory: () => octokit,
+    quiet: true,
+    stdout: (m) => {
+      stdoutBuf += m;
+    },
+    stderr: () => {},
+  });
+  assert.equal(code, 0);
+  assert.match(stdoutBuf, /preset: skdd/);
+});
+
+test('runConfigureGithub: --preset public-guard is threaded to the applier', async () => {
+  const { octokit, calls } = makeOctokitMock({ rulesets: [] });
+  const code = await runConfigureGithub({
+    target: 'octo/demo',
+    preset: 'public-guard',
+    quiet: true,
+    resolveToken: async () => 'token',
+    octokitFactory: () => octokit,
+    stdout: () => {},
+    stderr: () => {},
+  });
+  assert.equal(code, 0);
+  assert.equal(calls.createRepoRuleset, 1);
+  const pr = ruleOf(calls.lastCreatePayload.rules, 'pull_request');
+  assert.equal(pr.parameters.required_approving_review_count, 1);
 });
 
 test('runConfigureGithub: already-canonical → exit 0 with §3.23.1 summary', async () => {
