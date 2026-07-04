@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (17 decisions)
+## 2026-07 (18 decisions)
 
-- **2026-07-03** — configure-github: migrate canonical ruleset from retired classic branch-protection to v2 rulesets API (SPEC §7 parity) *(configure-github-rulesets)* — [decisions-branches/configure-github-rulesets.md](decisions-branches/configure-github-rulesets.md)
-- *... 15 more decisions ...*
+- **2026-07-03** — configure-github: one-stop repo setup — reporulez preset taxonomy (--preset) + restored universal repo-conveniences PATCH *(configure-github-rulesets)* — [decisions-branches/configure-github-rulesets.md](decisions-branches/configure-github-rulesets.md)
+- *... 16 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
