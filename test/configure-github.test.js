@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { formatConfigureSummary } from '../src/cli/configure-github.js';
 
 describe('formatConfigureSummary — §3.23.1 status payload', () => {
-  it('no-op human output surfaces alreadyCanonical: true + rulesetVersion: v1', () => {
+  it('no-op human output surfaces alreadyCanonical: true + rulesetVersion: v2', () => {
     const s = formatConfigureSummary(
       { owner: 'thrillmade', repo: 'protocol', alreadyCanonical: true, dryRun: false, changes: 0 },
       false,
