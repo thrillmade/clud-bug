@@ -1,4 +1,4 @@
-// rc.16 — `clud-bug init --with-design` installs the design-critic kit (3
+// rc.16 — `clud-bug init --with-design` installs the design-critic kit (4
 // `kind: design` skills) and flips the off-by-default `design` block to
 // enabled, so the visual review lens runs (local recipe + hosted bot).
 
@@ -45,14 +45,14 @@ test('init --with-design installs the design kit + enables the design lens', asy
   // The design block is flipped on.
   assert.equal(manifest.design?.enabled, true, 'design.enabled should be true');
 
-  // The 3 design-kit skills are registered with kind: design.
+  // The 4 design-kit skills are registered with kind: design.
   const designEntries = (manifest.installed || []).filter((e) => e.kind === 'design');
-  assert.ok(designEntries.length >= 3, `expected >=3 design entries, got ${designEntries.length}`);
+  assert.ok(designEntries.length >= 4, `expected >=4 design entries, got ${designEntries.length}`);
   const slugs = designEntries.map((e) => e.slug).sort();
   assert.deepEqual(
     slugs,
-    ['design-system-consistency', 'frontend-a11y', 'visual-polish'],
-    'all three design-kit skills should be pinned',
+    ['design-system-consistency', 'designing-elite-ui', 'frontend-a11y', 'visual-polish'],
+    'all four design-kit skills should be pinned',
   );
   for (const e of designEntries) {
     assert.equal(e.source, 'clud-bug-design', `${e.slug} source should be clud-bug-design`);
