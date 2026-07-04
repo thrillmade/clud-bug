@@ -7,13 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { formatConfigureSummary } from '../src/cli/configure-github.js';
 
 describe('formatConfigureSummary — §3.23.1 status payload', () => {
-  it('no-op human output surfaces alreadyCanonical: true + rulesetVersion: v1', () => {
+  it('no-op human output surfaces alreadyCanonical: true + rulesetVersion: v2', () => {
     const s = formatConfigureSummary(
       { owner: 'thrillmade', repo: 'protocol', alreadyCanonical: true, dryRun: false, changes: 0 },
       false,
     );
     expect(s).toMatch(/alreadyCanonical: true/);
-    expect(s).toMatch(/rulesetVersion: v1/);
+    expect(s).toMatch(/rulesetVersion: v2/);
     expect(s).toMatch(/thrillmade/);
     expect(s).toMatch(/protocol/);
     expect(s.endsWith('\n')).toBe(true);
@@ -29,7 +29,7 @@ describe('formatConfigureSummary — §3.23.1 status payload', () => {
       owner: 'thrillmade',
       repo: 'protocol',
       alreadyCanonical: true,
-      rulesetVersion: 'v1',
+      rulesetVersion: 'v2',
     });
   });
 
@@ -42,7 +42,7 @@ describe('formatConfigureSummary — §3.23.1 status payload', () => {
     );
     expect(obj.alreadyCanonical).toBe(false);
     expect(obj.changes).toBe(2);
-    expect(obj.rulesetVersion).toBe('v1');
+    expect(obj.rulesetVersion).toBe('v2');
   });
 
   it('dry-run human output keeps the existing pending-changes prose', () => {

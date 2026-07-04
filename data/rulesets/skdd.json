@@ -1,5 +1,5 @@
 {
-  "$comment": "BACK-COMPAT ALIAS of data/rulesets/skdd.json — retained for the stable external fetch path (older tooling + docs link to `data/canonical-v1.json`). The runtime loader no longer reads this file: `loadCanonicalV1()` now resolves the `skdd` preset from data/rulesets/skdd.json. Keep this in sync with rulesets/skdd.json (a CI drift-check is a follow-up). Vendored from reporulez (canonical source).",
+  "$comment": "VENDORED from reporulez (canonical source): https://raw.githubusercontent.com/thrillmade/reporulez/main/rulesets/skdd.json. Do NOT hand-edit — a CI drift-check against upstream is a follow-up. Applied by `clud-bug configure-github <owner>/<repo>` (default preset) and the App's auto-setup. Consumers ignore $-prefixed keys. skdd = clud-bug + the SkDD derived-docs checks (check-derived-docs / check-decisions / check-links). This is clud-bug's DEFAULT preset.",
   "name": "reporulez-default",
   "target": "branch",
   "enforcement": "active",

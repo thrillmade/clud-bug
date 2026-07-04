@@ -25,13 +25,23 @@ import { spawn, spawnSync } from 'node:child_process';
 import {
   applyCanonicalRuleset,
   loadCanonicalV1,
+  loadPreset,
+  isPresetName,
+  DEFAULT_PRESET,
+  PRESET_NAMES,
   type OctokitLike,
   type ApplyResult,
+  type PresetName,
 } from '../core/configure-github.js';
 
 export interface RunConfigureGithubOptions {
   /** "owner/repo" target — required. */
   target?: string | null;
+  /**
+   * Ruleset preset: baseline · clud-bug · skdd · public-guard.
+   * Defaults to `skdd`. Invalid values exit 2 (usage error).
+   */
+  preset?: string;
   /** Target branch (default `main`). */
   branch?: string;
   /** Render diff only; skip PATCH calls. */
@@ -50,13 +60,22 @@ export interface RunConfigureGithubOptions {
   stderr?: (msg: string) => void;
 }
 
-const HELP = `clud-bug configure-github — apply SPEC §7 canonical branch protection.
+const HELP = `clud-bug configure-github — one-stop repo setup (conveniences + SPEC §7 ruleset).
 
 Usage:
   clud-bug configure-github <owner>/<repo> [options]
 
+Applies, in order, for the selected preset:
+  1. Repo conveniences (ALL presets): squash-only merges, auto-merge +
+     delete-branch-on-merge on, PR title/body as the squash commit message.
+  2. The canonical branch ruleset for the chosen preset.
+
 Options:
-  --dry-run         Compute diff and print it, but do NOT call PATCH endpoints.
+  --preset <name>   Ruleset preset: baseline | clud-bug | skdd | public-guard.
+                    Default: skdd. (baseline = structural only; clud-bug adds
+                    the clud-bug-review gate; skdd adds SkDD derived-docs
+                    checks; public-guard = 1 approval + code-owner.)
+  --dry-run         Compute diff and print it, but do NOT create/update anything.
   --branch <name>   Target branch (default: main).
   --quiet,-q        Suppress progress chatter; emit only the final summary.
   --json            Emit the status payload as JSON (machine consumption).
@@ -68,7 +87,7 @@ Auth (resolved in order):
 
 Exit codes:
   0  success or already-canonical
-  1  auth missing, PATCH error, or unrecoverable transport failure
+  1  auth missing, ruleset write error, or unrecoverable transport failure
   2  CLI usage error (missing target, bad flag)
 `;
 
@@ -76,6 +95,8 @@ Exit codes:
 export interface ConfigureSummary {
   owner: string;
   repo: string;
+  /** The preset applied (baseline · clud-bug · skdd · public-guard). */
+  preset?: string;
   /** True when the repo already matches canonical-v1 (idempotent no-op). */
   alreadyCanonical: boolean;
   /** True when this was a --dry-run (no PATCH calls made). */
@@ -90,20 +111,22 @@ export interface ConfigureSummary {
  * consumption, key-colon-value for humans.
  */
 export function formatConfigureSummary(summary: ConfigureSummary, json: boolean): string {
-  const { owner, repo, alreadyCanonical, dryRun, changes } = summary;
+  const { owner, repo, preset, alreadyCanonical, dryRun, changes } = summary;
   if (json) {
     return (
-      JSON.stringify({ owner, repo, alreadyCanonical, rulesetVersion: 'v1', dryRun, changes }) + '\n'
+      JSON.stringify({ owner, repo, preset, alreadyCanonical, rulesetVersion: 'v2', dryRun, changes }) + '\n'
     );
   }
+  const presetTag = preset ? ` preset: ${preset}` : '';
+  const presetParen = preset ? ` (${preset})` : '';
   if (alreadyCanonical) {
-    return `ok configure-github: owner: ${owner} repo: ${repo} alreadyCanonical: true rulesetVersion: v1\n`;
+    return `ok configure-github: owner: ${owner} repo: ${repo}${presetTag} alreadyCanonical: true rulesetVersion: v2\n`;
   }
   const plural = changes === 1 ? '' : 's';
   if (dryRun) {
-    return `ok configure-github: dry-run on ${owner}/${repo} — ${changes} change${plural} pending\n`;
+    return `ok configure-github: dry-run on ${owner}/${repo}${presetParen} — ${changes} change${plural} pending\n`;
   }
-  return `ok configure-github: ${owner}/${repo} converged to canonical-v1 (${changes} change${plural})\n`;
+  return `ok configure-github: ${owner}/${repo} converged to canonical-v1${presetParen} (${changes} change${plural})\n`;
 }
 
 /**
@@ -117,6 +140,7 @@ export async function runConfigureGithub(
 ): Promise<number> {
   const {
     target,
+    preset: presetOpt,
     branch = 'main',
     dryRun = false,
     quiet = false,
@@ -140,6 +164,15 @@ export async function runConfigureGithub(
   }
   const [, owner, repo] = match as unknown as [unknown, string, string];
 
+  // Resolve + validate the preset (usage error before any network call).
+  const preset: string = presetOpt ?? DEFAULT_PRESET;
+  if (!isPresetName(preset)) {
+    stderr(
+      `clud-bug configure-github: unknown preset "${preset}" (valid: ${PRESET_NAMES.join(', ')}).\n`,
+    );
+    return 2;
+  }
+
   const token = await resolveToken();
   if (!token) {
     stderr(
@@ -151,7 +184,7 @@ export async function runConfigureGithub(
 
   if (!quiet) {
     stdout(
-      `\u{1F41B} configure-github: applying canonical-v1 ruleset to ${owner}/${repo} (branch=${branch})\n`,
+      `\u{1F41B} configure-github: applying "${preset}" preset (conveniences + ruleset) to ${owner}/${repo} (branch=${branch})\n`,
     );
   }
 
@@ -174,18 +207,19 @@ export async function runConfigureGithub(
       owner,
       repo,
       branch,
+      preset,
       dryRun,
     });
   } catch (err) {
     stderr(
-      `clud-bug configure-github: ${dryRun ? 'failed to read current state' : 'PATCH failed'}: ${stringifyError(err)}\n`,
+      `clud-bug configure-github: ${dryRun ? 'failed to read current state' : 'ruleset write failed'}: ${stringifyError(err)}\n`,
     );
     return 1;
   }
 
   if (result.alreadyCanonical) {
     if (!quiet) stdout('  No changes — repo already matches canonical-v1.\n');
-    stdout(formatConfigureSummary({ owner, repo, alreadyCanonical: true, dryRun, changes: 0 }, json));
+    stdout(formatConfigureSummary({ owner, repo, preset, alreadyCanonical: true, dryRun, changes: 0 }, json));
     return 0;
   }
 
@@ -196,11 +230,11 @@ export async function runConfigureGithub(
   }
 
   if (dryRun) {
-    stdout(formatConfigureSummary({ owner, repo, alreadyCanonical: false, dryRun: true, changes: result.changes.length }, json));
+    stdout(formatConfigureSummary({ owner, repo, preset, alreadyCanonical: false, dryRun: true, changes: result.changes.length }, json));
     return 0;
   }
 
-  stdout(formatConfigureSummary({ owner, repo, alreadyCanonical: false, dryRun: false, changes: result.changes.length }, json));
+  stdout(formatConfigureSummary({ owner, repo, preset, alreadyCanonical: false, dryRun: false, changes: result.changes.length }, json));
   return 0;
 }
 
@@ -242,9 +276,9 @@ export function ghCliOctokit(token: string): OctokitLike {
         args.push('--input', '-');
       }
       args.push(path);
-      // Add an Accept header so 404s return the structured error, not a
-      // friendlier shell hint. The wrapping err.message detection in
-      // `isBranchNotProtected` keys on the structured form.
+      // Pin the rulesets API media type; the wrapping error carries the
+      // parsed HTTP status (from `HTTP NNN` in gh's stderr) so transport
+      // failures surface with a real status code, not a shell hint.
       args.push('-H', 'Accept: application/vnd.github+json');
       const child = spawn('gh', args, {
         env,
@@ -289,26 +323,67 @@ export function ghCliOctokit(token: string): OctokitLike {
 
   return {
     repos: {
-      async getBranchProtection({ owner, repo, branch }) {
+      async getRepoRulesets({ owner, repo, includes_parents }) {
+        // `?per_page=100` (not `--paginate`) to grab all rulesets in one
+        // call — a repo realistically has a handful, and --paginate emits
+        // multiple concatenated JSON arrays that our single JSON.parse can't
+        // consume (see the v0.6.30 --paginate → ?per_page=100 decision).
+        const parents = includes_parents === undefined ? false : includes_parents;
         const data = await ghApi<unknown>(
           'GET',
-          `/repos/${owner}/${repo}/branches/${branch}/protection`,
+          `/repos/${owner}/${repo}/rulesets?per_page=100&includes_parents=${parents}`,
         );
-        return { data: data as Awaited<ReturnType<OctokitLike['repos']['getBranchProtection']>>['data'] };
+        return {
+          data: (Array.isArray(data) ? data : []) as Awaited<
+            ReturnType<OctokitLike['repos']['getRepoRulesets']>
+          >['data'],
+        };
       },
-      async updateBranchProtection({ owner, repo, branch, ...rest }) {
-        return ghApi(
+      async getRepoRuleset({ owner, repo, ruleset_id }) {
+        const data = await ghApi<unknown>(
+          'GET',
+          `/repos/${owner}/${repo}/rulesets/${ruleset_id}`,
+        );
+        return {
+          data: data as Awaited<
+            ReturnType<OctokitLike['repos']['getRepoRuleset']>
+          >['data'],
+        };
+      },
+      async createRepoRuleset({ owner, repo, ...body }) {
+        const data = await ghApi<unknown>(
+          'POST',
+          `/repos/${owner}/${repo}/rulesets`,
+          body,
+        );
+        return {
+          data: data as Awaited<
+            ReturnType<OctokitLike['repos']['createRepoRuleset']>
+          >['data'],
+        };
+      },
+      async updateRepoRuleset({ owner, repo, ruleset_id, ...body }) {
+        const data = await ghApi<unknown>(
           'PUT',
-          `/repos/${owner}/${repo}/branches/${branch}/protection`,
-          rest,
+          `/repos/${owner}/${repo}/rulesets/${ruleset_id}`,
+          body,
         );
+        return {
+          data: data as Awaited<
+            ReturnType<OctokitLike['repos']['updateRepoRuleset']>
+          >['data'],
+        };
       },
+      // Repo-level conveniences (universal hygiene): GET the repo settings,
+      // PATCH the drifted merge/branch-cleanup fields. Restored alongside the
+      // ruleset applier so `configure-github` is the one-stop setup command.
       async get({ owner, repo }) {
-        const data = await ghApi<unknown>(
-          'GET',
-          `/repos/${owner}/${repo}`,
-        );
-        return { data: data as Awaited<ReturnType<OctokitLike['repos']['get']>>['data'] };
+        const data = await ghApi<unknown>('GET', `/repos/${owner}/${repo}`);
+        return {
+          data: data as Awaited<
+            ReturnType<OctokitLike['repos']['get']>
+          >['data'],
+        };
       },
       async update({ owner, repo, ...rest }) {
         return ghApi('PATCH', `/repos/${owner}/${repo}`, rest);
@@ -323,7 +398,9 @@ function stringifyError(err: unknown): string {
 }
 
 /**
- * Re-exported so callers can preload the ruleset (e.g. for a `--show-ruleset`
- * flag in future). Currently exists for parity with the App's pattern.
+ * Re-exported so callers can preload a ruleset (e.g. for a `--show-ruleset`
+ * flag in future). `loadCanonicalV1` resolves the default (skdd) preset;
+ * `loadPreset(name)` picks a specific variant.
  */
-export { loadCanonicalV1 };
+export { loadCanonicalV1, loadPreset };
+export type { PresetName };
