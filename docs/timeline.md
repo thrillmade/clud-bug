@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (18 decisions)
+## 2026-07 (19 decisions)
 
-- **2026-07-03** — configure-github: one-stop repo setup — reporulez preset taxonomy (--preset) + restored universal repo-conveniences PATCH *(configure-github-rulesets)* — [decisions-branches/configure-github-rulesets.md](decisions-branches/configure-github-rulesets.md)
-- *... 16 more decisions ...*
+- **2026-07-04** — Add designing-elite-ui as a 4th bundled kind: design skill in the CLI design-kit *(feat-design-kit-elite-ui)* — [decisions-branches/feat-design-kit-elite-ui.md](decisions-branches/feat-design-kit-elite-ui.md)
+- *... 17 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
