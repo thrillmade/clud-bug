@@ -116,7 +116,13 @@ jobs:
         # it falls back to looking for NPM_TOKEN, finds none, and the
         # publish PUT gets rejected with a misleading 404. End-to-end
         # OIDC publish needs npm 11.5.1+.
-        run: npm install -g npm@latest
+        #
+        # Pin to npm@11 (not @latest): npm@latest is now npm 12, whose engine
+        # requires Node >=22.22 / 24.15 — it EBADENGINE-fails on this Node-20
+        # runner before publishing. npm@11 (latest 11.x) supports Node ^20.17
+        # and is OIDC-capable. (TODO: bump the runner to Node 22/24 — Node 20 is
+        # EOL — then @latest can return.)
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -153,7 +159,9 @@ jobs:
       - name: Upgrade npm to a Trusted-Publishing-capable version
         # Same reason as the publish job: dist-tag is one of the calls
         # that needs OIDC end-to-end (sign + auth), which is npm 11.5.1+.
-        run: npm install -g npm@latest
+        # Pinned to npm@11 (not @latest=12, which needs Node 22+) — see the
+        # publish job's note.
+        run: npm install -g npm@11
 
       - name: Validate inputs
         # Bail loudly if version is missing — promote-tag without a
