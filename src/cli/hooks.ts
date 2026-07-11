@@ -57,7 +57,11 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     `if [ -n "$ev" ]; then case "$ev" in *'git commit'*|*'logmind log'*) ;; *) exit 0 ;; esac; fi`,
     `sha=$(git rev-parse HEAD 2>/dev/null) || exit 0`,
     `gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0`,
-    `marker="$gitdir/clud-bug-last-commit-review"`,
+    // Pure LOOP-GUARD, not an attestation (§10.3.3): records only that the recipe
+    // was already SURFACED for this SHA (avoids a re-review on an amend / double
+    // fire). It never means "reviewed" and never yields a green check — the only
+    // authoritative "reviewed" state is the notary-issued `clud-bug-review` check.
+    `marker="$gitdir/clud-bug-hook-fired"`,
     `[ "$(cat "$marker" 2>/dev/null)" = "$sha" ] && exit 0`,
     // H4 — one retry on a transient npx/network blip (a stale lock, a slow
     // registry) before giving up, so a hiccup doesn't silently skip the review.

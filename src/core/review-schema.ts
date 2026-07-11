@@ -62,6 +62,15 @@ const FINDING_ITEM: JSONSchemaObject = {
       type: 'string',
       description: 'Evidence anchor + suggested fix. Max ~80 words. Rendered inside <details> block; can be omitted for self-evident findings.',
     },
+    grounding: {
+      type: 'string',
+      description: 'Verbatim evidence anchoring the finding. STRONGLY EXPECTED on a 🔴 critical (the notary attestation rejects an ungrounded critical): the exact changed line quoted from the diff, OR a reproduction command + observed output, OR the one-sentence violated invariant. Optional on 🟡/🟣.',
+    },
+    grounding_kind: {
+      type: 'string',
+      enum: ['quote', 'reproduction', 'invariant'],
+      description: 'Which form `grounding` takes. `quote` is verified deterministically by the notary (the span must appear in the diff); `reproduction`/`invariant` are audit-verified. Defaults to `quote` when omitted.',
+    },
   },
   required: ['skill', 'summary'],
 };
@@ -185,6 +194,9 @@ export interface ReviewFinding {
   file?: string;
   line?: number;
   reasoning?: string;
+  /** Verbatim evidence for the notary (§10.3.3). Expected on critical findings. */
+  grounding?: string;
+  grounding_kind?: 'quote' | 'reproduction' | 'invariant';
 }
 
 export interface PerSkillScanItem {
