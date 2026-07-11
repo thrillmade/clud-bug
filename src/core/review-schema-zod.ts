@@ -58,6 +58,11 @@ export const findingItemSchema = z.object({
   line: z.number().int().min(1).optional(),
   summary: z.string().min(1),
   reasoning: z.string().optional(),
+  // Notary grounding (§10.3.3). Optional on the WIRE (a schema-required field can
+  // be satisfied with junk); the notary bundle + `validateGrounding` enforce it
+  // as required-for-critical, checking the span against the ground-truth diff.
+  grounding: z.string().optional(),
+  grounding_kind: z.enum(['quote', 'reproduction', 'invariant']).optional(),
 });
 export type FindingItem = z.infer<typeof findingItemSchema>;
 

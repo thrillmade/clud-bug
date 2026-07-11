@@ -327,6 +327,34 @@ export {
   type DerivedCheck,
   type DeriveCheckInput,
 } from './check-verdict.js';
+// Phase Z3 — the NOTARY. `notary-bundle` owns the attestation-bundle shape (the
+// contract Z4's `/notarize` consumes) + a tolerant parser; `notary-validate` owns
+// the pure deterministic ③④⑤ checks (coverage / grounding / consistency) both the
+// local CLI and the server re-run. SPEC §10.3.3.
+export {
+  buildBundle,
+  parseBundle,
+  notaryResponseIsRejection,
+  NOTARY_BUNDLE_VERSION,
+  NOTARY_PROTOCOL_VERSION,
+  type NotaryBundle,
+  type NotaryFinding,
+  type NotarySeverity,
+  type GroundingKind,
+} from './notary-bundle.js';
+export {
+  validateBundle,
+  validateCoverage,
+  validateGrounding,
+  validateConsistency,
+  spanAppearsInDiff,
+  splitUnifiedDiff,
+  type BundleValidation,
+  type CoverageResult,
+  type GroundingResult,
+  type GroundingViolation,
+  type ConsistencyResult,
+} from './notary-validate.js';
 export {
   API_BASE,
   MAX_SKILLS,

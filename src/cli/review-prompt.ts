@@ -199,8 +199,11 @@ export function renderReviewRecipe(input: {
       ' ' +
       SEVERITY_RULE +
       ' Record `file`, `line` (when a line applies), `severity` (`critical` | `minor` | ' +
-      '`preexisting`), the `skill`, how you grounded it (quote / repro / invariant), and a one-line ' +
-      '`summary`. Finding nothing is the normal, common outcome — be precise, not exhaustive.';
+      '`preexisting`), the `skill`, a one-line `summary`, and — for EVERY 🔴 critical — its ' +
+      '`grounding` (the VERBATIM changed line you quote, or the reproduction command+output, or the ' +
+      'named violated invariant) plus `grounding_kind` (`quote`/`reproduction`/`invariant`). The notary ' +
+      're-checks a `quote` grounding against the diff, so quote the line EXACTLY. Finding nothing is the ' +
+      'normal, common outcome — be precise, not exhaustive.';
   } else {
     const passLines = Array.from({ length: maxPasses }, (_, i) => {
       const role = roleForPass(plan.roles, i, 'Reviewer');
@@ -250,19 +253,31 @@ export function renderReviewRecipe(input: {
       : 'Surface the findings into the session, and — if an open PR exists — post or edit (in ' +
         'place, by integer comment id) the clud-bug summary comment on it.';
 
-  // H3 — the merge-gate step (PR only). After reporting, the agent posts a
-  // SELF-ATTESTED `clud-bug-review` check so branch protection can gate the merge
-  // on a local review too. Commit/push triggers skip it (no PR head to anchor a
-  // check to). The conclusion is derived by `post-check-run` from the verdict +
-  // the repo's strictMode.
+  // H3 + Phase Z — the merge-gate step (PR only). clud-bug is a NOTARY: a green
+  // `clud-bug-review` check is CERTIFIED against the diff, not merely self-asserted.
+  // When the repo is notary-enabled (`CLUD_BUG_NOTARY_URL` set), the agent submits
+  // an attestation BUNDLE — clud-bug locally re-checks it (coverage/grounding/
+  // consistency; the handshake) and the notary issues the check after re-validating
+  // against GitHub's ground truth. Absent a notary, it falls back to the self-attested
+  // post (a developer-local signal, never the authoritative gate for untrusted authors).
+  // Commit/push triggers skip this (no PR head to anchor a check to).
   const gateStep =
     trigger === 'pr'
-      ? `\n\n## 5. Post the merge-gate check
-After reporting, post the self-attested \`clud-bug-review\` check so branch protection can gate on it:
+      ? `\n\n## 5. Certify the review (merge-gate check)
+clud-bug is a **notary** — a green \`clud-bug-review\` is CERTIFIED, not self-asserted. Your review must be validatable: every 🔴 critical carries a \`grounding\` span that appears verbatim in the diff (or a reproduction / named invariant), and you list every changed file you covered.
+
+**If this repo is notary-enabled** (\`CLUD_BUG_NOTARY_URL\` is set), write your findings as an attestation bundle and submit it — clud-bug re-checks it locally and the notary validates it against GitHub before issuing the check:
+\`\`\`bash
+# bundle.json = { "repo": "<owner>/<repo>", "pr": <N>, "head_sha": "<sha>", "verdict": "clean|critical|unverified",
+#   "findings": [ { "severity": "critical", "file": "...", "line": N, "summary": "...", "grounding": "<verbatim diff line>", "grounding_kind": "quote" } ],
+#   "coverage": ["<every changed file you reviewed>"], "recipe_version": "local" }
+clud-bug post-check-run --sha "$(git rev-parse HEAD)" --bundle bundle.json
+\`\`\`
+**Otherwise** post the self-attested check (a local signal, not independent CI):
 \`\`\`bash
 clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical|unverified> --critical-count <N> --source local
 \`\`\`
-\`clean\` → passes (merge unblocked); \`critical\` → fails when the repo is in strict mode; \`unverified\` → neutral (does not block, but is NOT a pass) — post it when the change touched a probe/invariant surface you could not verify here (no probe ran, or a MAJOR you could not safely reproduce under execution-safety), so it defers to the sandboxed CI probe. **Do NOT post \`clean\` on an invariant-touching change you did not actually verify.** This is a **self-attested** local review (this session), not independent CI — post it honestly from what you actually found. Skip silently if \`gh\` lacks \`checks: write\`.`
+\`clean\` → passes; \`critical\` → fails in strict mode; \`unverified\` → neutral (not a pass) — use it when a probe/invariant surface could not be verified here, so it defers to CI. **Never post \`clean\` on a change you did not actually verify.** Post honestly from what you found; skip silently if \`gh\` lacks \`checks: write\`.`
       : '';
 
   // 3b (rc.15) — the OPTIONAL design-critic visual pass. Rendered only when the

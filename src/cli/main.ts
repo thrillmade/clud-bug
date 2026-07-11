@@ -126,6 +126,8 @@ function parseArgs(argv) {
     else if (a === '--no-strict') args.strict = false;
     else if (a === '--owner') args.owner = argv[++i];
     else if (a === '--details-url') args.detailsUrl = argv[++i];
+    // Phase Z: notary attestation bundle (JSON path) for `post-check-run`.
+    else if (a === '--bundle') args.bundle = argv[++i];
     else args._.push(a);
   }
   return args;
@@ -229,6 +231,10 @@ Commands:
                         clean|critical|failed --sha <sha> [--critical-count N]
                         [--source local|ci] [--strict|--no-strict] [--dry-run].
                         clean→success, critical+strict→failure, else neutral.
+                        With CLUD_BUG_NOTARY_URL set + --bundle <file>, submits a
+                        notary attestation bundle instead (Phase Z); the notary
+                        issues the check. Falls back to the self-attested post if
+                        the endpoint is unreachable.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
