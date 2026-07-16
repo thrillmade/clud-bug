@@ -79,6 +79,7 @@ clud-bug
 │   ├── init-with-skdd.test.js
 │   ├── inline-threads.test.js
 │   ├── notary-bundle.test.js
+│   ├── notary-submit.test.js
 │   ├── notary-validate.test.js
 │   ├── prompt-builder.test.js
 │   ├── prompts.eval.test.js

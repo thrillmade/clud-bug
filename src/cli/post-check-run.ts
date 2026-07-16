@@ -81,20 +81,88 @@ interface NotaryResult {
   bundle: NotaryBundle | null;
 }
 
+/** Outcome of the `POST /challenge` round-trip that precedes `/notarize`. */
+type ChallengeResult = { nonce: string } | 'rejected' | 'fallback';
+
+/**
+ * Mint the single-use nonce (Z4 ① replay-closure) the notary requires before it
+ * will certify a bundle: `POST {repo, pr, head_sha}` to `/notarize/challenge`
+ * (a sub-path of `/notarize`, matching the server route), expect `{ nonce }`.
+ * Classified like `/notarize` — a 4xx is the server AUTHORITATIVELY
+ * declining (terminal), a 5xx/network error just means the endpoint is DOWN
+ * (fallback to the self-attested check) — EXCEPT 402 (not-entitled): that's not
+ * a decline of THIS bundle, it's "this install can't be notarized at all", so it
+ * gets a loud warning explaining why the check is unnotarized and falls back
+ * rather than blocking the review with a bare rejection.
+ */
+async function fetchChallenge(
+  notaryUrl: string,
+  bundle: NotaryBundle,
+  warn: (m: string) => void,
+): Promise<ChallengeResult> {
+  const url = notaryUrl.replace(/\/+$/, '') + '/notarize/challenge';
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: bundle.repo, pr: bundle.pr, head_sha: bundle.head_sha }),
+    });
+  } catch (e) {
+    warn(`notary challenge endpoint unreachable (${e instanceof Error ? e.message : String(e)}); falling back to the self-attested check.`);
+    return 'fallback';
+  }
+
+  if (res.status === 402) {
+    warn(
+      [
+        'this review is NOT notarized — no independent check verified it; the',
+        'merge check is self-attested only.',
+        'Install the clud-bug App / upgrade to certify: https://cludbug.dev',
+      ].join('\n'),
+    );
+    return 'fallback';
+  }
+  if (notaryResponseIsRejection(res.status)) {
+    warn(`notary declined the challenge (HTTP ${res.status}); not certifying.`);
+    return 'rejected';
+  }
+  if (!res.ok) {
+    warn(`notary challenge endpoint unavailable (HTTP ${res.status}); falling back to the self-attested check.`);
+    return 'fallback';
+  }
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (e) {
+    warn(`notary challenge response was not valid JSON (${e instanceof Error ? e.message : String(e)}); falling back to the self-attested check.`);
+    return 'fallback';
+  }
+  const nonce = body && typeof body === 'object' ? (body as Record<string, unknown>)['nonce'] : undefined;
+  if (typeof nonce !== 'string' || !nonce) {
+    warn('notary challenge response is missing a nonce; falling back to the self-attested check.');
+    return 'fallback';
+  }
+  return { nonce };
+}
+
 /**
  * The notary submit path (Phase Z). Reads + parses the bundle, LOCALLY
  * re-validates it (the handshake — a deterministic program refusing to certify
- * an inconsistent/ungrounded review), then POSTs to the notary. The server (Z4)
- * re-validates ①–⑤ against GitHub and — as SOLE issuer — posts the pinned check.
+ * an inconsistent/ungrounded review), mints a challenge nonce, then POSTs to the
+ * notary. The server (Z4) re-validates ①–⑤ against GitHub and — as SOLE issuer —
+ * posts the pinned check.
  *
  * Outcomes:
  *   'posted'   — the notary accepted; the SERVER owns the check, do not self-post.
  *   'rejected' — the certification is definitively refused (malformed / inconsistent /
- *                ungrounded bundle, OR a server 4xx AUTHORITATIVELY declining). Post
- *                NO check — never a false green off a bad artifact or over a server "no".
- *   'fallback' — the endpoint is DOWN (network error or 5xx), not a verdict; the caller
- *                may self-post the self-attested check (derived from THIS bundle) so local
- *                max mode keeps gating while Z4 is pending.
+ *                ungrounded bundle, OR a server 4xx AUTHORITATIVELY declining, on either
+ *                `/challenge` or `/notarize`). Post NO check — never a false green off a
+ *                bad artifact or over a server "no".
+ *   'fallback' — the endpoint is DOWN (network error or 5xx) or NOT ENTITLED (402), not a
+ *                verdict; the caller may self-post the self-attested check (derived from
+ *                THIS bundle) so local max mode keeps gating while Z4 is pending.
  */
 async function submitToNotary(
   notaryUrl: string,
@@ -133,8 +201,24 @@ async function submitToNotary(
     }
   }
 
-  // Submit. TODO(Z4): the server mints/consumes the nonce, re-fetches GitHub's
-  // ground-truth diff, re-runs ①–⑤, signs, and posts the pinned check.
+  // The notary certifies a PR head (it re-fetches GitHub's PR diff), so a
+  // pr-less bundle (a commit-trigger local pre-notarization, no PR yet) can't be
+  // notarized — don't waste a challenge on a guaranteed 422; self-attest instead.
+  if (bundle.pr == null) {
+    warn('bundle has no PR — the notary certifies PR heads; using the self-attested check.');
+    return { outcome: 'fallback', bundle };
+  }
+
+  // Mint the single-use nonce (① replay-closure) before certifying. A terminal
+  // decline here (bad request / not-entitled) never reaches `/notarize`; only a
+  // minted nonce does.
+  const challenge = await fetchChallenge(notaryUrl, bundle, warn);
+  if (challenge === 'rejected') return { outcome: 'rejected', bundle };
+  if (challenge === 'fallback') return { outcome: 'fallback', bundle };
+  bundle.nonce = challenge.nonce;
+
+  // Submit. The server re-fetches GitHub's ground-truth diff, re-runs ①–⑤,
+  // checks + consumes the nonce, signs, and posts the pinned check.
   const url = notaryUrl.replace(/\/+$/, '') + '/notarize';
   try {
     const res = await fetch(url, {
