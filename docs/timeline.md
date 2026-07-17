@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (24 decisions)
+## 2026-07 (25 decisions)
 
-- **2026-07-16** — chore: bump to 0.7.0-rc.24 (ships the Z4 CLI notary challenge/response handshake) *(chore-bump-rc24)* — [decisions-branches/chore-bump-rc24.md](decisions-branches/chore-bump-rc24.md)
-- *... 22 more decisions ...*
+- **2026-07-16** — Phase ZP2: make the notary default-ON for local max mode (opt-out via .clud-bug.json, not opt-in via env var) *(feat-notary-default-on)* — [decisions-branches/feat-notary-default-on.md](decisions-branches/feat-notary-default-on.md)
+- *... 23 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
