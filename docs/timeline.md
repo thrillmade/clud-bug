@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (26 decisions)
+## 2026-07 (27 decisions)
 
-- **2026-07-17** — ZP2 fix: a degenerate all-slash CLUD_BUG_NOTARY_URL no longer silently disables the notary *(feat-notary-default-on)* — [decisions-branches/feat-notary-default-on.md](decisions-branches/feat-notary-default-on.md)
-- *... 24 more decisions ...*
+- **2026-07-17** — ZP3: route the self-hosted GitHub Action through the notary (build-bundle + base-ref-guarded CI notarize step + init installs both surfaces) *(feat-zp3-action-notary)* — [decisions-branches/feat-zp3-action-notary.md](decisions-branches/feat-zp3-action-notary.md)
+- *... 25 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)

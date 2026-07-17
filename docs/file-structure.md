@@ -66,6 +66,7 @@ clud-bug
 │   ├── agents-md.test.js
 │   ├── audit.test.js
 │   ├── branch-protection.test.js
+│   ├── build-bundle.test.js
 │   ├── check-verdict.test.js
 │   ├── cli.test.js
 │   ├── configure-github.test.js
