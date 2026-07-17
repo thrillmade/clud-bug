@@ -285,14 +285,24 @@ export async function runPostCheckRun(args: PostCheckRunArgs): Promise<void> {
     typeof args.strict === 'boolean' ? args.strict : (manifest as { strictMode?: unknown }).strictMode === true;
 
   // A bundle-fallback self-post reflects what was actually VALIDATED (bundle
-  // verdict + its critical count, local source); otherwise the raw flags.
+  // verdict + its critical count); otherwise the raw flags.
   const verdict = fallbackBundle
     ? fallbackBundle.verdict
     : normalizeVerdict(typeof args.verdict === 'string' ? args.verdict : undefined);
   const criticalCount = fallbackBundle
     ? fallbackBundle.findings.filter((f) => f.severity === 'critical').length
     : Number(args.criticalCount ?? 0) || 0;
-  const source: 'local' | 'ci' = fallbackBundle ? 'local' : args.source === 'local' ? 'local' : 'ci';
+  // Source honors an explicit --source in BOTH paths. On the bundle-fallback
+  // path a CI-originated invocation passes `--source ci` (the Action self-attests
+  // as CI, not local), so only DEFAULT to 'local' there when --source is unset;
+  // the non-bundle path keeps its 'ci'-unless-`--source local` default.
+  const source: 'local' | 'ci' = fallbackBundle
+    ? args.source === 'ci'
+      ? 'ci'
+      : 'local'
+    : args.source === 'local'
+      ? 'local'
+      : 'ci';
   const { conclusion, title, summary } = deriveCheck({ verdict, strictMode, criticalCount, source });
 
   // --- resolve owner/repo (flags, else gh) ------------------------------

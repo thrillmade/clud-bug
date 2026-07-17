@@ -45,18 +45,46 @@ test('init --with-local-review scaffolds the /clud-bug-review slash command', as
   assert.match(body, /repos\/\{owner\}\/\{repo\}\/issues\/<PR_NUMBER>\/comments/);
 });
 
-test('init without --with-local-review does NOT scaffold the slash command', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-nolr-'));
+test('init installs BOTH the commit hook and the slash command by default (ZP3)', async () => {
+  // Phase ZP3: --with-hooks is now ON by default (it implies --with-local-review),
+  // so a bare `init` installs the commit-review hook AND the /clud-bug-review
+  // slash command alongside the GitHub Action enforcer.
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-default-'));
   await mkdir(join(dir, '.git'), { recursive: true });
   const r = runInit(dir, []);
   assert.equal(r.status, 0, r.stderr);
-  let exists = true;
-  try {
-    await access(join(dir, '.claude', 'commands', 'clud-bug-review.md'));
-  } catch {
-    exists = false;
+  // slash command scaffolded (withHooks → withLocalReview)
+  await access(join(dir, '.claude', 'commands', 'clud-bug-review.md'));
+  // commit-review hook merged into settings.json
+  const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
+  assert.equal(settings.hooks.PostToolUse[0].hooks[0].type, 'command');
+});
+
+test('init --no-hooks skips the commit hook (and the implied slash command)', async () => {
+  // The negation flag installs only the GitHub Action enforcer (+ skills) —
+  // no commit hook, and without withHooks the slash command isn't implied.
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-nohooks-'));
+  await mkdir(join(dir, '.git'), { recursive: true });
+  const r = runInit(dir, ['--no-hooks']);
+  assert.equal(r.status, 0, r.stderr);
+  for (const p of [
+    join(dir, '.claude', 'settings.json'),
+    join(dir, '.claude', 'commands', 'clud-bug-review.md'),
+  ]) {
+    let exists = true;
+    try {
+      await access(p);
+    } catch {
+      exists = false;
+    }
+    assert.equal(exists, false, `${p} should not exist under --no-hooks`);
   }
-  assert.equal(exists, false, 'slash command should not exist without the flag');
+});
+
+test('--no-hooks is advertised in --help', () => {
+  const r = spawnSync(process.execPath, [CLI, '--help'], { encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /--no-hooks/);
 });
 
 test('init --with-hooks scaffolds the native commit-review hook + the slash command', async () => {

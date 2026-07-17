@@ -296,6 +296,40 @@ jobs:
 
           $CALIBRATION"
 
+      # Phase ZP3 — route this Action's review through the NOTARY.
+      # See workflow.yml.tmpl for full design notes (base-ref trust guard;
+      # continue-on-error coexists with the strict-mode-gate backstop).
+      - name: Notarize review
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -uo pipefail
+
+          # strictMode from the BASE ref's manifest — a PR can't opt itself out
+          # (or disable the notary) by editing its own HEAD .clud-bug.json.
+          STRICT_FLAG=--no-strict
+          if git show "origin/${BASE_REF}:.claude/skills/.clud-bug.json" > /tmp/base-manifest.json 2>/dev/null; then
+            if jq -e '.strictMode == true' /tmp/base-manifest.json > /dev/null 2>&1; then
+              STRICT_FLAG=--strict
+            fi
+          fi
+
+          printf '%s\n' "$STRUCTURED" \
+            | npx --yes clud-bug@{{CLUD_BUG_VERSION}} build-bundle \
+                --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" \
+                --recipe-version "ci-{{CLUD_BUG_VERSION}}" \
+            > bundle.json
+
+          npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-check-run \
+            --sha "$HEAD_SHA" --bundle bundle.json --source ci "$STRICT_FLAG"
+
       # Wave 5a (D.2.X) — see workflow.yml.tmpl for design notes.
       - name: Post inline review threads
         if: success() && steps.clud-bug-review.outputs.structured_output != ''

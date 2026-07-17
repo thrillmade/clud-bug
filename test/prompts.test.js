@@ -83,6 +83,32 @@ test('reviewPrompt includes the core review-discipline sections', () => {
   }
 });
 
+test('reviewPrompt instructs the CI review to ground every critical (notary attestation)', () => {
+  // Phase ZP3 — the CI review's structured_output is assembled into a notary
+  // attestation bundle; validateGrounding REJECTS an ungrounded critical, which
+  // would notary-reject the whole bundle. So the prompt MUST tell the model to
+  // populate grounding + grounding_kind on every critical, naming the three forms.
+  const out = reviewPrompt({ projectDescription: 'p' });
+  assert.match(out, /Grounding \(REQUIRED on every 🔴 critical/);
+  assert.match(out, /\bgrounding\b/);
+  assert.match(out, /\bgrounding_kind\b/);
+  assert.match(out, /notary/i);
+  // The three grounding forms are all named.
+  for (const kind of ['quote', 'reproduction', 'invariant']) {
+    assert.match(out, new RegExp(`\`${kind}\``), `missing grounding form: ${kind}`);
+  }
+});
+
+test('rendered workflow templates carry the grounding instruction into the CI prompt', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: templateLanguage(tmpl) }),
+    });
+    assert.match(out, /Grounding \(REQUIRED on every 🔴 critical/, `${tmpl}: missing grounding block`);
+    assert.match(out, /grounding_kind/, `${tmpl}: missing grounding_kind`);
+  }
+});
+
 // --- 0.A.3: per-section budgets (v0.6.4) ---
 // The prompt instructs Claude to cap per-PR fetches with `head -c
 // $MAX_DIFF_BYTES` etc. Combined with the env vars + Bash(head:*)
