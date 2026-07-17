@@ -44,7 +44,10 @@ interface BuildBundleArgs {
 
 /** Map one review finding (schema shape) to a bundle finding (wire shape). */
 function toNotaryFinding(f: ReviewFinding, severity: NotarySeverity): NotaryFinding {
-  const finding: NotaryFinding = { severity, summary: f.summary };
+  const finding: NotaryFinding = {
+    severity,
+    summary: typeof f.summary === 'string' ? f.summary : '',
+  };
   if (typeof f.file === 'string' && f.file) finding.file = f.file;
   if (typeof f.line === 'number' && Number.isInteger(f.line) && f.line >= 1) finding.line = f.line;
   if (typeof f.grounding === 'string' && f.grounding) finding.grounding = f.grounding;
@@ -62,9 +65,13 @@ export function reviewDataToBundle(
   data: Partial<ReviewData>,
   meta: { repo: string; pr?: number; headSha: string; recipeVersion: string; coverage: string[] },
 ): NotaryBundle {
-  const critical = Array.isArray(data.critical_findings) ? data.critical_findings : [];
-  const minor = Array.isArray(data.minor_findings) ? data.minor_findings : [];
-  const preexisting = Array.isArray(data.preexisting_findings) ? data.preexisting_findings : [];
+  // Guard against a malformed bucket: a null/non-object entry (a lying or
+  // truncated structured_output) must be SKIPPED, not crash the transform.
+  const isFinding = (f: unknown): f is ReviewFinding => !!f && typeof f === 'object';
+  const bucket = (v: unknown): ReviewFinding[] => (Array.isArray(v) ? v.filter(isFinding) : []);
+  const critical = bucket(data.critical_findings);
+  const minor = bucket(data.minor_findings);
+  const preexisting = bucket(data.preexisting_findings);
 
   const findings: NotaryFinding[] = [
     ...critical.map((f) => toNotaryFinding(f, 'critical')),

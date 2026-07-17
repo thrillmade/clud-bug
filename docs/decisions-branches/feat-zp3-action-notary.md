@@ -11,3 +11,16 @@
 
 ---
 
+## 2026-07-17 09:22 - ZP3 fix (critical): base-ref-guard the notary toggle — a PR could self-disable independent certification from its own HEAD
+
+**Reasoning:** Adversarial review (opus, triangulated with an orchestrator spot-check) confirmed: the CI Notarize step base-ref-guarded strictMode but NOT the notary toggle — post-check-run resolved 'notary' from readManifest(cwd) (the PR HEAD working tree), so a PR setting notary:false in its own .clud-bug.json skipped /notarize entirely and self-attested a non-blocking neutral check, defeating the notary layer ZP3 adds. Fix mirrors --strict/--no-strict exactly: an explicit --notary/--no-notary flag OVERRIDES the manifest (readNotaryConfig(manifest, override)); the workflow derives NOTARY_FLAG from the BASE ref alongside STRICT_FLAG. Also guards build-bundle against a null/non-object finding entry (adversarial review reproduced a crash), and the workflow comment's '(or disable the notary)' claim is now actually TRUE.
+
+**Alternatives considered:** Change readNotaryConfig precedence so env overrides the manifest opt-out (rejected: breaks the intended LOCAL hard-opt-out semantics; the explicit flag is cleaner and mirrors --strict)
+
+**Implications:**
+- Local (non-CI) behavior UNCHANGED — the manifest notary opt-out is only overridden by the explicit flag CI passes from the base ref
+- +4 tests (override precedence x3 + build-bundle null-guard); 1009 pass, fixtures 5/5, actionlint clean
+- Pulls the notary half of ZP4 (base-ref parity) into ZP3 where it belongs
+
+---
+

@@ -52,6 +52,19 @@ describe('reviewDataToBundle', () => {
     expect(b.findings[0]).toMatchObject({ severity: 'critical', summary: 'c1', file: 'a.ts', line: 1 });
   });
 
+  it('skips null/non-object finding entries (and a non-array bucket) instead of crashing', () => {
+    const data = {
+      // Malformed / truncated structured_output: null, a number, a non-array bucket.
+      critical_findings: [null, { skill: 's', summary: 'real' }, 42],
+      minor_findings: [undefined],
+      preexisting_findings: 'not-an-array',
+    };
+    const b = reviewDataToBundle(data, meta); // must NOT throw
+    expect(b.findings).toHaveLength(1);
+    expect(b.findings[0]).toMatchObject({ severity: 'critical', summary: 'real' });
+    expect(b.verdict).toBe('critical');
+  });
+
   it('carries grounding + grounding_kind through onto critical findings', () => {
     const data = {
       critical_findings: [

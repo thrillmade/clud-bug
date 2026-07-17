@@ -5,7 +5,11 @@
 // Usage:
 //   clud-bug post-check-run --sha <sha> --verdict clean|critical|failed|unverified \
 //     [--critical-count N] [--source local|ci] [--strict|--no-strict] \
-//     [--owner O --repo R] [--details-url URL] [--dry-run]
+//     [--notary|--no-notary] [--owner O --repo R] [--details-url URL] [--dry-run]
+//
+// --notary / --no-notary OVERRIDE the repo manifest's notary setting (mirrors
+// --strict/--no-strict). CI derives this from the BASE ref so a PR cannot
+// self-disable independent notary certification via its own HEAD .clud-bug.json.
 //
 // Verdict → conclusion is the shared `deriveCheck` brain. strictMode defaults to
 // the repo's `.clud-bug.json` (so `critical` blocks only where the repo opted in)
@@ -37,6 +41,10 @@ interface PostCheckRunArgs {
   criticalCount?: number;
   source?: string;
   strict?: boolean;
+  /** Explicit notary enable/disable that OVERRIDES the manifest (mirrors
+   *  --strict/--no-strict). CI derives this from the BASE ref so a PR cannot
+   *  self-disable the notary by editing its own HEAD `.clud-bug.json`. */
+  notary?: boolean;
   owner?: string;
   repo?: string;
   detailsUrl?: string;
@@ -271,7 +279,10 @@ export async function runPostCheckRun(args: PostCheckRunArgs): Promise<void> {
   // (endpoint unreachable / not entitled) continues to the self-attested
   // self-post below; 'posted'/'rejected' are terminal.
   let fallbackBundle: NotaryBundle | null = null;
-  const notaryUrl = readNotaryConfig(manifest);
+  // `args.notary` (from --notary/--no-notary) OVERRIDES the manifest when set —
+  // CI passes it derived from the BASE ref so a PR cannot self-disable the
+  // notary via its own HEAD manifest. Unset → local default-on precedence.
+  const notaryUrl = readNotaryConfig(manifest, args.notary);
   if (notaryUrl && typeof args.bundle === 'string' && args.bundle && !args.dryRun) {
     const { outcome, bundle } = await submitToNotary(notaryUrl, args.bundle, warn);
     if (outcome !== 'fallback') return;

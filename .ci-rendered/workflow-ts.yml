@@ -690,12 +690,17 @@ jobs:
         run: |
           set -uo pipefail
 
-          # strictMode from the BASE ref's manifest — a PR can't opt itself out
-          # (or disable the notary) by editing its own HEAD .clud-bug.json.
+          # strictMode + notary enablement from the BASE ref's manifest — a PR
+          # can't opt itself out of strict mode OR disable the notary by editing
+          # its own HEAD .clud-bug.json. Unreadable base → --no-strict + --notary.
           STRICT_FLAG=--no-strict
+          NOTARY_FLAG=--notary
           if git show "origin/${BASE_REF}:.claude/skills/.clud-bug.json" > /tmp/base-manifest.json 2>/dev/null; then
             if jq -e '.strictMode == true' /tmp/base-manifest.json > /dev/null 2>&1; then
               STRICT_FLAG=--strict
+            fi
+            if jq -e '.notary == false' /tmp/base-manifest.json > /dev/null 2>&1; then
+              NOTARY_FLAG=--no-notary
             fi
           fi
 
@@ -706,7 +711,7 @@ jobs:
             > bundle.json
 
           npx --yes clud-bug@0.7.0-rc.24 post-check-run \
-            --sha "$HEAD_SHA" --bundle bundle.json --source ci "$STRICT_FLAG"
+            --sha "$HEAD_SHA" --bundle bundle.json --source ci "$STRICT_FLAG" "$NOTARY_FLAG"
 
       # Wave 5a (D.2.X) — see workflow.yml.tmpl for design notes.
       - name: Post inline review threads

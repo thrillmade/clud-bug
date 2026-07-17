@@ -133,6 +133,8 @@ function parseArgs(argv) {
     else if (a === '--source') args.source = argv[++i];
     else if (a === '--strict') args.strict = true;
     else if (a === '--no-strict') args.strict = false;
+    else if (a === '--notary') args.notary = true;
+    else if (a === '--no-notary') args.notary = false;
     else if (a === '--owner') args.owner = argv[++i];
     else if (a === '--details-url') args.detailsUrl = argv[++i];
     // Phase Z: notary attestation bundle (JSON path) for `post-check-run`.
@@ -240,7 +242,8 @@ Commands:
   post-check-run        Post the \`clud-bug-review\` GitHub check so branch
                         protection can gate the merge (H3). --verdict
                         clean|critical|failed --sha <sha> [--critical-count N]
-                        [--source local|ci] [--strict|--no-strict] [--dry-run].
+                        [--source local|ci] [--strict|--no-strict]
+                        [--notary|--no-notary] [--dry-run].
                         clean→success, critical+strict→failure, else neutral.
                         With CLUD_BUG_NOTARY_URL set + --bundle <file>, submits a
                         notary attestation bundle instead (Phase Z); the notary

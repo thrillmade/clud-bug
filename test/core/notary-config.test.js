@@ -78,4 +78,28 @@ describe('readNotaryConfig', () => {
     expect(readNotaryConfig({ notary: 0 })).toBe(DEFAULT_NOTARY_URL);
     expect(readNotaryConfig({ notary: null })).toBe(DEFAULT_NOTARY_URL);
   });
+
+  describe('explicit override (--notary / --no-notary → the CI base-ref guard)', () => {
+    it('override=false forces self-attest (null) regardless of manifest/env', () => {
+      delete process.env[ENV_KEY];
+      expect(readNotaryConfig({}, false)).toBeNull();
+      expect(readNotaryConfig({ notary: true }, false)).toBeNull();
+    });
+
+    it('override=true forces the notary ON, IGNORING a manifest `notary:false` — a PR head cannot self-disable in CI', () => {
+      delete process.env[ENV_KEY];
+      // The security fix: CI derives the flag from the BASE ref and passes
+      // override=true, so a PR that sets notary:false in its own HEAD manifest
+      // still gets independently certified.
+      expect(readNotaryConfig({ notary: false }, true)).toBe(DEFAULT_NOTARY_URL);
+      process.env[ENV_KEY] = 'https://staging.example.com';
+      expect(readNotaryConfig({ notary: false }, true)).toBe('https://staging.example.com');
+    });
+
+    it('override=undefined preserves local precedence (manifest `notary:false` honored)', () => {
+      delete process.env[ENV_KEY];
+      expect(readNotaryConfig({ notary: false }, undefined)).toBeNull();
+      expect(readNotaryConfig({}, undefined)).toBe(DEFAULT_NOTARY_URL);
+    });
+  });
 });
