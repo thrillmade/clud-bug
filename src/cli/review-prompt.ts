@@ -18,6 +18,7 @@ import {
   readInvariantsConfig,
   shouldRunProbes,
   readReviewContext,
+  readNotaryConfig,
   parseFrontmatter,
   type ReviewPlan,
   type ReviewPlanSkill,
@@ -137,8 +138,17 @@ export function renderReviewRecipe(input: {
    * execution-safety are deferred to the agent at runtime.
    */
   probes?: { invariants: Invariant[] };
+  /**
+   * Resolved notary origin (Phase ZP2 — `readNotaryConfig`'s result), computed
+   * by the caller so §5 renders deterministically instead of asking the agent
+   * to infer it: a non-null/non-empty URL → this repo is notary-enabled,
+   * render ONLY the bundle-submit instruction; `null`/absent → the repo
+   * opted out (`.clud-bug.json` `notary: false`), render ONLY the
+   * self-attest instruction. PR-trigger only (§5 doesn't render otherwise).
+   */
+  notaryUrl?: string | null;
 }): string {
-  const { plan, trigger, design, reviewContext, probes } = input;
+  const { plan, trigger, design, reviewContext, probes, notaryUrl } = input;
 
   // H2 — the contextual layer. Three parts, each trusted differently:
   //   1. trusted standing instructions from `.clud-bug.json` (if any);
@@ -253,31 +263,46 @@ export function renderReviewRecipe(input: {
       : 'Surface the findings into the session, and — if an open PR exists — post or edit (in ' +
         'place, by integer comment id) the clud-bug summary comment on it.';
 
-  // H3 + Phase Z — the merge-gate step (PR only). clud-bug is a NOTARY: a green
-  // `clud-bug-review` check is CERTIFIED against the diff, not merely self-asserted.
-  // When the repo is notary-enabled (`CLUD_BUG_NOTARY_URL` set), the agent submits
-  // an attestation BUNDLE — clud-bug locally re-checks it (coverage/grounding/
-  // consistency; the handshake) and the notary issues the check after re-validating
-  // against GitHub's ground truth. Absent a notary, it falls back to the self-attested
-  // post (a developer-local signal, never the authoritative gate for untrusted authors).
-  // Commit/push triggers skip this (no PR head to anchor a check to).
+  // H3 + Phase Z/ZP2 — the merge-gate step (PR only). clud-bug is a NOTARY: a
+  // green `clud-bug-review` check is CERTIFIED against the diff, not merely
+  // self-asserted. ZP2 made the notary DEFAULT-ON, so §5 no longer asks the
+  // agent to infer whether it's enabled (an env var set at init-time can't
+  // reliably reach this later, independent CLI call anyway) — the caller
+  // resolves `notaryUrl` via `readNotaryConfig` and this renders
+  // DETERMINISTICALLY from that result: exactly one of the two forms below,
+  // never both, never a conditional the agent has to evaluate itself.
+  // Commit/push triggers skip this entirely (no PR head to anchor a check to).
+  const CERTIFY_HEADER =
+    '\n\n## 5. Certify the review (merge-gate check)\n' +
+    'clud-bug is a **notary** — a green `clud-bug-review` is CERTIFIED, not self-asserted. ' +
+    'Your review must be validatable: every 🔴 critical carries a `grounding` span that appears ' +
+    'verbatim in the diff (or a reproduction / named invariant), and you list every changed file ' +
+    'you covered.';
+  const CERTIFY_FOOTER =
+    '`clean` → passes; `critical` → fails in strict mode; `unverified` → neutral (not a pass) — ' +
+    'use it when a probe/invariant surface could not be verified here, so it defers to CI. ' +
+    '**Never post `clean` on a change you did not actually verify.** Post honestly from what you ' +
+    'found; skip silently if `gh` lacks `checks: write`.';
   const gateStep =
     trigger === 'pr'
-      ? `\n\n## 5. Certify the review (merge-gate check)
-clud-bug is a **notary** — a green \`clud-bug-review\` is CERTIFIED, not self-asserted. Your review must be validatable: every 🔴 critical carries a \`grounding\` span that appears verbatim in the diff (or a reproduction / named invariant), and you list every changed file you covered.
+      ? notaryUrl
+        ? `${CERTIFY_HEADER}
 
-**If this repo is notary-enabled** (\`CLUD_BUG_NOTARY_URL\` is set), write your findings as an attestation bundle and submit it — clud-bug re-checks it locally and the notary validates it against GitHub before issuing the check:
+This repo is **notary-enabled** (certifying via \`${notaryUrl}\`) — submit the attestation bundle; clud-bug locally re-checks it (coverage/grounding/consistency; the handshake) and the notary validates it against GitHub's ground truth before issuing the check:
 \`\`\`bash
 # bundle.json = { "repo": "<owner>/<repo>", "pr": <N>, "head_sha": "<sha>", "verdict": "clean|critical|unverified",
 #   "findings": [ { "severity": "critical", "file": "...", "line": N, "summary": "...", "grounding": "<verbatim diff line>", "grounding_kind": "quote" } ],
 #   "coverage": ["<every changed file you reviewed>"], "recipe_version": "local" }
 clud-bug post-check-run --sha "$(git rev-parse HEAD)" --bundle bundle.json
 \`\`\`
-**Otherwise** post the self-attested check (a local signal, not independent CI):
+${CERTIFY_FOOTER}`
+        : `${CERTIFY_HEADER}
+
+This repo opted out of notarization (\`.clud-bug.json\` sets \`"notary": false\`) — post the labeled **self-attested** check (a local signal, not independent CI):
 \`\`\`bash
 clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical|unverified> --critical-count <N> --source local
 \`\`\`
-\`clean\` → passes; \`critical\` → fails in strict mode; \`unverified\` → neutral (not a pass) — use it when a probe/invariant surface could not be verified here, so it defers to CI. **Never post \`clean\` on a change you did not actually verify.** Post honestly from what you found; skip silently if \`gh\` lacks \`checks: write\`.`
+${CERTIFY_FOOTER}`
       : '';
 
   // 3b (rc.15) — the OPTIONAL design-critic visual pass. Rendered only when the
@@ -460,10 +485,16 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
     ? { invariants: invariantsConfig.invariants }
     : undefined;
 
+  // Phase ZP2 — resolve the notary origin (or opt-out) ONCE here so §5
+  // renders deterministically; see `readNotaryConfig` for the precedence
+  // (repo opt-out > CLUD_BUG_NOTARY_URL override > default-on hosted notary).
+  const notaryUrl = readNotaryConfig(manifest);
+
   process.stdout.write(
     renderReviewRecipe({
       plan,
       trigger,
+      notaryUrl,
       ...(reviewContext ? { reviewContext } : {}),
       ...(design ? { design } : {}),
       ...(probes ? { probes } : {}),

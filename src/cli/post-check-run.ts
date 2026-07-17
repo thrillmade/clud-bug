@@ -25,6 +25,7 @@ import {
   validateConsistency,
   splitUnifiedDiff,
   notaryResponseIsRejection,
+  readNotaryConfig,
   type NotaryBundle,
   type DiffFile,
 } from '../core/index.js';
@@ -256,13 +257,21 @@ export async function runPostCheckRun(args: PostCheckRunArgs): Promise<void> {
     sha = r.out;
   }
 
-  // --- Notary submit path (Phase Z) — the un-forgeable route -------------
-  // When CLUD_BUG_NOTARY_URL is set and a --bundle is supplied, submit an
-  // attestation bundle: the CLI locally re-checks it (the handshake) and the
-  // notary (Z4) issues the pinned check. Only 'fallback' (endpoint unreachable)
-  // continues to the self-attested self-post below; 'posted'/'rejected' are terminal.
+  // --- load the repo manifest once — both the notary resolution and
+  // strictMode read it, so it's fetched a single time and shared. --------
+  const manifest = await readManifest(join(cwd, '.claude', 'skills'));
+
+  // --- Notary submit path (Phase Z / ZP2) — the un-forgeable route -------
+  // Default-ON (ZP2, CEO decision): `readNotaryConfig` resolves the hosted
+  // notary origin unless the repo opted out (`.clud-bug.json` `notary: false`)
+  // or CLUD_BUG_NOTARY_URL overrides it — `null` means self-attest, exactly
+  // as an unset env var did pre-ZP2. When a URL resolves and a --bundle is
+  // supplied, submit an attestation bundle: the CLI locally re-checks it (the
+  // handshake) and the notary (Z4) issues the pinned check. Only 'fallback'
+  // (endpoint unreachable / not entitled) continues to the self-attested
+  // self-post below; 'posted'/'rejected' are terminal.
   let fallbackBundle: NotaryBundle | null = null;
-  const notaryUrl = process.env.CLUD_BUG_NOTARY_URL?.trim();
+  const notaryUrl = readNotaryConfig(manifest);
   if (notaryUrl && typeof args.bundle === 'string' && args.bundle && !args.dryRun) {
     const { outcome, bundle } = await submitToNotary(notaryUrl, args.bundle, warn);
     if (outcome !== 'fallback') return;
@@ -272,17 +281,8 @@ export async function runPostCheckRun(args: PostCheckRunArgs): Promise<void> {
   }
 
   // --- strictMode: explicit flag wins, else the repo manifest -----------
-  let strictMode = false;
-  if (typeof args.strict === 'boolean') {
-    strictMode = args.strict;
-  } else {
-    try {
-      const manifest = await readManifest(join(cwd, '.claude', 'skills'));
-      strictMode = (manifest as { strictMode?: unknown }).strictMode === true;
-    } catch {
-      /* no manifest → advisory */
-    }
-  }
+  const strictMode =
+    typeof args.strict === 'boolean' ? args.strict : (manifest as { strictMode?: unknown }).strictMode === true;
 
   // A bundle-fallback self-post reflects what was actually VALIDATED (bundle
   // verdict + its critical count, local source); otherwise the raw flags.

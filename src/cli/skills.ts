@@ -245,6 +245,11 @@ export interface ManifestEntry {
 export interface Manifest {
   version: number;
   installed: ManifestEntry[];
+  // Phase ZP2: explicit repo opt-out of the default-on notary. `false` means
+  // "self-attest, never notarize"; absent/anything else defers to
+  // `readNotaryConfig`'s env-var-then-default resolution. Declared here (not
+  // just read ad hoc) so the manifest shape documents the field.
+  notary?: boolean;
   // Caller-set fields (pinVersion, lastUpdate, lastUpdateVersion) survive
   // merges via spread; type as an open record to keep extensibility.
   [key: string]: unknown;

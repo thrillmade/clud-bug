@@ -172,6 +172,34 @@ describe('renderReviewRecipe', () => {
     expect(withoutDesign).not.toMatch(/Design-critic/);
   });
 
+  it('§5 (ZP2, default-on notary): renders ONLY the notary-submit form when notaryUrl resolves, ONLY the self-attest form when it does not, and never the agent-inference env-var language', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
+
+    const withNotary = renderReviewRecipe({ plan, trigger: 'pr', notaryUrl: 'https://app.cludbug.dev' });
+    expect(withNotary).toMatch(/notary-enabled/i);
+    expect(withNotary).toMatch(/certifying via `https:\/\/app\.cludbug\.dev`/);
+    expect(withNotary).toMatch(/--bundle bundle\.json/);
+    expect(withNotary).not.toMatch(/opted out of notarization/i);
+    expect(withNotary).not.toMatch(/--verdict <clean\|critical\|unverified> --critical-count <N> --source local/);
+
+    const selfAttest = renderReviewRecipe({ plan, trigger: 'pr', notaryUrl: null });
+    expect(selfAttest).toMatch(/opted out of notarization/i);
+    expect(selfAttest).toMatch(/--verdict <clean\|critical\|unverified> --critical-count <N> --source local/);
+    expect(selfAttest).not.toMatch(/notary-enabled/i);
+    expect(selfAttest).not.toMatch(/--bundle bundle\.json/);
+
+    // §5 must render deterministically from the caller-resolved value — never
+    // ask the agent to infer notary status from the env var itself.
+    expect(withNotary).not.toMatch(/CLUD_BUG_NOTARY_URL/);
+    expect(selfAttest).not.toMatch(/CLUD_BUG_NOTARY_URL/);
+
+    // Both forms still keep the shared certify-honestly framing.
+    for (const recipe of [withNotary, selfAttest]) {
+      expect(recipe).toMatch(/## 5\. Certify the review/);
+      expect(recipe).toMatch(/Never post `clean` on a change you did not actually verify/);
+    }
+  });
+
   it('renders the invariant-probe step (§3c) only when probes are passed (R6, #87)', () => {
     const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
     const withProbes = renderReviewRecipe({
@@ -277,5 +305,53 @@ describe('review-prompt verb (integration)', () => {
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/unrecognized --trigger/i);
     expect(r.stdout).toMatch(/git show[^\n]*HEAD/);
+  });
+
+  // ZP2: local max mode certifies via the hosted notary by DEFAULT — no
+  // `.clud-bug.json` config and no CLUD_BUG_NOTARY_URL override still yields
+  // the notary-submit form of §5, not the pre-ZP2 opt-in self-attest-only.
+  it('ZP2: a pr-trigger recipe defaults to the notary-submit form of §5 (no config, no env override)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp4-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(join(skillsDir, '.clud-bug.json'), JSON.stringify({ version: 1, installed: [] }));
+
+    // Explicitly unset the override so this test can't accidentally pass
+    // (or fail) depending on the outer shell's environment.
+    const { CLUD_BUG_NOTARY_URL: _unused, ...envWithoutOverride } = process.env;
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'pr'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: envWithoutOverride,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/notary-enabled/i);
+    expect(r.stdout).toMatch(/certifying via `https:\/\/app\.cludbug\.dev`/);
+    expect(r.stdout).toMatch(/--bundle bundle\.json/);
+    expect(r.stdout).not.toMatch(/opted out of notarization/i);
+  });
+
+  it('ZP2: `"notary": false` in .clud-bug.json opts the pr-trigger recipe out to the self-attest form of §5', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp5-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(
+      join(skillsDir, '.clud-bug.json'),
+      JSON.stringify({ version: 1, installed: [], notary: false }),
+    );
+
+    // Even with an env override present, the repo's explicit opt-out wins.
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'pr'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...process.env, CLUD_BUG_NOTARY_URL: 'https://staging.example.com' },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/opted out of notarization/i);
+    expect(r.stdout).toMatch(/--verdict <clean\|critical\|unverified> --critical-count <N> --source local/);
+    expect(r.stdout).not.toMatch(/notary-enabled/i);
+    expect(r.stdout).not.toMatch(/--bundle bundle\.json/);
   });
 });
