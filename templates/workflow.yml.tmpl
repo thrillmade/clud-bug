@@ -516,6 +516,65 @@ jobs:
 
           $CALIBRATION"
 
+      # Phase ZP3 — route this self-hosted Action's review through the NOTARY.
+      #
+      # Transform the SAME structured_output the render step consumed into a
+      # notary attestation bundle (`build-bundle`: flattens the finding buckets,
+      # derives the verdict from the critical count, derives coverage from a
+      # fresh `gh pr diff --name-only`), then submit it via `post-check-run
+      # --bundle`. With CLUD_BUG_NOTARY_URL resolved (default-on since ZP2), the
+      # CLI POSTs the bundle to the notary, which re-validates it against
+      # GitHub's ground-truth diff and — as the SOLE issuer — posts the pinned
+      # `clud-bug-review` check. If the endpoint is unreachable, post-check-run
+      # falls back to a self-attested check tagged `--source ci`.
+      #
+      # SECURITY — base-ref trust guard: strictMode is resolved from the BASE
+      # ref's `.clud-bug.json` (same discipline as the strict-mode-gate + Formal
+      # review steps), NOT the PR's HEAD, so a PR cannot set `strictMode: false`
+      # (or `notary: false`) in its own head to defang the merge gate.
+      #
+      # `continue-on-error: true` — notarization must NEVER be the source of job
+      # failure. The Strict-mode gate step below remains the AUTHORITATIVE merge
+      # backstop; this step deliberately does NOT double-gate it (a notary
+      # outage or fallback can't turn a clean review red on its own).
+      - name: Notarize review
+        if: success() && steps.clud-bug-review.outputs.structured_output != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -uo pipefail
+
+          # Resolve strictMode AND notary enablement from the BASE ref's
+          # manifest — a PR cannot opt itself out of strict mode OR disable the
+          # notary by editing its own HEAD .clud-bug.json. Best-effort: an
+          # unreadable base manifest falls through to --no-strict + --notary
+          # (fail SAFE toward independent certification).
+          STRICT_FLAG=--no-strict
+          NOTARY_FLAG=--notary
+          if git show "origin/${BASE_REF}:.claude/skills/.clud-bug.json" > /tmp/base-manifest.json 2>/dev/null; then
+            if jq -e '.strictMode == true' /tmp/base-manifest.json > /dev/null 2>&1; then
+              STRICT_FLAG=--strict
+            fi
+            if jq -e '.notary == false' /tmp/base-manifest.json > /dev/null 2>&1; then
+              NOTARY_FLAG=--no-notary
+            fi
+          fi
+
+          printf '%s\n' "$STRUCTURED" \
+            | npx --yes clud-bug@{{CLUD_BUG_VERSION}} build-bundle \
+                --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" \
+                --recipe-version "ci-{{CLUD_BUG_VERSION}}" \
+            > bundle.json
+
+          npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-check-run \
+            --sha "$HEAD_SHA" --bundle bundle.json --source ci "$STRICT_FLAG" "$NOTARY_FLAG"
+
       # v0.7.0-rc.7 / Wave 5a (D.2.X): post per-finding inline review
       # threads alongside the summary comment. Each thread is anchored
       # to a file + line in the diff and is a first-class GitHub review

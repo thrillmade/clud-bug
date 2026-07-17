@@ -36,9 +36,24 @@ export const DEFAULT_NOTARY_URL = 'https://app.cludbug.dev';
  * callers' `+ '/notarize'` / `+ '/notarize/challenge'` path-joins stay
  * correct without each call site re-normalizing.
  */
-export function readNotaryConfig(manifest: unknown): string | null {
-  const raw = (manifest as { notary?: unknown } | null | undefined)?.notary;
-  if (raw === false) return null;
+export function readNotaryConfig(
+  manifest: unknown,
+  override?: boolean,
+): string | null {
+  // An EXPLICIT override (the CLI `--notary` / `--no-notary` flag) WINS over the
+  // manifest, mirroring how `--strict` / `--no-strict` override
+  // manifest.strictMode. CI derives notary enablement from the BASE ref and
+  // passes it here, so a PR CANNOT self-disable independent certification by
+  // setting `"notary": false` in its own HEAD `.clud-bug.json`. Absent an
+  // override (undefined), the local default-on precedence below applies.
+  if (override === false) return null;
+
+  if (override !== true) {
+    // Local precedence: a maintainer-committed `notary: false` opts out. Only
+    // reached when no explicit flag forced the notary on.
+    const raw = (manifest as { notary?: unknown } | null | undefined)?.notary;
+    if (raw === false) return null;
+  }
 
   const envUrl = process.env.CLUD_BUG_NOTARY_URL?.trim();
   if (envUrl) {

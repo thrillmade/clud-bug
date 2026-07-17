@@ -85,4 +85,20 @@ describe('post-check-run --dry-run', () => {
   it('critical + --no-strict → neutral (advisory)', () => {
     expect(dryRun(['--verdict', 'critical', '--no-strict']).stdout).toMatch(/conclusion=neutral/);
   });
+
+  // Phase ZP3 — the CI-originated notarize step passes `--source ci`. The source
+  // must be honored (not hard-coded), so the self-attested fallback a CI run
+  // posts is tagged `ci`, not `local`. Dry-run surfaces the resolved source.
+  describe('--source is honored (ZP3)', () => {
+    it('defaults to ci when --source is unset', () => {
+      expect(dryRun(['--verdict', 'clean']).stdout).toMatch(/source=ci\b/);
+    });
+    it('--source ci → source=ci', () => {
+      expect(dryRun(['--verdict', 'clean', '--source', 'ci']).stdout).toMatch(/source=ci\b/);
+    });
+    it('--source local → source=local (adds the self-attested note)', () => {
+      const out = dryRun(['--verdict', 'clean', '--source', 'local']).stdout;
+      expect(out).toMatch(/source=local\b/);
+    });
+  });
 });

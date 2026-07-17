@@ -33,6 +33,7 @@ import { renderAuditHeader } from '../core/audit.js';
 import { runUpdate } from './update.js';
 import { runReviewPrompt } from './review-prompt.js';
 import { runPostCheckRun } from './post-check-run.js';
+import { runBuildBundle } from './build-bundle.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from './edit-workflow.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
 import { detectRepo, detectDefaultBranch, getProtectionState, enableConversationResolution } from './branch-protection.js';
@@ -69,7 +70,12 @@ function parseArgs(argv) {
     // .claude/commands/clud-bug-review.md so `/clud-bug-review` works in a
     // Claude Code session (reviews the current PR with the session's tokens).
     withLocalReview: false,
-    withHooks: false,
+    // Phase ZP3: `clud-bug init` now installs BOTH the max-mode commit hook AND
+    // the GitHub Action enforcer by DEFAULT (was off-by-default) — the two are
+    // complementary (the hook reviews on your session's subscription at commit
+    // time; the Action gates the merge on CI). Opt out of the hook with
+    // `--no-hooks`. `--local-only` (max mode, no Action) still forces it on.
+    withHooks: true,
     // rc.16: `clud-bug init --with-design` installs the design-critic kit
     // (4 `kind: design` skills) and flips the off-by-default `design` block to
     // enabled so the visual review lens runs (local recipe + hosted bot).
@@ -110,6 +116,9 @@ function parseArgs(argv) {
     else if (a === '--with-skdd') args.withSkdd = true;
     else if (a === '--with-local-review') args.withLocalReview = true;
     else if (a === '--with-hooks') args.withHooks = true;
+    // Phase ZP3: negation of the now-default commit hook (mirrors --no-strict /
+    // --no-artifacts). --local-only re-forces it on (max mode IS the hook).
+    else if (a === '--no-hooks') args.withHooks = false;
     else if (a === '--with-design') args.withDesign = true;
     else if (a === '--local-only') args.localOnly = true;
     else if (a === '--dry-run') args.dryRun = true;
@@ -124,10 +133,14 @@ function parseArgs(argv) {
     else if (a === '--source') args.source = argv[++i];
     else if (a === '--strict') args.strict = true;
     else if (a === '--no-strict') args.strict = false;
+    else if (a === '--notary') args.notary = true;
+    else if (a === '--no-notary') args.notary = false;
     else if (a === '--owner') args.owner = argv[++i];
     else if (a === '--details-url') args.detailsUrl = argv[++i];
     // Phase Z: notary attestation bundle (JSON path) for `post-check-run`.
     else if (a === '--bundle') args.bundle = argv[++i];
+    // Phase ZP3: `clud-bug build-bundle` provenance flag.
+    else if (a === '--recipe-version') args.recipeVersion = argv[++i];
     else args._.push(a);
   }
   return args;
@@ -229,12 +242,22 @@ Commands:
   post-check-run        Post the \`clud-bug-review\` GitHub check so branch
                         protection can gate the merge (H3). --verdict
                         clean|critical|failed --sha <sha> [--critical-count N]
-                        [--source local|ci] [--strict|--no-strict] [--dry-run].
+                        [--source local|ci] [--strict|--no-strict]
+                        [--notary|--no-notary] [--dry-run].
                         clean→success, critical+strict→failure, else neutral.
                         With CLUD_BUG_NOTARY_URL set + --bundle <file>, submits a
                         notary attestation bundle instead (Phase Z); the notary
                         issues the check. Falls back to the self-attested post if
                         the endpoint is unreachable.
+  build-bundle          Transform a review's structured_output JSON (piped via
+   --stdin               stdin) into a notary attestation bundle (Phase ZP3), for
+                        the self-hosted Action to hand to \`post-check-run
+                        --bundle\`. Flattens critical/minor/preexisting findings,
+                        derives the verdict from the critical count (not the
+                        self-reported counts), and derives coverage from a fresh
+                        \`gh pr diff <pr> --name-only\`. Flags: --repo owner/name
+                        --pr N --sha <sha> --recipe-version <v>. Emits bundle
+                        JSON to stdout.
 
 Options:
   --offline             Skip skills.sh; pin only the bundled baseline specimens.
@@ -248,7 +271,12 @@ Options:
                         commit-review hook into .claude/settings.json — on every
                         \`git commit\` / \`logmind log\`, it fetches a review recipe and
                         surfaces it to the agent (on this session's subscription)
-                        via asyncRewake. Implies --with-local-review. Off by default.
+                        via asyncRewake. Implies --with-local-review. ON by
+                        default (ZP3) — \`init\` installs both the hook and the
+                        GitHub Action enforcer. Flag kept for explicitness.
+  --no-hooks            (init) Skip the commit-review hook — install only the
+                        GitHub Action enforcer (+ skills). --local-only overrides
+                        (max mode IS the hook, so it stays installed).
   --with-design         (init) Install the design-critic kit (4 \`kind: design\`
                         skills) and enable the off-by-default visual review
                         lens — renders changed UI and critiques it. Off by default.
@@ -302,7 +330,7 @@ async function main() {
   // terminal, and never for the machine-consumed verbs (the hook runs
   // review-prompt in a non-TTY subprocess, so this is doubly skipped there).
   // Best-effort + cache-backed, so it adds no latency to the command.
-  const MACHINE_VERBS = new Set(['review-prompt', 'post-check-run', 'render', 'update-skill-usage']);
+  const MACHINE_VERBS = new Set(['review-prompt', 'post-check-run', 'build-bundle', 'render', 'update-skill-usage']);
   if (process.stderr.isTTY && !MACHINE_VERBS.has(cmd)) {
     const { maybeNotifyUpdate } = await import('./update-notifier.js');
     await maybeNotifyUpdate(await readPkgVersion());
@@ -327,6 +355,7 @@ async function main() {
     case 'resolve-threads': return runResolveThreads(args);
     case 'review-prompt': return runReviewPrompt(args);
     case 'post-check-run': return runPostCheckRun(args);
+    case 'build-bundle': return runBuildBundle(args);
     default:
       process.stderr.write(`Unknown command: ${cmd || '(none)'}\n\n${HELP}`);
       process.exit(2);
@@ -1486,6 +1515,13 @@ async function runInit(args) {
       log('  → git push.');
     }
   } else {
+    if (args.withHooks) {
+      log('  Both review surfaces installed: the commit-review hook (reviews on your');
+      log('  Claude Code session at commit time) AND the GitHub Action enforcer (gates');
+      log('  the merge on CI). Pass --no-hooks to install only the Action.');
+    } else {
+      log('  GitHub Action enforcer installed (--no-hooks: no commit-review hook).');
+    }
     log('  1. Set ANTHROPIC_API_KEY in your repo secrets:');
     log('     Settings → Secrets and variables → Actions → New repository secret');
     if (!args.commit) {

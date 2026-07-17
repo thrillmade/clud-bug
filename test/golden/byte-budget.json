@@ -1,11 +1,11 @@
 {
   "$schema-comment": "Size caps for the rendered prompt. UTF-8 byte counts. The CI gate fails if the actual size exceeds the cap. Caps are intentionally close to current size so 0.0.P trim work has headroom without inviting regression.",
   "max_prompt_bytes": {
-    "value": 17500,
-    "why": "Current rendered prompt is ~16.6 KB post-v0.6.27 §5.5 Layer 3 (added ~600 bytes of mid-review self-check-in rules: [budget] heartbeat-every-5-turns pattern + pace-behind pivot strategy). Cap bumped 16000 → 17500 with v0.6.27; still well below the 18500 pre-0.0.P cap. Each Smart Budget layer compounds prompt-side rules to give the AI a tighter model of its own pacing; rule shrinkage candidates land when calibration data validates the wording can be tighter. See CHANGELOG [0.6.27]."
+    "value": 18700,
+    "why": "Current rendered prompt is ~18.2 KB post-ZP3 (added a ~1.5 KB Grounding block: every 🔴 critical must carry grounding + grounding_kind, since the CI review's structured_output is assembled into a notary attestation bundle and validateGrounding REJECTS an ungrounded critical → the whole bundle is refused). This is load-bearing, not decorative: without it the self-hosted Action can never get a green notarized check on any PR with a critical. Cap bumped 17500 → 18700 with ZP3 (headroom above the 18.2 KB current, at the 18500 pre-0.0.P ceiling ballpark). Earlier: v0.6.27 §5.5 Layer 3 mid-review self-check-in rules. See CHANGELOG [Unreleased] ZP3 + [0.6.27]."
   },
   "max_prompt_lines": {
-    "value": 365,
-    "why": "Current is ~351 lines post-v0.6.27 §5.5 Layer 3 (+~26 lines for the Mid-review self-check-in section). Cap bumped 340 → 365 with v0.6.27. See CHANGELOG [0.6.27]."
+    "value": 385,
+    "why": "Current is ~375 lines post-ZP3 (+~24 lines for the Grounding block — see max_prompt_bytes.why). Cap bumped 365 → 385 with ZP3. Earlier: v0.6.27 §5.5 Layer 3 (+~26 lines). See CHANGELOG [Unreleased] ZP3 + [0.6.27]."
   }
 }

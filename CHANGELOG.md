@@ -4,6 +4,33 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Added
+
+- **ZP3 — self-hosted Action → notary.** The self-hosted GitHub Action now routes its
+  review through the notary, at parity with local max mode.
+  - **`clud-bug build-bundle`** (`src/cli/build-bundle.ts`) — transforms a review's
+    `structured_output` (`ReviewData`, piped via `--stdin`) into a notary attestation
+    bundle. Flattens `critical`/`minor`/`preexisting` finding buckets 1:1, DERIVES the
+    verdict from the critical count (never the model's self-reported `summary_counts` —
+    matches `validateConsistency`), and derives `coverage` from a fresh
+    `gh pr diff <pr> --name-only` (GitHub ground-truth, not the incremental scan set).
+    Flags: `--repo --pr --sha --recipe-version`. Emits bundle JSON to stdout.
+  - **Workflow "Notarize review" step** (all 3 templates) — after render+post, pipes
+    `structured_output → build-bundle → post-check-run --bundle --source ci`. Gated on a
+    non-empty payload with `continue-on-error: true` so it can NEVER be the source of job
+    failure — the strict-mode gate stays the authoritative merge backstop (no double-gate).
+    `strictMode` is resolved from the **base ref** (`git show origin/<base>:…/.clud-bug.json`)
+    so a PR cannot set `notary:false` / `strictMode:false` in its own head to defang the check.
+  - **Grounding on CI criticals** — `reviewPrompt()` now instructs the CI review to populate
+    `grounding` + `grounding_kind` on every 🔴 critical. Load-bearing: `validateGrounding`
+    rejects an ungrounded critical, which would notary-reject the whole bundle. Prompt
+    byte/line caps bumped (17500→18700 bytes, 365→385 lines) for the ~1.5 KB block.
+  - **`clud-bug init` installs both surfaces by default** — `--with-hooks` is now ON by
+    default (added `--no-hooks` to opt out), so `init` scaffolds BOTH the max-mode commit
+    hook AND the GitHub Action enforcer. `--local-only` keeps its meaning (max mode, no Action).
+  - **`post-check-run`** now honors an explicit `--source ci` on the bundle-fallback path
+    (was hard-coded `local`), so a CI-originated self-attested fallback tags itself correctly.
+
 ## [0.7.0-rc.15] — 2026-06-29
 
 Design-critic lens (B1) — the skill-driven review thesis pointed at pixels. OPTIONAL and
