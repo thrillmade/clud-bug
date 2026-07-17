@@ -14,3 +14,14 @@
 
 ---
 
+## 2026-07-17 00:06 - ZP2 fix: a degenerate all-slash CLUD_BUG_NOTARY_URL no longer silently disables the notary
+
+**Reasoning:** Adversarial review found stripTrailingSlash('/') === '' → readNotaryConfig returned an empty string → both call sites (truthiness checks) treated it as the notary:false opt-out, silently self-attesting despite a non-empty env override (reverse-proxy base path / paste slip), violating the documented precedence. Guard: a non-empty env value that normalizes to empty is not a usable origin → fall through to the default-ON hosted notary, never a silent opt-out (only the manifest opts out). +1 regression test.
+
+**Alternatives considered:** Throw on a degenerate URL (rejected: fail-safe toward notarizing beats crashing post-check-run), Return the pre-strip value (rejected: '/' is not a usable origin)
+
+**Implications:**
+- Only .clud-bug.json notary:false disables the notary; env values never silently opt out
+
+---
+

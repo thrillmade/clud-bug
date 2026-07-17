@@ -58,6 +58,17 @@ describe('readNotaryConfig', () => {
     expect(readNotaryConfig({})).toBe('https://staging.example.com');
   });
 
+  it('a degenerate all-slash env override ("/", "///") is not a usable origin → default, never a silent opt-out', () => {
+    // Regression (adversarial review): stripTrailingSlash('/') === '', and an
+    // empty string must NOT be mistaken for the `notary:false` opt-out (only the
+    // manifest opts out). A non-empty-but-degenerate env value the operator
+    // never intended as "off" falls through to the default-ON hosted notary.
+    process.env[ENV_KEY] = '/';
+    expect(readNotaryConfig({})).toBe(DEFAULT_NOTARY_URL);
+    process.env[ENV_KEY] = '///';
+    expect(readNotaryConfig({})).toBe(DEFAULT_NOTARY_URL);
+  });
+
   it('a truthy-but-non-false `notary` value (e.g. `true`, missing) does not opt out', () => {
     delete process.env[ENV_KEY];
     expect(readNotaryConfig({ notary: true })).toBe(DEFAULT_NOTARY_URL);

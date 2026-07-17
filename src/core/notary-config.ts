@@ -41,7 +41,14 @@ export function readNotaryConfig(manifest: unknown): string | null {
   if (raw === false) return null;
 
   const envUrl = process.env.CLUD_BUG_NOTARY_URL?.trim();
-  if (envUrl) return stripTrailingSlash(envUrl);
+  if (envUrl) {
+    const normalized = stripTrailingSlash(envUrl);
+    // A degenerate value like "/" or "///" strips to the empty string — that is
+    // not a usable origin, and it MUST NOT be mistaken for the `notary:false`
+    // opt-out (only the manifest opts out). Ignore it and fall through to the
+    // default (default-ON), never a silent self-attest.
+    if (normalized) return normalized;
+  }
 
   return stripTrailingSlash(DEFAULT_NOTARY_URL);
 }
