@@ -40,6 +40,13 @@ Read that skill before pushing fixes addressing prior review threads.
 Strict mode is **on** in this repo (workflow check fails on critical findings). Toggle via `.claude/skills/.clud-bug.json`
 (read from PR **base ref**, so PRs can't disable strict-mode on themselves).
 
+Local max mode (this session, on a PR trigger) certifies its review via the
+hosted notary at `https://app.cludbug.dev` **by default** — it submits an
+attestation bundle with `clud-bug post-check-run --sha ... --bundle bundle.json`
+rather than self-attesting. Toggle via `"notary": false` in
+`.claude/skills/.clud-bug.json` (falls back to the labeled self-attested
+check); override the origin with `CLUD_BUG_NOTARY_URL`.
+
 For agent invocations of the `clud-bug` CLI, prefer `CLUD_BUG_QUIET=1`
 (or pass `--quiet`) — suppresses progress chatter and emits a single
 `ok <key-value>` summary line per command.

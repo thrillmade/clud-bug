@@ -104,6 +104,32 @@ The toggle takes effect on PRs opened *after* the new value lands on the base br
 
 **Existing installs upgrading to v0.4.0:** the new default only fires on fresh installs (manifests that have never been touched by `init` or `update`). Existing repos — including v0.3.x advisory installs that never set `strictMode` — keep their prior behavior on re-init. To enable strict mode in an existing repo, add `"strictMode": true` to `.claude/skills/.clud-bug.json` manually.
 
+## Notary (default-on since Phase ZP2)
+
+Clud Bug is a **notary**: a green `clud-bug-review` check is meant to be *certified* against the diff, not merely self-asserted. In **local max mode** (the `clud-bug review-prompt` recipe running inside a Claude Code session), a PR-trigger review now certifies via the hosted notary at `https://app.cludbug.dev` **by default** — no setup required.
+
+When notarized, the session writes its findings as an attestation bundle and submits it with:
+
+```bash
+clud-bug post-check-run --sha "$(git rev-parse HEAD)" --bundle bundle.json
+```
+
+Clud Bug re-checks the bundle locally (coverage, grounding, internal consistency), then the notary independently re-validates it against GitHub's ground truth before issuing the `clud-bug-review` check — so the check reflects what actually happened, not just what the agent claims happened.
+
+**Opting out:** add `"notary": false` to `.claude/skills/.clud-bug.json` and local max mode falls back to a labeled **self-attested** check (a local signal, not independent verification) via:
+
+```bash
+clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical|unverified> --critical-count <N> --source local
+```
+
+```json
+{ "notary": false, ... }
+```
+
+**Overriding the origin:** set `CLUD_BUG_NOTARY_URL` to point at a staging or self-hosted notary instead of the production default. It's ignored when the repo has opted out (`notary: false` always wins).
+
+Free tier / no App install: submitting a bundle to a notary you're not entitled to falls back automatically to the same labeled self-attested check — the review is never blocked, it just isn't independently certified.
+
 ## Bot-authored PRs (Dependabot, Renovate, fork PRs)
 
 GitHub deliberately doesn't pass repository secrets to workflows triggered by bot-authored PRs (`dependabot[bot]`, `renovate[bot]`) or PRs from forks. The action can't authenticate against Anthropic, so Clud Bug can't review.

@@ -298,6 +298,10 @@ export {
   type DesignConfig,
   type DesignGate,
 } from './design.js';
+// Phase ZP2: default-on notary config resolver — the shared brain for
+// `post-check-run` (submit path) and `review-prompt` (§5 recipe rendering)
+// so both resolve the same notary origin (or opt-out) the same way.
+export { readNotaryConfig, DEFAULT_NOTARY_URL } from './notary-config.js';
 // Phase R (clud-bug-app #87) — executable-probe invariants: config + in-scope gate.
 // A probe is a repo-declared command that goes RED when a behavioral property is
 // violated; RED output grounds a finding equal to a quoted diff line, catching the
