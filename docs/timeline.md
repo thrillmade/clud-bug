@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (28 decisions)
+## 2026-07 (29 decisions)
 
-- **2026-07-17** — ZP3 fix (critical): base-ref-guard the notary toggle — a PR could self-disable independent certification from its own HEAD *(feat-zp3-action-notary)* — [decisions-branches/feat-zp3-action-notary.md](decisions-branches/feat-zp3-action-notary.md)
-- *... 26 more decisions ...*
+- **2026-07-25** — chore: bump to 0.7.0-rc.25 (publishes ZP2 notary default-on + ZP3 Action→notary) *(chore-bump-rc25)* — [decisions-branches/chore-bump-rc25.md](decisions-branches/chore-bump-rc25.md)
+- *... 27 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
