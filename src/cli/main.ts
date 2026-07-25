@@ -32,6 +32,7 @@ import { computeAuditFileSet } from './audit.js';
 import { renderAuditHeader } from '../core/audit.js';
 import { runUpdate } from './update.js';
 import { runReviewPrompt } from './review-prompt.js';
+import { runReview, runReviewDone } from './review.js';
 import { runPostCheckRun } from './post-check-run.js';
 import { runBuildBundle } from './build-bundle.js';
 import { getPendingWorkflowEdits, makeBranchName, git as gitCmd } from './edit-workflow.js';
@@ -126,6 +127,12 @@ function parseArgs(argv) {
     else if (a === '--preset') args.preset = argv[++i];
     else if (a === '--trigger') args.trigger = argv[++i];
     else if (a === '--diff-size') args.diffSizeBytes = Number(argv[++i]);
+    // #240 vector 2: the commit-review hook forwards this when the
+    // triggering command carried `--no-verify`; `review-prompt` only renders
+    // the finding if the repo also declares mandated hooks.
+    else if (a === '--flag-no-verify') args.flagNoVerify = true;
+    // #239: `clud-bug review --pending` drains the durable queue.
+    else if (a === '--pending') args.pending = true;
     // H3: `clud-bug post-check-run` flags.
     else if (a === '--sha') args.sha = argv[++i];
     else if (a === '--verdict') args.verdict = argv[++i];
@@ -239,6 +246,22 @@ Commands:
                         the session's own subscription. Plans via the shared
                         engine: --trigger commit (default) → a fast single pass;
                         push/pr → the full multi-pass plan. Prints to stdout.
+                        --flag-no-verify (set by the commit-review hook when
+                        the triggering command carried \`--no-verify\`) renders
+                        an automatic finding IF this repo declares mandated
+                        hooks (\`.logmind/\` or an AGENTS.md mentioning "hook").
+  review --pending      Drain \`.git/clud-bug-pending\` (#239): prints one
+                        recipe per queued sha (oldest first) — a review that
+                        deferred under a usage limit or a recipe-fetch error —
+                        then clears the queue. Follow each recipe, then run
+                        \`clud-bug review-done <sha>\` for each.
+  review-done [sha]     The two-phase-marker completion step (#239): the
+                        commit-review hook's recipe instructs the agent to run
+                        this once it ACTUALLY finishes reviewing a commit — a
+                        \`fired\` marker with no matching \`done\` re-fires on the
+                        next hook trigger (a usage-limit-killed session is
+                        never mistaken for a completed review). Defaults to
+                        HEAD when no sha is given.
   post-check-run        Post the \`clud-bug-review\` GitHub check so branch
                         protection can gate the merge (H3). --verdict
                         clean|critical|failed --sha <sha> [--critical-count N]
@@ -330,7 +353,7 @@ async function main() {
   // terminal, and never for the machine-consumed verbs (the hook runs
   // review-prompt in a non-TTY subprocess, so this is doubly skipped there).
   // Best-effort + cache-backed, so it adds no latency to the command.
-  const MACHINE_VERBS = new Set(['review-prompt', 'post-check-run', 'build-bundle', 'render', 'update-skill-usage']);
+  const MACHINE_VERBS = new Set(['review-prompt', 'review', 'review-done', 'post-check-run', 'build-bundle', 'render', 'update-skill-usage']);
   if (process.stderr.isTTY && !MACHINE_VERBS.has(cmd)) {
     const { maybeNotifyUpdate } = await import('./update-notifier.js');
     await maybeNotifyUpdate(await readPkgVersion());
@@ -354,6 +377,8 @@ async function main() {
     case 'post-inline-threads': return runPostInlineThreads(args);
     case 'resolve-threads': return runResolveThreads(args);
     case 'review-prompt': return runReviewPrompt(args);
+    case 'review': return runReview(args);
+    case 'review-done': return runReviewDone(args);
     case 'post-check-run': return runPostCheckRun(args);
     case 'build-bundle': return runBuildBundle(args);
     default:
@@ -1420,6 +1445,27 @@ async function runInit(args) {
       const merged = mergeLocalReviewHook(existing, hookCommand);
       await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
       log(`    wrote ${rel(cwd, settingsPath)} (commit-review hook)`);
+    }
+
+    // #240 vector 3 — seed the worktree-local HEAD-moved baseline NOW, at
+    // install time, so an `init` immediately followed by a commit in the
+    // SAME session still fires (the hook's cold-start behavior is to seed
+    // silently and NOT fire on its very first invocation, since it can't
+    // otherwise tell "HEAD predates the hook" from "HEAD was just
+    // committed" — see hooks.ts). Best-effort; never fails `init`.
+    try {
+      const gitDirResult = spawnSync('git', ['rev-parse', '--git-dir'], { cwd, encoding: 'utf8' });
+      const headResult = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
+      if (gitDirResult.status === 0 && headResult.status === 0) {
+        const gitDir = gitDirResult.stdout.trim();
+        const head = headResult.stdout.trim();
+        if (gitDir && head) {
+          await writeFile(join(cwd, gitDir, 'clud-bug-last-seen-head'), head);
+        }
+      }
+    } catch {
+      // best-effort — a missing/non-git cwd just means the cold-start
+      // window stays open for one extra commit; never fails init.
     }
   }
 

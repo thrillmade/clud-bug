@@ -7,7 +7,7 @@
 // writes the recipe, Claude Code's subagent is the runtime.
 
 import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
 import {
   planReview,
@@ -147,8 +147,24 @@ export function renderReviewRecipe(input: {
    * self-attest instruction. PR-trigger only (§5 doesn't render otherwise).
    */
   notaryUrl?: string | null;
+  /**
+   * #240 vector 2 — set when the hook detected `--no-verify` on the
+   * triggering `git commit` / `logmind log` AND the caller (`runReviewPrompt`)
+   * confirmed via `repoHasMandatedHooks` that this repo actually declares
+   * mandated git hooks. Renders an automatic finding instructing the agent to
+   * record the bypass — never a hard-deny (that could strand a legitimate
+   * rebase/amend), and never rendered at all for a repo with no such policy
+   * (no false alarm).
+   */
+  noVerifyFlagged?: boolean;
+  /**
+   * #239 — `clud-bug review --pending` drains OLDER queued shas that may no
+   * longer be HEAD (more commits can land before capacity returns). Commit-
+   * trigger only; renders `git show <sha>` instead of always `HEAD`.
+   */
+  targetSha?: string;
 }): string {
-  const { plan, trigger, design, reviewContext, probes, notaryUrl } = input;
+  const { plan, trigger, design, reviewContext, probes, notaryUrl, noVerifyFlagged, targetSha } = input;
 
   // H2 — the contextual layer. Three parts, each trusted differently:
   //   1. trusted standing instructions from `.clud-bug.json` (if any);
@@ -180,9 +196,10 @@ export function renderReviewRecipe(input: {
   const mode: ReviewPassMode =
     plan.perSkill.find((p) => p.count === maxPasses)?.mode ?? 'cross-check';
 
+  const commitRef = targetSha ?? 'HEAD';
   const diffStep =
     trigger === 'commit'
-      ? 'The commit you just made:\n\n```bash\ngit show --no-color --format=medium HEAD\n```'
+      ? `${targetSha ? `The queued commit \`${targetSha}\` (deferred earlier — reviewing it now)` : 'The commit you just made'}:\n\n\`\`\`bash\ngit show --no-color --format=medium ${commitRef}\n\`\`\``
       : 'If an open PR exists for this branch, review it; otherwise diff the branch against its base:\n\n' +
         '```bash\n' +
         'PR=$(gh pr list --head "$(git branch --show-current)" --state open --json number --jq \'.[0].number\')\n' +
@@ -346,6 +363,21 @@ ${probes.invariants
   .join('\n')}`
     : '';
 
+  // #240 vector 2 — an automatic, non-blocking finding when the triggering
+  // commit carried `--no-verify` AND the repo declares mandated hooks
+  // (`runReviewPrompt` resolves both via `repoHasMandatedHooks` before
+  // setting this input — never rendered as a false alarm for a repo with no
+  // such policy). Grounded as a named invariant (Phase R grounding kind (c)),
+  // not a diff-line quote — this finding is about the COMMAND, not the code.
+  const noVerifyStep = noVerifyFlagged
+    ? `\n\n## 0. Automatic finding — \`--no-verify\` bypass
+This commit's Bash command carried \`--no-verify\`, bypassing whatever git hooks this repo mandates (its manifest / AGENTS.md declares them). Record this as an AUTOMATIC finding — do not silently drop it, even though nothing else in the diff is wrong:
+  - \`severity\`: \`critical\`
+  - \`grounding_kind\`: \`invariant\` — named invariant: "commits must not bypass repo-mandated git hooks"
+  - \`summary\`: "this commit bypassed git hooks via \`--no-verify\`"
+This is a PROCESS finding, not a code-correctness one, but it still belongs in the report (§4) — never hard-deny or block the commit over it, just surface it.`
+    : '';
+
   return `<!-- ${CLUD_BUG_RECIPE_MARKER} v1 -->
 You are **clud-bug**, running ${TRIGGER_INTRO[trigger]} inside this Claude Code session, on
 this session's own model tokens — no hosted App, no extra auth (you already have \`git\`,
@@ -353,7 +385,7 @@ this session's own model tokens — no hosted App, no extra auth (you already ha
 
 ## The plan
 clud-bug resolved this review from the repo's skills + \`.clud-bug.json\`:
-**${plan.summary}**
+**${plan.summary}**${noVerifyStep}
 
 ## 1. Get the diff
 ${diffStep}
@@ -417,18 +449,67 @@ interface ReviewPromptArgs {
   trigger?: string;
   cwd?: string;
   diffSizeBytes?: number;
+  /** #240 vector 2 — the hook detected `--no-verify` on the triggering
+   * command. Only actually renders the finding if `repoHasMandatedHooks`
+   * also confirms this repo declares mandated hooks. */
+  flagNoVerify?: boolean;
   _?: string[];
 }
 
 /**
- * `clud-bug review-prompt [--trigger commit|push|pr]` — load the repo's skills +
- * config, plan the review through `core/planReview`, and print the recipe to
- * stdout. Defaults to the `commit` trigger (the primary hook consumer).
+ * #240 vector 2 — does this repo actually declare MANDATED git hooks, i.e. is
+ * a `--no-verify` bypass worth flagging here at all? Two git-state-cheap,
+ * repo-tracked signals (present in every worktree checkout, since both are
+ * tracked files/dirs, not local-only state):
+ *   - `.logmind/` — a repo that runs logmind's commit-primitive has hooks
+ *     (commit-msg / post-merge / post-rewrite) it relies on by construction.
+ *   - `AGENTS.md` mentioning "hook" — the project's own instructions call
+ *     out a hook policy (e.g. this repo's own AGENTS.md pointing at the
+ *     decision-logging / logmind hook requirement).
+ * Best-effort: a read failure (missing file, permissions) just means "no",
+ * never a crash — this gates an advisory finding, not a security boundary.
  */
-export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
-  const cwd = args.cwd ?? process.cwd();
-  const trigger = normalizeTrigger(args.trigger);
+export async function repoHasMandatedHooks(cwd: string): Promise<boolean> {
+  try {
+    const s = await stat(join(cwd, '.logmind'));
+    if (s.isDirectory()) return true;
+  } catch {
+    // no .logmind — fall through to the AGENTS.md check
+  }
+  try {
+    const agents = await readFile(join(cwd, 'AGENTS.md'), 'utf8');
+    if (/hook/i.test(agents)) return true;
+  } catch {
+    // no AGENTS.md (or unreadable) — neither signal present
+  }
+  return false;
+}
 
+/** Resolved plan + optional sections, loaded from a repo's `.claude/skills` +
+ * `.clud-bug.json` — everything `renderReviewRecipe` needs except the
+ * per-invocation bits (`noVerifyFlagged`, a pending-drain's `sha`). Shared by
+ * `runReviewPrompt` and `clud-bug review --pending` (`review.ts`) so the two
+ * never drift on how a repo's config resolves into a recipe. */
+export interface ResolvedReviewInputs {
+  plan: ReviewPlan;
+  reviewContext?: string;
+  design?: { skills: string[]; config: DesignConfig };
+  probes?: { invariants: Invariant[] };
+  notaryUrl: string | null;
+}
+
+/**
+ * Load a repo's installed skills + `.clud-bug.json`, and resolve everything
+ * `renderReviewRecipe` needs for the given trigger. Pure I/O, no rendering —
+ * split out so `clud-bug review --pending` (draining OLDER queued shas,
+ * always at the `commit` trigger) resolves the plan exactly the way the live
+ * hook does, rather than re-deriving a parallel, driftable copy of this logic.
+ */
+export async function resolveReviewInputs(
+  cwd: string,
+  trigger: ReviewTrigger,
+  diffSizeBytes?: number,
+): Promise<ResolvedReviewInputs> {
   const skillsDir = join(cwd, '.claude', 'skills');
   const manifest = await readManifest(skillsDir);
 
@@ -461,7 +542,7 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
     config,
     trigger,
     rawSkillMd,
-    ...(args.diffSizeBytes !== undefined ? { diffSizeBytes: args.diffSizeBytes } : {}),
+    ...(diffSizeBytes !== undefined ? { diffSizeBytes } : {}),
   });
 
   // The design-critic is gated: opted-in (`design.enabled`) + at least one
@@ -490,6 +571,36 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
   // (repo opt-out > CLUD_BUG_NOTARY_URL override > default-on hosted notary).
   const notaryUrl = readNotaryConfig(manifest);
 
+  return {
+    plan,
+    ...(reviewContext ? { reviewContext } : {}),
+    ...(design ? { design } : {}),
+    ...(probes ? { probes } : {}),
+    notaryUrl,
+  };
+}
+
+/**
+ * `clud-bug review-prompt [--trigger commit|push|pr]` — load the repo's skills +
+ * config, plan the review through `core/planReview`, and print the recipe to
+ * stdout. Defaults to the `commit` trigger (the primary hook consumer).
+ */
+export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
+  const cwd = args.cwd ?? process.cwd();
+  const trigger = normalizeTrigger(args.trigger);
+
+  const { plan, reviewContext, design, probes, notaryUrl } = await resolveReviewInputs(
+    cwd,
+    trigger,
+    args.diffSizeBytes,
+  );
+
+  // #240 vector 2 — the hook already detected `--no-verify` on the text of
+  // the triggering command (`args.flagNoVerify`); only render the finding if
+  // THIS repo actually declares mandated hooks, so a repo with no such policy
+  // never sees a false alarm.
+  const noVerifyFlagged = args.flagNoVerify === true && (await repoHasMandatedHooks(cwd));
+
   process.stdout.write(
     renderReviewRecipe({
       plan,
@@ -498,6 +609,7 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
       ...(reviewContext ? { reviewContext } : {}),
       ...(design ? { design } : {}),
       ...(probes ? { probes } : {}),
+      ...(noVerifyFlagged ? { noVerifyFlagged: true } : {}),
     }) + '\n',
   );
 }

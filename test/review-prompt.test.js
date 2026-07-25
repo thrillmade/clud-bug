@@ -200,6 +200,37 @@ describe('renderReviewRecipe', () => {
     }
   });
 
+  it('#240 vector 2: renders the automatic --no-verify finding only when noVerifyFlagged is set', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'commit' });
+
+    const flagged = renderReviewRecipe({ plan, trigger: 'commit', noVerifyFlagged: true });
+    expect(flagged).toMatch(/## 0\. Automatic finding — `--no-verify` bypass/);
+    expect(flagged).toMatch(/bypassing whatever git hooks this repo mandates/i);
+    expect(flagged).toMatch(/severity`: `critical`/);
+    expect(flagged).toMatch(/grounding_kind`: `invariant`/);
+    // never a hard-deny — it's a finding to surface, not a block
+    expect(flagged).toMatch(/never hard-deny or block the commit over it/i);
+
+    const unflagged = renderReviewRecipe({ plan, trigger: 'commit' });
+    expect(unflagged).not.toMatch(/--no-verify/);
+    expect(unflagged).not.toMatch(/Automatic finding/);
+  });
+
+  it('#239: targetSha renders `git show <sha>` for a pending-drain recipe instead of always HEAD', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'commit' });
+    const sha = 'deadbeefcafe0123456789abcdef0123456789ab';
+
+    const withSha = renderReviewRecipe({ plan, trigger: 'commit', targetSha: sha });
+    expect(withSha).toMatch(new RegExp(`git show[^\\n]*${sha}`));
+    expect(withSha).not.toMatch(/git show[^\n]*HEAD/);
+    expect(withSha).toMatch(/queued commit/i);
+
+    // no targetSha → unchanged default (still reviews HEAD, "commit you just made")
+    const withoutSha = renderReviewRecipe({ plan, trigger: 'commit' });
+    expect(withoutSha).toMatch(/git show[^\n]*HEAD/);
+    expect(withoutSha).not.toMatch(/queued commit/i);
+  });
+
   it('renders the invariant-probe step (§3c) only when probes are passed (R6, #87)', () => {
     const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
     const withProbes = renderReviewRecipe({
@@ -353,5 +384,73 @@ describe('review-prompt verb (integration)', () => {
     expect(r.stdout).toMatch(/--verdict <clean\|critical\|unverified> --critical-count <N> --source local/);
     expect(r.stdout).not.toMatch(/notary-enabled/i);
     expect(r.stdout).not.toMatch(/--bundle bundle\.json/);
+  });
+
+  // #240 vector 2 — `repoHasMandatedHooks` gates the finding on repo state
+  // (`.logmind/` or an AGENTS.md mentioning "hook"), never on the flag alone,
+  // so a repo with no such policy never sees a false alarm from --flag-no-verify.
+  it('#240 vector 2: --flag-no-verify renders the finding when the repo has a .logmind/ dir', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp6-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(join(skillsDir, '.clud-bug.json'), JSON.stringify({ version: 1, installed: [] }));
+    await mkdir(join(dir, '.logmind'), { recursive: true });
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'commit', '--flag-no-verify'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/Automatic finding — `--no-verify` bypass/);
+  });
+
+  it('#240 vector 2: --flag-no-verify renders the finding when AGENTS.md mentions "hook"', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp7-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(join(skillsDir, '.clud-bug.json'), JSON.stringify({ version: 1, installed: [] }));
+    await writeFile(join(dir, 'AGENTS.md'), '# AGENTS\n\nUse `logmind log` — see the decision-logging hook.\n');
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'commit', '--flag-no-verify'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/Automatic finding — `--no-verify` bypass/);
+  });
+
+  it('#240 vector 2: --flag-no-verify is a NO-OP (no false alarm) when the repo declares no mandated hooks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp8-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(join(skillsDir, '.clud-bug.json'), JSON.stringify({ version: 1, installed: [] }));
+    // No .logmind/, no AGENTS.md at all.
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'commit', '--flag-no-verify'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toMatch(/Automatic finding/);
+    expect(r.stdout).not.toMatch(/--no-verify/);
+  });
+
+  it('without --flag-no-verify, the finding never renders even in a mandated-hooks repo', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp9-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(join(skillsDir, '.clud-bug.json'), JSON.stringify({ version: 1, installed: [] }));
+    await mkdir(join(dir, '.logmind'), { recursive: true });
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'commit'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toMatch(/Automatic finding/);
   });
 });
