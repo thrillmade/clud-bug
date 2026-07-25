@@ -111,3 +111,49 @@ test('update-skill-usage: skips with warning when .clud-bug.json missing', async
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /no \.clud-bug\.json/);
 });
+
+// ---------------------------------------------------------------------------
+// SPEC §1.12.1 round-trip — emit through the real CLI, then parse the
+// written manifest exactly as an independent consumer (the agent-skills
+// census, per §17.3's "usage citations" signal) would: read the raw
+// bytes off disk, JSON.parse them, and pull `usage[<slug>].citations`.
+// This is the interop point §17 item 3 exists to unblock.
+// ---------------------------------------------------------------------------
+
+test('SPEC §1.12.1 round-trip: emitted usage[<slug>] survives an independent JSON.parse with the exact shape', async () => {
+  const dir = await makeWorkspace();
+  await writeFile(join(dir, '.claude/skills/.clud-bug.json'), '{"version": 1}');
+  const payload = JSON.stringify({
+    per_skill_scan: [
+      { skill: 'critical-issues-only', outcome: 'scanned 3 files' },
+      { skill: 'evidence-based-review', outcome: '0 findings' },
+    ],
+    critical_findings: [
+      { skill: 'critical-issues-only', summary: 'nullderef', file: 'a.js', line: 12 },
+    ],
+  });
+  const r = run(dir, ['update-skill-usage', '--stdin'], { input: payload });
+  assert.equal(r.status, 0, r.stderr);
+
+  // Read the manifest bytes fresh (independent of any in-process state)
+  // and parse them the way a consumer implementation would.
+  const rawBytes = await readFile(join(dir, '.claude/skills/.clud-bug.json'), 'utf8');
+  const consumerView = JSON.parse(rawBytes);
+
+  // 1. Cited skill: full §1.12.1 shape present, both timestamps set,
+  //    second-precision ISO-8601 with a Z suffix.
+  const cited = consumerView.usage['critical-issues-only'];
+  assert.equal(cited.loads, 1);
+  assert.equal(cited.citations, 1, 'the census reads THIS field for the "usage citations" signal');
+  assert.match(cited.last_cited, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, 'ISO-8601 UTC, Z suffix, second precision');
+  assert.match(cited.last_loaded, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+
+  // 2. Loaded-but-never-cited skill: citations truthfully 0, and
+  //    last_cited is OMITTED (not null, not "") — the near-miss this
+  //    fix specifically guards against, since a consumer parsing
+  //    last_cited as a Date would choke on either alternative.
+  const loadedOnly = consumerView.usage['evidence-based-review'];
+  assert.equal(loadedOnly.citations, 0);
+  assert.equal(Object.prototype.hasOwnProperty.call(loadedOnly, 'last_cited'), false);
+  assert.match(loadedOnly.last_loaded, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+});

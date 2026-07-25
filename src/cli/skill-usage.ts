@@ -31,6 +31,29 @@
 //
 // No automation acts on this output. It's a READ-ONLY dashboard.
 // Humans read; humans decide; humans act.
+//
+// SPEC §1.12.1 shape (v0.7.0, §17 interop item 3) — the `usage[<slug>]`
+// entry we emit into `.claude/skills/.clud-bug.json` MUST match:
+//
+//   "usage": {
+//     "<slug>": {
+//       "loads": 0,
+//       "citations": 0,
+//       "last_cited": "YYYY-MM-DDTHH:MM:SSZ",
+//       "last_loaded": "YYYY-MM-DDTHH:MM:SSZ"
+//     }
+//   }
+//
+// Two normative constraints from §1.12.1 that are easy to near-miss:
+//   - "`usage[<slug>].last_*` timestamps MUST be ISO-8601 UTC with a
+//     `Z` suffix and second precision." — `Date#toISOString()` emits
+//     millisecond precision, so `formatSpecTimestamp` below truncates.
+//   - "Unset is represented by omitting the key, not by an empty
+//     string." — we extend this to "not by `null`" too, since a bare
+//     `null` is neither an ISO-8601 string nor an absent key; a
+//     consumer parsing this field as a Date will choke on it. Entries
+//     with no citation/load event yet simply omit `last_cited` /
+//     `last_loaded` rather than carrying a `null` placeholder.
 
 import { spawn } from 'node:child_process';
 
@@ -40,11 +63,32 @@ export interface SkillDelta {
   citations: number;
 }
 
-// Per-skill usage record (accumulated across reviews).
+// Per-skill usage record (accumulated across reviews). `last_cited` /
+// `last_loaded` are OPTIONAL — per SPEC §1.12.1, "unset" means the key
+// is absent, never `null` or `""`.
 export interface SkillUsageEntry {
   loads: number;
   citations: number;
-  last_cited: string | null;
+  last_cited?: string;
+  last_loaded?: string;
+}
+
+/**
+ * Normalize a timestamp to the SPEC §1.12.1 shape: ISO-8601 UTC, `Z`
+ * suffix, SECOND precision (no milliseconds). Returns `undefined` for
+ * anything that doesn't parse to a valid instant, so callers can treat
+ * "no valid timestamp" the same as "omit the key."
+ *
+ * Idempotent: re-normalizing an already-second-precision timestamp
+ * (or one produced by a prior call) yields the same string.
+ */
+export function formatSpecTimestamp(input: string | null | undefined): string | undefined {
+  if (typeof input !== 'string' || input.length === 0) return undefined;
+  const ms = Date.parse(input);
+  if (Number.isNaN(ms)) return undefined;
+  // toISOString() always includes milliseconds (".SSSZ") — strip them
+  // down to second precision per SPEC §1.12.1.
+  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 // Map keyed by skill slug.
@@ -129,7 +173,15 @@ export function computeSkillUsageDelta(reviewJson: unknown): SkillDeltaMap {
  *   - existing.citations + delta.citations → new.citations
  *   - last_cited updates only when delta.citations > 0 (i.e., cited
  *     in THIS review). Stays at the prior value otherwise.
+ *   - last_loaded updates only when delta.loads > 0 (SPEC §1.12.1
+ *     tracks loads and citations as independent counters, each with
+ *     its own `last_*` timestamp).
  *   - New skills (not in existing) get initialized fresh.
+ *   - Both `last_*` fields are normalized to SPEC §1.12.1 shape
+ *     (second-precision ISO-8601, `Z` suffix) via `formatSpecTimestamp`,
+ *     and OMITTED entirely (not `null`) while unset — this also cures
+ *     any legacy `last_cited: null` entries written before this fix on
+ *     their next merge.
  */
 export function mergeSkillUsage(
   existing: unknown,
@@ -143,26 +195,36 @@ export function mergeSkillUsage(
   // Copy all existing skills first (preserve skills NOT in this delta).
   for (const [slug, entry] of Object.entries(safeExisting)) {
     if (entry && typeof entry === 'object') {
-      const e = entry as { loads?: unknown; citations?: unknown; last_cited?: unknown };
-      result[slug] = {
+      const e = entry as { loads?: unknown; citations?: unknown; last_cited?: unknown; last_loaded?: unknown };
+      const row: SkillUsageEntry = {
         loads: Number(e.loads) || 0,
         citations: Number(e.citations) || 0,
-        last_cited: typeof e.last_cited === 'string' ? e.last_cited : null,
       };
+      const lastCited = formatSpecTimestamp(typeof e.last_cited === 'string' ? e.last_cited : undefined);
+      if (lastCited) row.last_cited = lastCited;
+      const lastLoaded = formatSpecTimestamp(typeof e.last_loaded === 'string' ? e.last_loaded : undefined);
+      if (lastLoaded) row.last_loaded = lastLoaded;
+      result[slug] = row;
     }
   }
 
   // Merge delta.
+  const ts = formatSpecTimestamp(timestamp);
   for (const [slug, d] of Object.entries(delta || {})) {
     let row = result[slug];
     if (!row) {
-      row = { loads: 0, citations: 0, last_cited: null };
+      row = { loads: 0, citations: 0 };
       result[slug] = row;
     }
-    row.loads += Number(d.loads) || 0;
-    row.citations += Number(d.citations) || 0;
-    if ((Number(d.citations) || 0) > 0 && timestamp) {
-      row.last_cited = timestamp;
+    const loadsDelta = Number(d.loads) || 0;
+    const citationsDelta = Number(d.citations) || 0;
+    row.loads += loadsDelta;
+    row.citations += citationsDelta;
+    if (loadsDelta > 0 && ts) {
+      row.last_loaded = ts;
+    }
+    if (citationsDelta > 0 && ts) {
+      row.last_cited = ts;
     }
   }
 
