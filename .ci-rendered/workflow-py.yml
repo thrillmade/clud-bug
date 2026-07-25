@@ -667,7 +667,7 @@ jobs:
           THREADS_COUNT: ${{ needs.paths-check.outputs.threads_count }}
         run: |
           set -euo pipefail
-          BODY=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.7.0-rc.24 render --stdin)
+          BODY=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.7.0-rc.25 render --stdin)
           CALIBRATION="<!-- clud-bug-calibration: turns_estimated=$TURNS_ESTIMATED, max_turns=$MAX_TURNS, files=$FILES_COUNT, lines_added=$LINES_ADDED, lines_deleted=$LINES_DELETED, threads=$THREADS_COUNT -->"
           gh pr comment "$PR_NUMBER" --body "$BODY
 
@@ -704,12 +704,12 @@ jobs:
           fi
 
           printf '%s\n' "$STRUCTURED" \
-            | npx --yes clud-bug@0.7.0-rc.24 build-bundle \
+            | npx --yes clud-bug@0.7.0-rc.25 build-bundle \
                 --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" \
-                --recipe-version "ci-0.7.0-rc.24" \
+                --recipe-version "ci-0.7.0-rc.25" \
             > bundle.json
 
-          npx --yes clud-bug@0.7.0-rc.24 post-check-run \
+          npx --yes clud-bug@0.7.0-rc.25 post-check-run \
             --sha "$HEAD_SHA" --bundle bundle.json --source ci "$STRICT_FLAG" "$NOTARY_FLAG"
 
       # Wave 5a (D.2.X) — see workflow.yml.tmpl for design notes.
@@ -724,7 +724,7 @@ jobs:
           STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
         run: |
           set -euo pipefail
-          RESULT=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.7.0-rc.24 post-inline-threads --stdin)
+          RESULT=$(printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.7.0-rc.25 post-inline-threads --stdin)
           echo "::notice title=inline-threads::$RESULT"
 
       # Wave 5b (D.2.6) — see workflow.yml.tmpl for design notes.
@@ -743,7 +743,7 @@ jobs:
           CLUD_BUG_RESOLVE_PAT: ${{ secrets.CLUD_BUG_RESOLVE_PAT }}
         run: |
           set -euo pipefail
-          RESULT=$(npx --yes clud-bug@0.7.0-rc.24 resolve-threads)
+          RESULT=$(npx --yes clud-bug@0.7.0-rc.25 resolve-threads)
           echo "::notice title=auto-resolve::$RESULT"
 
       # v0.6.29 / Component 4 — see workflow.yml.tmpl for design notes.
@@ -758,7 +758,7 @@ jobs:
           if [ ! -f .claude/skills/.clud-bug.json ]; then
             echo '{"version": 1}' > .claude/skills/.clud-bug.json
           fi
-          printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.7.0-rc.24 update-skill-usage --stdin
+          printf '%s\n' "$STRUCTURED" | npx --yes clud-bug@0.7.0-rc.25 update-skill-usage --stdin
           echo "::notice title=skill-usage::recorded review delta to ephemeral .clud-bug.json (v0.6.30 will add cross-review aggregation)"
 
       - name: Upload skill-usage artifact
@@ -829,7 +829,7 @@ jobs:
       # Strict-mode gate — composite action; see workflow.yml.tmpl for design notes.
       - name: Strict mode — fail check on critical findings
         if: success()
-        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.24
+        uses: thrillmade/clud-bug/.github/actions/strict-mode-gate@v0.7.0-rc.25
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # v0.6.22 / 0.0.O: summary now posted by github-actions[bot].
@@ -864,7 +864,7 @@ jobs:
           fi
           export STRICT_MODE
           VERDICT=$(printf '%s\n' "$STRUCTURED" \
-            | npx --yes clud-bug@0.7.0-rc.24 select-review-event --stdin \
+            | npx --yes clud-bug@0.7.0-rc.25 select-review-event --stdin \
             | tail -n1)
           VERDICT="${VERDICT:-skip}"
           echo "::notice title=Clud Bug 🐛::Formal review verdict: $VERDICT (strictMode=$STRICT_MODE, author_assoc=$PR_AUTHOR_ASSOCIATION)"

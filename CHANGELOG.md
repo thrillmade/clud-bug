@@ -4,7 +4,32 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.25] — 2026-07-25
+
+**The mode-parity release: the notary now works in every mode.** Ships ZP2 + ZP3 — until
+this rc, both were merged to `main` but unpublished, so local max mode and the self-hosted
+Action could not reach the notary at all.
+
+> **Note on history:** rc.16–rc.24 shipped without CHANGELOG entries. Rather than
+> reconstruct nine releases from memory (and risk recording them wrong), the gap is left
+> explicit; `git log` between the `v0.7.0-rc.15` and `v0.7.0-rc.25` tags is the accurate
+> record for that window. Entries resume here.
+
 ### Added
+
+- **ZP2 — the notary is DEFAULT-ON for local max mode.** New `src/core/notary-config.ts`
+  (`readNotaryConfig`, `DEFAULT_NOTARY_URL = https://app.cludbug.dev`) is the shared resolver
+  for both `post-check-run` (the submit path) and `review-prompt` (§5 recipe rendering), so
+  policy cannot fork between them. Precedence: an explicit `--notary` / `--no-notary` flag
+  overrides everything → `.clud-bug.json` `"notary": false` opts a repo out → the
+  `CLUD_BUG_NOTARY_URL` env var overrides the origin → otherwise the hosted default.
+  A degenerate env value (`/`, `///`) normalizes to empty and falls through to the default —
+  it is never mistaken for the opt-out. The §5 recipe now renders **deterministically** from
+  the resolved value (exactly one of bundle-submit or self-attest, never an env check the
+  agent has to evaluate itself).
+- **`--notary` / `--no-notary` on `post-check-run`** — mirrors `--strict` / `--no-strict`.
+  CI derives it from the **base ref**, so a PR cannot disable independent certification by
+  setting `"notary": false` in its own head manifest.
 
 - **ZP3 — self-hosted Action → notary.** The self-hosted GitHub Action now routes its
   review through the notary, at parity with local max mode.
