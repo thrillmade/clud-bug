@@ -5,9 +5,29 @@ import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { deriveCheck, normalizeVerdict, CLUD_BUG_CHECK_NAME } from '../src/core/index.js';
+import {
+  deriveCheck,
+  normalizeVerdict,
+  CLUD_BUG_CHECK_NAME,
+  VERDICT_CONCLUSION_TABLE,
+} from '../src/core/index.js';
 
 const CLI = join(dirname(dirname(fileURLToPath(import.meta.url))), 'bin', 'clud-bug.js');
+
+// ZP4 — verdict-contract parity. `VERDICT_CONCLUSION_TABLE` is the single
+// source of truth for the (verdict, strictMode) → conclusion mapping that ALL
+// THREE `clud-bug-review` producers (this module, the notary's
+// deriveNotaryCheck, the hosted webhook) must agree on. This suite pins
+// `deriveCheck` — the canonical implementation — against every row; the
+// clud-bug-app repo mirrors the SAME literal cases against its two producers.
+describe('VERDICT_CONCLUSION_TABLE — cross-producer parity oracle', () => {
+  it.each(VERDICT_CONCLUSION_TABLE)(
+    'verdict=$verdict strictMode=$strictMode → conclusion=$conclusion',
+    ({ verdict, strictMode, conclusion }) => {
+      expect(deriveCheck({ verdict, strictMode }).conclusion).toBe(conclusion);
+    },
+  );
+});
 
 describe('deriveCheck', () => {
   it('clean → success regardless of strict mode', () => {

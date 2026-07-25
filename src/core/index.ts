@@ -325,6 +325,7 @@ export {
   deriveCheck,
   normalizeVerdict,
   CLUD_BUG_CHECK_NAME,
+  VERDICT_CONCLUSION_TABLE,
   type ReviewVerdict,
   type CheckConclusion,
   type CheckSource,

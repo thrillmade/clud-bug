@@ -5,16 +5,35 @@
 // The check name is HARD-CODED `clud-bug-review` everywhere — consumers attach
 // branch-protection rules by that exact string (see clud-bug-app/lib/check-runs.ts).
 //
-// CONCLUSION MODEL for the local + Action surfaces (this module):
+// ZP4 (verdict-contract parity): this is now THE canonical conclusion mapping
+// for ALL THREE surfaces that can post the `clud-bug-review` check —
+//   1. local CLI + self-hosted Action        → calls `deriveCheck` directly.
+//   2. the hosted notary (clud-bug-app)      → `lib/notary.ts`'s
+//      `deriveNotaryCheck` calls this SAME `deriveCheck` internally.
+//   3. the hosted bot's webhook (clud-bug-app) → `app/api/webhook/route.ts`
+//      derives a `ReviewVerdict` from the review outcome/coverage/findings and
+//      calls this SAME `deriveCheck`.
+//
+// Through ZP3 the hosted bot's webhook posted `success` on ANY completed
+// review regardless of critical findings, blocking merges only via a SEPARATE
+// `request_changes` formal review event — a documented, deliberate divergence
+// from this module. ZP4 retired that divergence: a check whose producers
+// disagree about what a verdict MEANS can't be safely pinned as a required
+// status (the inconsistency becomes un-forgeable), so all three surfaces now
+// agree on ONE conclusion for a given (verdict, strictMode). The formal-review
+// event on the hosted bot still fires ALONGSIDE this — both signals move in
+// lockstep now, neither replaces the other.
+//
+// CONCLUSION MODEL (identical across all three surfaces):
 //   clean              → success  (review ran, no critical findings)
 //   critical + strict  → failure  (BLOCKS merge — fix the criticals)
 //   critical + !strict → neutral  (advisory; does not block)
 //   failed             → neutral  (couldn't run; never blocks — add signal, not outages)
+//   unverified         → neutral  (ran, but coverage/verification couldn't be confirmed)
 //
-// This intentionally differs from the HOSTED bot, whose check is success-on-run
-// and whose strict-mode block is a separate `request_changes` formal review. In
-// local/Action mode there is no formal review, so the check IS the gate — its
-// conclusion reflects the findings directly.
+// See `VERDICT_CONCLUSION_TABLE` below for the exhaustive, test-asserted form
+// of this table — the cross-repo parity tests in clud-bug-app assert their
+// two surfaces against the same cases.
 
 /** The check name MUST match consumer branch-protection rules. Do not rename. */
 export const CLUD_BUG_CHECK_NAME = 'clud-bug-review';
@@ -103,3 +122,33 @@ export function normalizeVerdict(raw: string | undefined): ReviewVerdict {
   // Unknown/empty → 'failed' (safe: neutral check, never a false-green).
   return 'failed';
 }
+
+/**
+ * ZP4 — the exhaustive (verdict, strictMode) → conclusion contract, as a data
+ * table rather than prose, so it can be asserted directly instead of just
+ * documented. This module's own test iterates this table against `deriveCheck`
+ * (the canonical source); clud-bug-app's cross-producer parity test mirrors
+ * the SAME literal cases against `deriveNotaryCheck` and the webhook route,
+ * since the App's pinned `clud-bug` dependency can't import this constant
+ * directly across the npm version boundary (see the ZP4 PR description for
+ * the version-skew note).
+ *
+ * `strictMode: undefined` cases are omitted — `deriveCheck` treats an absent
+ * strictMode identically to `false` (see the destructuring default above);
+ * every producer that doesn't yet know the base-ref config resolves to that
+ * same safe default rather than inventing a third state.
+ */
+export const VERDICT_CONCLUSION_TABLE: ReadonlyArray<{
+  verdict: ReviewVerdict;
+  strictMode: boolean;
+  conclusion: CheckConclusion;
+}> = [
+  { verdict: 'clean', strictMode: false, conclusion: 'success' },
+  { verdict: 'clean', strictMode: true, conclusion: 'success' },
+  { verdict: 'critical', strictMode: true, conclusion: 'failure' },
+  { verdict: 'critical', strictMode: false, conclusion: 'neutral' },
+  { verdict: 'failed', strictMode: false, conclusion: 'neutral' },
+  { verdict: 'failed', strictMode: true, conclusion: 'neutral' },
+  { verdict: 'unverified', strictMode: false, conclusion: 'neutral' },
+  { verdict: 'unverified', strictMode: true, conclusion: 'neutral' },
+];
