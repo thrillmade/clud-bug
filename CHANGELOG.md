@@ -4,6 +4,49 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0-rc.26] — 2026-07-25
+
+**The honesty release: three false-greens removed, and the hook now covers what it claimed to.**
+Every item here was merged to `main` after rc.25 and is invisible to consumers until this publish.
+
+### Fixed
+
+- **🔴 The check no longer goes green on critical findings (ZP4, #248 + clud-bug-app#108).**
+  Three code paths derived the `clud-bug-review` conclusion and had drifted apart. The hosted
+  path **never consulted the critical-finding count** — a review that found real bugs posted
+  the same `success` as a clean one, with blocking carried entirely by a separate
+  `REQUEST_CHANGES` review event. All three now call ONE `deriveCheck` from `clud-bug/core`
+  (a shared brain, not three parallel mappings), and `CLUD_BUG_CHECK_NAME` is re-exported
+  rather than hardcoded twice. A cross-producer parity test asserts one
+  (verdict, strictMode, conclusion) table against every producer, so a future edit to one
+  path fails the test instead of silently drifting.
+  > ⚠️ **Behavior change:** strict-mode repos will now see `clud-bug-review` **fail** on
+  > critical findings where it previously passed. That is the fix working.
+- **🔴 Commits in linked worktrees are now reviewed (#245, closes #240).** Hook scope resolves
+  via `git rev-parse --git-common-dir` — `--git-dir` is worktree-*private*, which is why
+  worktree commits silently escaped review entirely. Orchestrated sessions use worktrees
+  routinely, so this was a standing coverage hole, not an edge case.
+- **🔴 A usage-limit-killed review can no longer look completed (#245, closes #239).** The
+  reviewed-marker was written *before* the review ran, so an interrupted session left a marker
+  saying "reviewed" and the next fire exited clean — a dead review was indistinguishable from a
+  finished one. Now two-phase: `pending` pre-recipe, `done` only via an explicit
+  **`clud-bug review-done <sha>`**. A `pending` sha re-fires, and a durable
+  `.git/clud-bug-pending` queue is drainable with **`clud-bug review --pending`**.
+- **The hook no longer fires on read-only commands (#245).** Firing keys on git *state* — a
+  worktree-local HEAD baseline plus `git reflog` confirming the move was a
+  commit/rebase/merge, not a checkout/reset — instead of pattern-matching the command string.
+- **`git commit --no-verify` is flagged** as a review finding where the repo declares mandated
+  hooks, rather than silently bypassing them.
+
+### Added
+
+- **`usage[<slug>]` emits in SPEC §1.12.1 shape (#247, §17 interop item 3).** We were already
+  recording `loads`/`citations` truthfully — the *shape* was a near-miss: `last_cited` written
+  as literal `null` where the SPEC requires the key be **omitted**, millisecond timestamps
+  where it requires **second** precision, and `last_loaded` missing entirely. The agent-skills
+  census read this and got nothing usable. Legacy `null` entries self-heal on next merge.
+- **`clud-bug review-done <sha>`** and **`clud-bug review --pending`** (see #239 above).
+
 ## [0.7.0-rc.25] — 2026-07-25
 
 **The mode-parity release: the notary now works in every mode.** Ships ZP2 + ZP3 — until

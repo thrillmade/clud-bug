@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (32 decisions)
+## 2026-07 (33 decisions)
 
-- **2026-07-25** — ZP4: verdict-contract parity — publish VERDICT_CONCLUSION_TABLE as the canonical (verdict,strictMode)->conclusion oracle *(feat-zp4-verdict-parity)* — [decisions-branches/feat-zp4-verdict-parity.md](decisions-branches/feat-zp4-verdict-parity.md)
-- *... 30 more decisions ...*
+- **2026-07-25** — chore: bump to 0.7.0-rc.26 (publishes ZP4 verdict parity, #239/#240 hook coverage, §17 citations) *(chore-bump-rc26)* — [decisions-branches/chore-bump-rc26.md](decisions-branches/chore-bump-rc26.md)
+- *... 31 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
