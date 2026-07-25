@@ -162,6 +162,8 @@ clud-bug refresh                                    # re-query skills.sh, diff v
 
 Skills are tracked in `.claude/skills/.clud-bug.json` (a small manifest). Anything in `.claude/skills/` that *isn't* in the manifest is treated as your custom work and never modified by `clud-bug` commands.
 
+The manifest's `usage[<slug>].citations` counter is emitted in the [protocol SPEC §1.12.1](https://github.com/thrillmade/protocol) shape and is consumed by the [agent-skills](https://github.com/thrillmade/agent-skills) skill census as its "which skills actually fire in review" signal.
+
 ## Adding your own skills
 
 Drop any `.md` file into `.claude/skills/<your-skill>/SKILL.md` — Claude Code auto-discovers it on the next PR. Same format as skills from skills.sh:

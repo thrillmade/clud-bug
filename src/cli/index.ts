@@ -52,6 +52,7 @@ export {
 export {
   computeSkillUsageDelta,
   mergeSkillUsage,
+  formatSpecTimestamp,
   assessSkillHealth,
   formatHealthDashboard,
   DEFAULT_GH_RUNNER,

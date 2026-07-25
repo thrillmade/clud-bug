@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {
   computeSkillUsageDelta,
   mergeSkillUsage,
+  formatSpecTimestamp,
   assessSkillHealth,
   formatHealthDashboard,
 } from '../src/cli/skill-usage.js';
@@ -129,6 +130,81 @@ test('mergeSkillUsage: does not mutate inputs', () => {
   mergeSkillUsage(existing, delta, '2026-05-30T00:00:00Z');
   assert.equal(existing.X.loads, 1, 'input untouched');
   assert.equal(existing.X.citations, 0);
+});
+
+
+// ---------------------------------------------------------------------------
+// formatSpecTimestamp — SPEC §1.12.1 "ISO-8601 UTC, Z suffix, second
+// precision" normalization for usage[<slug>].last_cited / last_loaded.
+// ---------------------------------------------------------------------------
+
+test('formatSpecTimestamp: strips milliseconds to second precision', () => {
+  assert.equal(formatSpecTimestamp('2026-05-30T12:00:00.123Z'), '2026-05-30T12:00:00Z');
+});
+
+test('formatSpecTimestamp: already-second-precision input is idempotent', () => {
+  assert.equal(formatSpecTimestamp('2026-05-30T12:00:00Z'), '2026-05-30T12:00:00Z');
+});
+
+test('formatSpecTimestamp: invalid / empty / null / undefined all resolve to undefined (omit-key signal)', () => {
+  assert.equal(formatSpecTimestamp('not-a-date'), undefined);
+  assert.equal(formatSpecTimestamp(''), undefined);
+  assert.equal(formatSpecTimestamp(null), undefined);
+  assert.equal(formatSpecTimestamp(undefined), undefined);
+});
+
+
+// ---------------------------------------------------------------------------
+// SPEC §1.12.1 shape conformance — `usage[<slug>]` MUST match:
+//   { "loads": 0, "citations": 0, "last_cited": "...Z", "last_loaded": "...Z" }
+// with last_cited / last_loaded OMITTED (not null) while unset, and
+// second-precision ISO-8601 timestamps when set. This is the shape the
+// agent-skills census (§17.3 "usage citations" signal) reads.
+// ---------------------------------------------------------------------------
+
+test('SPEC §1.12.1: fresh skill with a citation gets loads, citations, last_cited, last_loaded — no null placeholders', () => {
+  const delta = { 'critical-issues-only': { loads: 1, citations: 1 } };
+  const result = mergeSkillUsage({}, delta, '2026-07-24T10:15:30.456Z');
+  const entry = result['critical-issues-only'];
+
+  assert.equal(entry.loads, 1);
+  assert.equal(entry.citations, 1);
+  assert.equal(entry.last_cited, '2026-07-24T10:15:30Z', 'second precision, Z suffix');
+  assert.equal(entry.last_loaded, '2026-07-24T10:15:30Z');
+  assert.equal('last_cited' in entry, true);
+  assert.notEqual(entry.last_cited, null, 'omitted-when-unset, never null — but here it IS set');
+});
+
+test('SPEC §1.12.1: a load-only skill (never cited) OMITS last_cited entirely — not null, not ""', () => {
+  const delta = { 'never-cited-skill': { loads: 1, citations: 0 } };
+  const result = mergeSkillUsage({}, delta, '2026-07-24T10:15:30Z');
+  const entry = result['never-cited-skill'];
+
+  assert.equal(entry.loads, 1);
+  assert.equal(entry.citations, 0);
+  assert.equal(entry.last_loaded, '2026-07-24T10:15:30Z');
+  assert.equal('last_cited' in entry, false, 'unset key is OMITTED per SPEC §1.12.1, not present as null');
+  assert.equal(JSON.stringify(entry).includes('last_cited'), false, 'confirms omission survives serialization');
+});
+
+test('SPEC §1.12.1: a legacy last_cited:null entry is cured (omitted) on next merge', () => {
+  // Simulates reading an old-shape .clud-bug.json written before this fix.
+  const existing = { 'legacy-skill': { loads: 3, citations: 0, last_cited: null } };
+  const result = mergeSkillUsage(existing, {}, null);
+  assert.equal('last_cited' in result['legacy-skill'], false, 'null is normalized away, not round-tripped');
+});
+
+test('SPEC §1.12.1: citations counter is truthful — only skills actually cited get citations > 0', () => {
+  // A skill that loaded but was never cited in any finding bucket MUST
+  // report citations: 0, not a fabricated non-zero value.
+  const delta = computeSkillUsageDelta({
+    per_skill_scan: [
+      { skill: 'loaded-not-cited', outcome: 'scanned, no findings' },
+    ],
+  });
+  const result = mergeSkillUsage({}, delta, '2026-07-24T00:00:00Z');
+  assert.equal(result['loaded-not-cited'].citations, 0);
+  assert.equal(result['loaded-not-cited'].loads, 1);
 });
 
 
