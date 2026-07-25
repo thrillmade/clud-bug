@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (30 decisions)
+## 2026-07 (31 decisions)
 
-- **2026-07-25** — Fix commit-review hook coverage holes: worktree commits, --no-verify, over-firing (#240) and dead-review markers (#239) *(fix-hook-coverage-239-240)* — [decisions-branches/fix-hook-coverage-239-240.md](decisions-branches/fix-hook-coverage-239-240.md)
-- *... 28 more decisions ...*
+- **2026-07-25** — Emit usage[<slug>] in SPEC protocol §1.12.1 shape (§17 interop item 3) *(feat-usage-citations)* — [decisions-branches/feat-usage-citations.md](decisions-branches/feat-usage-citations.md)
+- *... 29 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
