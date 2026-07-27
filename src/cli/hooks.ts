@@ -62,6 +62,26 @@
 //   via `clud-bug review --pending`) the next time the hook fires, with a
 //   one-line "usage limit" deferral notice — distinct from a recipe-FETCH
 //   failure, which gets its own "error" notice (same queue, different cause).
+//
+// #249 (authorship filter — follow-up to #240 vector 3): the reflog-reason
+//   gate above confirms HEAD moved via a commit-creating action, but
+//   `pull*`/`merge*` (and, in principle, `cherry-pick*`) can land a commit
+//   somebody ELSE authored that already passed review at PR time — a `git
+//   pull --ff-only` fast-forwards HEAD straight onto the PR's own commit; no
+//   new commit object is created, so its author is whoever opened the PR,
+//   not necessarily whoever ran `pull`. Re-reviewing that is pure noise
+//   (dogfooded 2026-07-25: firing on every routine pull of a teammate's
+//   merged PR). A genuine LOCAL merge — conflict hand-resolved, or a real
+//   non-ff `git merge` — creates a NEW commit object whose author is
+//   whoever ran the merge, i.e. the local user, so it still fires; only an
+//   already-existing foreign commit reached via fast-forward is skipped.
+//   The filter keys on git CONFIG identity (`user.email`/`user.name`) vs.
+//   the new HEAD commit's author, not on the reflog verb, so `commit*` /
+//   `rebase*` / `cherry-pick*` / `revert*` get the same treatment for free.
+//   It FAILS OPEN (fires) whenever authorship can't be established — local
+//   identity unset, or the commit's author can't be read — because a false
+//   FIRE is noise but a false SKIP is an unreviewed commit, exactly the bug
+//   class #239/#240 exist to prevent.
 
 /** Stable marker embedded in our hook so re-runs — and upgrades from the old,
  * broken `type: agent` hook — replace it in place. */
@@ -102,24 +122,35 @@ export const REVIEW_DONE_FILE = 'clud-bug-review-done';
  *      record of *why* confirms it was a commit-creating action, not a
  *      `checkout`/`reset` — the same check closes the cold-start gap a
  *      freshly `git worktree add`-ed worktree would otherwise have.
- *   2. Two-phase marker (#239) — `clud-bug-hook-fired` / `clud-bug-review-done`,
+ *   2. Authorship filter (#249) — even though HEAD moved via an allowed
+ *      commit-creating action, the new HEAD commit may have been authored by
+ *      someone else (a `pull --ff-only` landing a teammate's already-reviewed
+ *      PR commit, most commonly). Compares the commit's author against the
+ *      local `git config user.email`/`user.name` (case-insensitively, either
+ *      field matching is enough) and exits quietly if it's provably someone
+ *      else's work. A genuine local merge (hand-resolved or a real non-ff
+ *      `git merge`) creates a new commit authored by the local user, so it
+ *      still passes. FAILS OPEN (does not exit) when identity or authorship
+ *      can't be determined — see the file-header #249 note for the full
+ *      rationale.
+ *   3. Two-phase marker (#239) — `clud-bug-hook-fired` / `clud-bug-review-done`,
  *      kept in the shared `--git-common-dir` (#240 vector 1) so a commit in
  *      ANY linked worktree resolves to the SAME bookkeeping the primary
  *      checkout (and a `--pending` drain run from there) will see. A sha
  *      that's `fired` but not yet `done` is still an OPEN review — never
  *      treated as complete.
- *   3. `--no-verify` flag (#240 vector 2) — the hook sees the triggering Bash
+ *   4. `--no-verify` flag (#240 vector 2) — the hook sees the triggering Bash
  *      command line; a `--no-verify` commit is passed through to
  *      `review-prompt` so it can render an automatic finding IF the repo
  *      declares mandated hooks.
- *   4. Fetch a fresh recipe tailored to THIS repo: `review-prompt --trigger
+ *   5. Fetch a fresh recipe tailored to THIS repo: `review-prompt --trigger
  *      commit` (an instruction recipe — `git show HEAD` + the skills + the
  *      report format — NOT raw data; it is meant to be FOLLOWED by an agent).
- *   5. Surface it to the session by printing it and `exit 2`, so `asyncRewake`
+ *   6. Surface it to the session by printing it and `exit 2`, so `asyncRewake`
  *      shows it to the main agent as a system reminder. The agent then reviews
  *      the commit on the session subscription, and confirms with
  *      `clud-bug review-done <sha>` when actually done.
- *   6. Any dead end (no new commit, recipe fetch fails, a stale pending review
+ *   7. Any dead end (no new commit, recipe fetch fails, a stale pending review
  *      surfaces) still `exit 2` with a one-line notice rather than going
  *      silent (#239) — the commit itself is never blocked either way (this
  *      hook runs `async` after the tool already ran).
@@ -164,6 +195,39 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     // cold-start case without any separate seeding step.
     `reason=$(git reflog -1 --format='%gs' HEAD 2>/dev/null) || reason=`,
     `case "$reason" in commit*|rebase*|pull*|cherry-pick*|revert*|merge*) ;; *) exit 0 ;; esac`,
+    // #249 — authorship filter. The reflog check above only confirms a
+    // commit-creating action happened; `pull*`/`merge*` (via fast-forward)
+    // can land a commit someone ELSE authored that already passed review at
+    // PR time. Compare the new HEAD commit's author against the LOCAL git
+    // identity — never the reflog verb — so a hand-resolved local merge or a
+    // real non-ff `git merge` (whose author is whoever ran the merge, i.e.
+    // the local user) still fires, while a foreign commit reached via
+    // fast-forward does not.
+    `cfgemail=$(git config user.email 2>/dev/null) || cfgemail=`,
+    `cfgname=$(git config user.name 2>/dev/null) || cfgname=`,
+    // Only attempt the comparison when SOME local identity is configured.
+    // Both empty (no repo/global user.email or user.name at all) means
+    // authorship can never be established here — fail OPEN and fire, per the
+    // #249 ruling that uncertainty must resolve toward reviewing, not skipping.
+    `if [ -n "$cfgemail" ] || [ -n "$cfgname" ]; then`,
+    `  if aemail=$(git log -1 --format='%ae' "$sha" 2>/dev/null) && aname=$(git log -1 --format='%an' "$sha" 2>/dev/null); then`,
+    // Case-insensitive (`tr`, not bash's `${var,,}` — this runs under `sh`):
+    // the same human's own commits in this repo carry multiple differing
+    // emails across machines with a stable name, so match on EITHER field —
+    // requiring BOTH would false-negative the user's own work.
+    `    lc_cfgemail=$(printf '%s' "$cfgemail" | tr '[:upper:]' '[:lower:]')`,
+    `    lc_cfgname=$(printf '%s' "$cfgname" | tr '[:upper:]' '[:lower:]')`,
+    `    lc_aemail=$(printf '%s' "$aemail" | tr '[:upper:]' '[:lower:]')`,
+    `    lc_aname=$(printf '%s' "$aname" | tr '[:upper:]' '[:lower:]')`,
+    `    emailMatch=0; [ -n "$lc_cfgemail" ] && [ "$lc_cfgemail" = "$lc_aemail" ] && emailMatch=1`,
+    `    nameMatch=0; [ -n "$lc_cfgname" ] && [ "$lc_cfgname" = "$lc_aname" ] && nameMatch=1`,
+    // Both fields provably mismatch (identity IS known, and it's NOT this
+    // commit's author) — someone else's already-reviewed work. Skip quietly.
+    `    if [ "$emailMatch" = 0 ] && [ "$nameMatch" = 0 ]; then exit 0; fi`,
+    `  fi`,
+    // else: local identity is configured but the commit's author couldn't be
+    // read — undeterminable; fall through and fire rather than guess.
+    `fi`,
     // #240 vector 1 — SHARED across every linked worktree of this repo:
     // `--git-common-dir` (unlike `--git-dir`) resolves to the SAME directory
     // whether invoked from the primary checkout or any linked worktree, so a

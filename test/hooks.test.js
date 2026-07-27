@@ -22,6 +22,60 @@ import {
 // The hook command floats to the `next` dist-tag by default (rc.20).
 const COMMIT_REVIEW_COMMAND = buildCommitReviewCommand();
 
+// Shared helpers for the integration suites below (#239/#240 and #249) —
+// hoisted to module scope so both describe blocks can reuse the same real-git
+// fixtures instead of duplicating them.
+function git(cwd, args) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
+  return r.stdout.trim();
+}
+
+async function makeRepo() {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-hook-it-'));
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['config', 'user.email', 'test@test']);
+  git(dir, ['config', 'user.name', 'Test']);
+  git(dir, ['config', 'commit.gpgsign', 'false']);
+  git(dir, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  return dir;
+}
+
+/** A fake `npx` on PATH so the hook's recipe fetch never hits the network.
+ * `mode: 'recipe'` echoes a canned recipe (simulating success); `mode:
+ * 'echo-args'` echoes its own argv space-joined (so a test can assert
+ * which flags the hook forwarded); `mode: 'fail'` always exits non-zero
+ * (simulating a fetch failure). */
+async function installFakeNpx(mode) {
+  const binDir = await mkdtemp(join(tmpdir(), 'clud-bug-fakebin-'));
+  const script =
+    mode === 'fail'
+      ? '#!/bin/sh\nexit 1\n'
+      : mode === 'echo-args'
+        ? '#!/bin/sh\necho "ARGS: $*"\n'
+        : '#!/bin/sh\necho "<!-- clud-bug-local-review v1 -->\\nfake recipe\\n"\n';
+  const npxPath = join(binDir, 'npx');
+  await writeFile(npxPath, script);
+  await chmod(npxPath, 0o755);
+  return binDir;
+}
+
+/** Run the built hook command against `cwd`, piping `event` as the
+ * PostToolUse JSON on stdin (matches how Claude Code invokes it). `envOverrides`
+ * merges on top of (and can blank out, via `undefined`) the ambient
+ * `process.env` — used by the #249 identity-unset test to isolate the child
+ * process from this machine's own real global `~/.gitconfig`. */
+function runHook(command, cwd, event, fakeNpxBinDir, envOverrides) {
+  const env = { ...process.env, PATH: `${fakeNpxBinDir}:${process.env.PATH}`, ...envOverrides };
+  for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+  return spawnSync('sh', ['-c', command], {
+    cwd,
+    encoding: 'utf8',
+    input: JSON.stringify(event ?? {}),
+    env,
+  });
+}
+
 describe('buildLocalReviewHook', () => {
   it('is a backgrounded type:command PostToolUse entry targeting git commit + logmind log', () => {
     const entry = buildLocalReviewHook(COMMIT_REVIEW_COMMAND);
@@ -195,52 +249,6 @@ describe('buildCommitReviewCommand', () => {
 // offline; it echoes a canned recipe (or its own argv, for the --no-verify
 // flag-forwarding test) instead of calling the real `clud-bug review-prompt`.
 describe('commit-review hook — integration (real git state)', () => {
-  function git(cwd, args) {
-    const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
-    if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
-    return r.stdout.trim();
-  }
-
-  async function makeRepo() {
-    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-hook-it-'));
-    git(dir, ['init', '-q', '-b', 'main']);
-    git(dir, ['config', 'user.email', 'test@test']);
-    git(dir, ['config', 'user.name', 'Test']);
-    git(dir, ['config', 'commit.gpgsign', 'false']);
-    git(dir, ['commit', '-q', '--allow-empty', '-m', 'init']);
-    return dir;
-  }
-
-  /** A fake `npx` on PATH so the hook's recipe fetch never hits the network.
-   * `mode: 'recipe'` echoes a canned recipe (simulating success); `mode:
-   * 'echo-args'` echoes its own argv space-joined (so a test can assert
-   * which flags the hook forwarded); `mode: 'fail'` always exits non-zero
-   * (simulating a fetch failure). */
-  async function installFakeNpx(mode) {
-    const binDir = await mkdtemp(join(tmpdir(), 'clud-bug-fakebin-'));
-    const script =
-      mode === 'fail'
-        ? '#!/bin/sh\nexit 1\n'
-        : mode === 'echo-args'
-          ? '#!/bin/sh\necho "ARGS: $*"\n'
-          : '#!/bin/sh\necho "<!-- clud-bug-local-review v1 -->\\nfake recipe\\n"\n';
-    const npxPath = join(binDir, 'npx');
-    await writeFile(npxPath, script);
-    await chmod(npxPath, 0o755);
-    return binDir;
-  }
-
-  /** Run the built hook command against `cwd`, piping `event` as the
-   * PostToolUse JSON on stdin (matches how Claude Code invokes it). */
-  function runHook(command, cwd, event, fakeNpxBinDir) {
-    return spawnSync('sh', ['-c', command], {
-      cwd,
-      encoding: 'utf8',
-      input: JSON.stringify(event ?? {}),
-      env: { ...process.env, PATH: `${fakeNpxBinDir}:${process.env.PATH}` },
-    });
-  }
-
   it('#240 vector 3: a read-only command (no commit made) does not fire', async () => {
     const repo = await makeRepo();
     const npxBin = await installFakeNpx('recipe');
@@ -440,5 +448,145 @@ describe('commit-review hook — integration (real git state)', () => {
     const rSame = runHook(cmd, repo, { tool_input: { command: 'git status' } }, npxBin);
     expect(rSame.status).toBe(0);
     expect(rSame.stdout.trim()).toBe('');
+  });
+});
+
+// #249 — follow-up to #240 vector 3: the reflog gate alone fires on EVERY
+// `pull`/`merge` that moves HEAD, including a routine `git pull` that fast-
+// forwards onto a teammate's PR commit already reviewed at merge time. These
+// tests exercise the authorship filter added on top of that gate: it compares
+// the new HEAD commit's author against the local `git config user.email` /
+// `user.name` and skips only when that comparison provably fails; any time
+// authorship can't be established, it still fires (fail open toward
+// reviewing — a false skip is the #239/#240 bug class, a false fire is noise).
+describe('commit-review hook — authorship filter (#249, real git state)', () => {
+  it('(a) a commit pulled in via fast-forward, authored by someone ELSE, does not fire', async () => {
+    const origin = await makeRepo();
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    runHook(cmd, clone, {}, npxBin); // seed the clone's HEAD-moved baseline
+
+    // Origin advances with a commit authored by someone else entirely —
+    // exactly like a teammate's PR, already reviewed and merged upstream.
+    git(origin, ['commit', '-q', '--allow-empty', '-m', 'feat: from teammate', '--author', 'Other <other@example.com>']);
+
+    git(clone, ['pull', '--ff-only', '-q']);
+    // Confirm this reproduces the exact reflog shape from the bug report.
+    expect(git(clone, ['reflog', '-1', '--format=%gs', 'HEAD'])).toMatch(/^pull.*Fast-forward/);
+    expect(git(clone, ['log', '-1', '--format=%ae', 'HEAD'])).toBe('other@example.com');
+
+    const r = runHook(cmd, clone, { tool_input: { command: 'git pull' } }, npxBin);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('');
+  });
+
+  it('(b) a locally-authored commit still fires (author matches local identity)', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    runHook(cmd, repo, {}, npxBin);
+
+    await writeFile(join(repo, 'f.txt'), 'x');
+    git(repo, ['add', 'f.txt']);
+    // Explicit --author matching the repo's configured identity exactly, so
+    // there is no ambiguity that this exercises the authorship MATCH path.
+    git(repo, ['commit', '-q', '-m', 'feat: mine', '--author', 'Test <test@test>']);
+
+    const r = runHook(cmd, repo, { tool_input: { command: 'git commit -m feat' } }, npxBin);
+    expect(r.status).toBe(2);
+    expect(r.stdout).toMatch(/fake recipe/);
+  });
+
+  it('(c) a hand-resolved local merge commit still fires (merge commit author is the local user)', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    runHook(cmd, repo, {}, npxBin);
+
+    await writeFile(join(repo, 'f.txt'), 'a');
+    git(repo, ['add', 'f.txt']);
+    git(repo, ['commit', '-q', '-m', 'base']);
+
+    git(repo, ['checkout', '-q', '-b', 'feature']);
+    await writeFile(join(repo, 'f.txt'), 'a\nb');
+    git(repo, ['commit', '-q', '-am', 'feature change']);
+    git(repo, ['checkout', '-q', 'main']);
+    await writeFile(join(repo, 'f.txt'), 'a\nc');
+    git(repo, ['commit', '-q', '-am', 'main change (conflicting)']);
+
+    // A conflicting merge: resolve by hand and complete it with `git commit`.
+    spawnSync('git', ['merge', 'feature', '-m', 'merge feature', '-q'], { cwd: repo });
+    await writeFile(join(repo, 'f.txt'), 'resolved');
+    git(repo, ['add', 'f.txt']);
+    git(repo, ['commit', '-q', '--no-edit']);
+    // Confirms this is genuinely the "hand-resolved merge" reflog shape
+    // (git records the completing commit as `commit (merge): ...`, which
+    // falls under the pre-existing `commit*` reflog-verb match).
+    expect(git(repo, ['reflog', '-1', '--format=%gs', 'HEAD'])).toMatch(/^commit \(merge\)/);
+    // Author of the merge commit is whoever ran `git merge` — the local user.
+    expect(git(repo, ['log', '-1', '--format=%ae', 'HEAD'])).toBe('test@test');
+
+    const r = runHook(cmd, repo, { tool_input: { command: 'git commit --no-edit' } }, npxBin);
+    expect(r.status).toBe(2);
+    expect(r.stdout).toMatch(/fake recipe/);
+  });
+
+  it('(c2) a real non-fast-forward local merge (no conflict) still fires', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    runHook(cmd, repo, {}, npxBin);
+
+    git(repo, ['checkout', '-q', '-b', 'feature']);
+    await writeFile(join(repo, 'other.txt'), 'b');
+    git(repo, ['add', 'other.txt']);
+    git(repo, ['commit', '-q', '-m', 'feature adds other.txt']);
+    git(repo, ['checkout', '-q', 'main']);
+    await writeFile(join(repo, 'main-only.txt'), 'c');
+    git(repo, ['add', 'main-only.txt']);
+    git(repo, ['commit', '-q', '-m', 'main adds main-only.txt']);
+
+    git(repo, ['merge', 'feature', '-m', 'merge feature', '-q']);
+    expect(git(repo, ['reflog', '-1', '--format=%gs', 'HEAD'])).toMatch(/^merge /);
+    expect(git(repo, ['log', '-1', '--format=%ae', 'HEAD'])).toBe('test@test');
+
+    const r = runHook(cmd, repo, { tool_input: { command: 'git merge feature' } }, npxBin);
+    expect(r.status).toBe(2);
+    expect(r.stdout).toMatch(/fake recipe/);
+  });
+
+  it('(d) an unset/undeterminable local git identity fails OPEN and still fires', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    runHook(cmd, repo, {}, npxBin);
+
+    // A commit authored by someone else — the exact shape that (a) proves
+    // gets SKIPPED once identity is known. Here, identity is deliberately
+    // unknowable, so it must fire instead.
+    git(repo, ['commit', '-q', '--allow-empty', '-m', 'feat: from other', '--author', 'Other <other@example.com>']);
+
+    // Strip local identity, and isolate the child process from this actual
+    // machine's real ~/.gitconfig (which may itself have user.email/name
+    // set) so `git config user.email`/`user.name` genuinely resolve empty —
+    // otherwise this test would be flaky depending on who runs it.
+    git(repo, ['config', '--local', '--unset', 'user.email']);
+    git(repo, ['config', '--local', '--unset', 'user.name']);
+    const fakeHome = await mkdtemp(join(tmpdir(), 'clud-bug-fakehome-'));
+
+    const r = runHook(
+      cmd,
+      repo,
+      { tool_input: { command: 'git commit --allow-empty -m feat' } },
+      npxBin,
+      { HOME: fakeHome, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', XDG_CONFIG_HOME: undefined },
+    );
+    expect(r.status).toBe(2);
+    expect(r.stdout).toMatch(/fake recipe/);
   });
 });
