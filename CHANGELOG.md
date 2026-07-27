@@ -4,6 +4,13 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.NaN] — 2026-07-25
+
+### Changed
+
+- **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@bd1b554`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+
+
 ## [0.7.0-rc.26] — 2026-07-25
 
 **The honesty release: three false-greens removed, and the hook now covers what it claimed to.**
