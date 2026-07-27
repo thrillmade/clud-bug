@@ -116,10 +116,17 @@ describe('buildReviewPrompt — H2 injection', () => {
 
 describe('renderReviewRecipe — H2 §2b', () => {
   const plan = planReview({ skills: [], config: { count: 1, mode: 'cross-check' }, trigger: 'commit' });
-  it('always renders the session-context edge + the untrusted-marker contract', () => {
+  // clud-bug#246 Ruling 3: the §2b "fold in the session's own authorial
+  // context" instruction is deleted — that fold-in is what made the author
+  // the reviewer (measured — see #228). §2b now renders diff-only,
+  // refute-first framing + the untrusted-marker contract instead.
+  it('always renders diff-only refute-first framing + the untrusted-marker contract, never the session fold-in', () => {
     const recipe = renderReviewRecipe({ plan, trigger: 'commit' });
     expect(recipe).toMatch(/## 2b\. Reviewer context/);
-    expect(recipe).toMatch(/reviewing inside the session that produced this change/i);
+    expect(recipe).not.toMatch(/reviewing inside the session that produced this change/i);
+    expect(recipe).not.toMatch(/fold in what you already know about it/i);
+    expect(recipe).toMatch(/do not fold in what you recall from this session/i);
+    expect(recipe).toMatch(/try to refute the change before you accept it/i);
     expect(recipe).toMatch(/untrusted.*author focus/is);
   });
   it('renders the trusted standing focus only when reviewContext is set', () => {
