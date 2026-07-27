@@ -47,22 +47,35 @@ if (typeof pkg.version !== 'string' || !SEMVER.test(pkg.version)) {
 //    column 0, so an indented fence cannot contain a matching line anyway.
 const changelog = readFileSync(join(root, 'CHANGELOG.md'), 'utf8');
 
-let inFence = null;
+//    Follows CommonMark's fence rules in the two ways that matter here:
+//      - a closing fence must use the SAME character as the opening one and
+//        be AT LEAST as long. Without the length rule, a nested ```` block
+//        containing a ``` sample closes early and the guard flags the
+//        documentation inside it (reproduced).
+//      - an unclosed fence runs to end of document. That means a malformed
+//        CHANGELOG can hide later headings from this scan — accepted, since
+//        it matches how every markdown renderer reads the same file, and the
+//        package.json check (the publish-blocking one) is unaffected.
+let fenceChar = null;
+let fenceLen = 0;
 const scannable = changelog
   .split('\n')
   .filter((line) => {
-    const fence = line.match(/^(```|~~~)/);
+    const fence = line.match(/^(`{3,}|~{3,})/);
     if (fence) {
-      if (inFence === null) {
-        inFence = fence[1];
+      const [delim] = fence;
+      if (fenceChar === null) {
+        fenceChar = delim[0];
+        fenceLen = delim.length;
         return false; // opening delimiter
       }
-      if (line.startsWith(inFence)) {
-        inFence = null;
+      if (delim[0] === fenceChar && delim.length >= fenceLen) {
+        fenceChar = null;
+        fenceLen = 0;
         return false; // closing delimiter
       }
     }
-    return inFence === null;
+    return fenceChar === null;
   })
   .join('\n');
 
