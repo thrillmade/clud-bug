@@ -38,6 +38,7 @@ clud-bug
 ├── fixtures
 │   └── reviews
 ├── scripts
+│   ├── check-version.mjs
 │   ├── fixture-check.mjs
 │   └── gen-version.mjs
 ├── site
