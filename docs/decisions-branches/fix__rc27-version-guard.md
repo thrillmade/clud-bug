@@ -13,3 +13,12 @@
 
 ---
 
+## 2026-07-26 21:33 - check-version: skip fenced code blocks when scanning CHANGELOG headings
+
+**Reasoning:** Self-review of 7c0bcf6 (the commit-review hook) found a false-positive in my own new guard, confirmed by reproduction: the heading scan used /^## \[/gm on raw text, so any '## [x]' line inside a  and ~~~ both handled, unclosed fence swallows the remainder (conservative, matches markdown)
+
+**Implications:**
+- Verified with 3 controls that must STILL fail: a real bad heading, a bad package.json, and an unclosed-fence case — the fix does not blind the guard
+
+---
+

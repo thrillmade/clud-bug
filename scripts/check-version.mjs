@@ -38,8 +38,35 @@ if (typeof pkg.version !== 'string' || !SEMVER.test(pkg.version)) {
 // 2. CHANGELOG.md release headings — `## [x.y.z] — date`, plus the literal
 //    `## [Unreleased]` staging header. #251 corrupted this file too, so
 //    checking only package.json would have caught half the damage.
+//
+//    Fenced code blocks are stripped first. A release note that *quotes* a
+//    bad heading — e.g. this repo's own rc.27 entry describing the `0.7.NaN`
+//    incident — is documentation, not a release. Scanning raw text flagged
+//    it and red-CI'd a correct CHANGELOG (reproduced before this fix).
+//    Only ``` / ~~~ fences at column 0 are handled: `^## [` already requires
+//    column 0, so an indented fence cannot contain a matching line anyway.
 const changelog = readFileSync(join(root, 'CHANGELOG.md'), 'utf8');
-for (const [, heading] of changelog.matchAll(/^## \[([^\]]+)\]/gm)) {
+
+let inFence = null;
+const scannable = changelog
+  .split('\n')
+  .filter((line) => {
+    const fence = line.match(/^(```|~~~)/);
+    if (fence) {
+      if (inFence === null) {
+        inFence = fence[1];
+        return false; // opening delimiter
+      }
+      if (line.startsWith(inFence)) {
+        inFence = null;
+        return false; // closing delimiter
+      }
+    }
+    return inFence === null;
+  })
+  .join('\n');
+
+for (const [, heading] of scannable.matchAll(/^## \[([^\]]+)\]/gm)) {
   if (heading === 'Unreleased') continue;
   if (!SEMVER.test(heading)) {
     errors.push(`CHANGELOG.md heading is not valid SemVer: ## [${heading}]`);
