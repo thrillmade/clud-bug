@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (34 decisions)
+## 2026-07 (35 decisions)
 
-- **2026-07-26** — Fix #249: local review hook re-fires on pull/merge of already-reviewed commits — add authorship filter *(fix-249-hook-pull-noise)* — [decisions-branches/fix-249-hook-pull-noise.md](decisions-branches/fix-249-hook-pull-noise.md)
-- *... 32 more decisions ...*
+- **2026-07-26** — Delete the §2b trusted-context fold-in from the local review recipe; replace with diff-only, refute-first framing (clud-bug#246 safe half) *(feat-246-no-notarize-self-review)* — [decisions-branches/feat-246-no-notarize-self-review.md](decisions-branches/feat-246-no-notarize-self-review.md)
+- *... 33 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
