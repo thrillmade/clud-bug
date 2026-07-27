@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (33 decisions)
+## 2026-07 (34 decisions)
 
-- **2026-07-25** — chore: bump to 0.7.0-rc.26 (publishes ZP4 verdict parity, #239/#240 hook coverage, §17 citations) *(chore-bump-rc26)* — [decisions-branches/chore-bump-rc26.md](decisions-branches/chore-bump-rc26.md)
-- *... 31 more decisions ...*
+- **2026-07-26** — Fix #249: local review hook re-fires on pull/merge of already-reviewed commits — add authorship filter *(fix-249-hook-pull-noise)* — [decisions-branches/fix-249-hook-pull-noise.md](decisions-branches/fix-249-hook-pull-noise.md)
+- *... 32 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
