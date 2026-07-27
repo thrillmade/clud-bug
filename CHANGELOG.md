@@ -4,11 +4,57 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
-## [0.7.NaN] — 2026-07-25
+## [0.7.0-rc.27] — 2026-07-26
+
+**Review independence: the reviewer stops borrowing the author's confidence, and the hook stops
+crying wolf.**
+
+### Fixed
+
+- **🔴 The reviewer no longer folds in what it recalls from the authoring session (#246 → #254).**
+  A `§2b trusted-context` block told the review pass to take the surrounding session's account of
+  the change as established. That is precisely the channel by which an author waves their own bug
+  through: the recollection is unfalsifiable, a validator cannot check it, and it arrives
+  pre-loaded with the author's own confidence. The prompt now instructs the reviewer to read the
+  diff on its own terms, as someone who did not write it would, and to **try to refute the change
+  before accepting it**.
+
+- **The local commit hook stops re-firing on commits it already reviewed (#249 → #252).**
+  `git pull`, `merge`, `rebase`, and `cherry-pick` all move `HEAD` to commits authored by other
+  people — the hook queued a fresh review for every one. Reproduced three times in a day. The
+  hook now applies an authorship filter (fires when the new HEAD commit matches the local
+  `user.email` *or* `user.name`; one identity under several emails is common). It **fails open**:
+  if git identity is unset or unreadable, the hook still fires. Recurring false reviews eroded
+  trust in exactly the tier we are trying to make trustworthy.
+
+- **Invalid version strings are now caught directly (`scripts/check-version.mjs`).**
+  An upstream refresh workflow bumped our version with logic that assumed `X.Y.Z`; on the
+  prerelease `0.7.0-rc.26` it produced a literal **`0.7.NaN`** in both `package.json` and a
+  CHANGELOG heading (#251). The existing `release-discipline` suite *did* catch it and CI went
+  red — but it caught it only **incidentally**, by noticing the composite-action pins no longer
+  matched `package.json`. Had the same bad bump also rewritten those pins, everything would have
+  agreed on an unpublishable string and the suite would have gone green. The new guard checks
+  **validity** rather than **consistency**, runs before `npm ci` so it fails in seconds, and
+  covers CHANGELOG headings as well as `package.json`. The upstream generator has separately
+  been fixed — it no longer assigns versions at all, since choosing one is the publisher's act,
+  not the content producer's.
 
 ### Changed
 
-- **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@bd1b554`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+- **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@bd1b554`
+  (#251). `BASELINE_SKILLS_REF` in `src/cli/skills.ts` is pinned to the same commit, so the
+  install-time fetch path and the bundled offline-fallback path resolve to byte-identical
+  content.
+
+### Notes
+
+- **Server-side, no client change required:** the hosted notary now **refuses to certify a
+  self-review** (clud-bug-app#109). When the PR author and the bundle submitter resolve to the
+  same forge account, the notary declines to certify rather than issuing a certified check. When
+  either principal cannot be established it says so — `independence unestablished` — instead of
+  silently claiming independence it did not verify. Identity binds to immutable numeric forge
+  account IDs the notary fetches itself, never to logins, emails, or git author/committer
+  trailers, all of which the submitter controls.
 
 
 ## [0.7.0-rc.26] — 2026-07-25

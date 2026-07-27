@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-07 (35 decisions)
+## 2026-07 (38 decisions)
 
-- **2026-07-26** — Delete the §2b trusted-context fold-in from the local review recipe; replace with diff-only, refute-first framing (clud-bug#246 safe half) *(feat-246-no-notarize-self-review)* — [decisions-branches/feat-246-no-notarize-self-review.md](decisions-branches/feat-246-no-notarize-self-review.md)
-- *... 33 more decisions ...*
+- **2026-07-26** — check-version: honor CommonMark fence length so nested blocks do not close early *(fix/rc27-version-guard)* — [decisions-branches/fix__rc27-version-guard.md](decisions-branches/fix__rc27-version-guard.md)
+- *... 36 more decisions ...*
 - **2026-07-03** — Phase R keystone: add src/core/invariants.ts — executable-probe invariants config + in-scope gate *(phase-r1-invariants-module)* — [decisions-branches/phase-r1-invariants-module.md](decisions-branches/phase-r1-invariants-module.md)
 
 ## 2026-06 (81 decisions)
