@@ -104,8 +104,10 @@ function makeOctokitMock({ rulesets = [], repoSettings } = {}) {
 // (data/rulesets/skdd.json). Used to seed the mock's "already-canonical"
 // state. Kept inline (not derived from loadPreset) so the test also documents
 // the NORMATIVE contract: the ruleset is named `reporulez-default` (vendored
-// from reporulez), 0 approvals, clud-bug-review as a required check, empty
-// bypass_actors (repo extras are preserved as a superset on PUT).
+// from reporulez), 0 approvals, clud-bug-review as a required check PINNED to
+// the clud-bug App's `integration_id` (SPEC §10.3.3 point 2 — an unpinned
+// context name is forgeable by the PR author), empty bypass_actors (repo
+// extras are preserved as a superset on PUT).
 function canonicalRuleset(overrides = {}) {
   return {
     id: 42,
@@ -135,7 +137,7 @@ function canonicalRuleset(overrides = {}) {
           strict_required_status_checks_policy: true,
           do_not_enforce_on_create: false,
           required_status_checks: [
-            { context: 'clud-bug-review' },
+            { context: 'clud-bug-review', integration_id: 3944857 },
             { context: 'check-decisions' },
             { context: 'check-derived-docs' },
             { context: 'check-links' },
@@ -319,7 +321,7 @@ test('apply: missing status check context — superset PUT preserves extras', as
           parameters: {
             ...r.parameters,
             required_status_checks: [
-              { context: 'clud-bug-review' },
+              { context: 'clud-bug-review', integration_id: 3944857 },
               { context: 'check-decisions' },
               { context: 'check-derived-docs' },
               { context: 'lint' },
@@ -344,6 +346,114 @@ test('apply: missing status check context — superset PUT preserves extras', as
   const merged = contextsOf(calls.lastUpdatePayload.rules);
   assert.ok(merged.includes('check-links'));
   assert.ok(merged.includes('lint'));
+});
+
+// ---------------------------------------------------------------------------
+// SPEC §10.3.3 point 2 — the `integration_id` App pin.
+//
+// An unpinned `clud-bug-review` context is just a string: any actor with
+// checks:write (including the PR author) can post a check run by that name,
+// and GitHub's latest-run-wins semantics let the forged run satisfy the gate.
+// These three tests pin the three ways that guarantee can be lost.
+// ---------------------------------------------------------------------------
+
+test('apply: PUT preserves the integration_id pin (regression — it was stripped)', async () => {
+  // The exact defect: mergeForPut rebuilt every entry as a bare `{ context }`,
+  // so ANY apply silently downgraded a correctly-pinned repo to a forgeable
+  // one. Drift something unrelated (a missing context) to force the PUT, then
+  // assert the pin survived the round-trip.
+  const existing = canonicalRuleset();
+  existing.rules = existing.rules.map((r) =>
+    r.type === 'required_status_checks'
+      ? {
+          ...r,
+          parameters: {
+            ...r.parameters,
+            required_status_checks: [
+              { context: 'clud-bug-review', integration_id: 3944857 },
+              { context: 'check-decisions' },
+              { context: 'check-derived-docs' },
+              // check-links missing → forces a PUT
+            ],
+          },
+        }
+      : r,
+  );
+  const { octokit, calls } = makeOctokitMock({ rulesets: [existing] });
+  await applyCanonicalRuleset(octokit, { owner: 'octo', repo: 'demo' });
+  assert.equal(calls.updateRepoRuleset, 1);
+  const rule = calls.lastUpdatePayload.rules.find(
+    (r) => r.type === 'required_status_checks',
+  );
+  const review = rule.parameters.required_status_checks.find(
+    (c) => c.context === 'clud-bug-review',
+  );
+  assert.equal(
+    review.integration_id,
+    3944857,
+    `pin stripped from PUT payload: ${JSON.stringify(rule.parameters.required_status_checks)}`,
+  );
+});
+
+test('apply: an UNPINNED clud-bug-review is drift, not already-canonical', async () => {
+  // Before the fix this reported "already canonical" — the repo looked
+  // configured while its gate stayed forgeable.
+  const existing = canonicalRuleset();
+  existing.rules = existing.rules.map((r) =>
+    r.type === 'required_status_checks'
+      ? {
+          ...r,
+          parameters: {
+            ...r.parameters,
+            required_status_checks: r.parameters.required_status_checks.map((c) =>
+              c.context === 'clud-bug-review' ? { context: c.context } : c,
+            ),
+          },
+        }
+      : r,
+  );
+  const { octokit, calls } = makeOctokitMock({ rulesets: [existing] });
+  const result = await applyCanonicalRuleset(octokit, {
+    owner: 'octo',
+    repo: 'demo',
+  });
+  assert.equal(result.alreadyCanonical, false);
+  assert.ok(
+    result.changes.some((c) => /integration_id.*\(unpinned\).*3944857/.test(c)),
+    `expected an integration_id drift line; got: ${result.changes.join(' | ')}`,
+  );
+  assert.equal(calls.updateRepoRuleset, 1);
+});
+
+test("apply: a repo's own extra context keeps its own integration_id", async () => {
+  // Superset contract: we own `clud-bug-review`, but a repo pinning its own
+  // `lint` check to some other App must not have that pin clobbered either.
+  const existing = canonicalRuleset();
+  existing.rules = existing.rules.map((r) =>
+    r.type === 'required_status_checks'
+      ? {
+          ...r,
+          parameters: {
+            ...r.parameters,
+            required_status_checks: [
+              ...r.parameters.required_status_checks.filter(
+                (c) => c.context !== 'check-links',
+              ),
+              { context: 'lint', integration_id: 99999 },
+            ],
+          },
+        }
+      : r,
+  );
+  const { octokit, calls } = makeOctokitMock({ rulesets: [existing] });
+  await applyCanonicalRuleset(octokit, { owner: 'octo', repo: 'demo' });
+  const rule = calls.lastUpdatePayload.rules.find(
+    (r) => r.type === 'required_status_checks',
+  );
+  const lint = rule.parameters.required_status_checks.find(
+    (c) => c.context === 'lint',
+  );
+  assert.equal(lint.integration_id, 99999);
 });
 
 test('apply: extra status check context alone → no-op (superset preserved)', async () => {
