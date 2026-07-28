@@ -531,6 +531,39 @@ function statusCheckContexts(params: Record<string, unknown>): string[] {
     .filter((c): c is string => typeof c === 'string');
 }
 
+/** One required-status-check entry: the context plus its optional App pin. */
+interface StatusCheckEntry {
+  context: string;
+  integration_id?: number;
+}
+
+/**
+ * Like `statusCheckContexts`, but preserves each entry's `integration_id`.
+ *
+ * SPEC §10.3.3 point 2 pins `clud-bug-review` to the clud-bug App's own
+ * `integration_id`. Without the pin the context name is just a string: ANY
+ * actor with checks:write — including the PR author — can post a check run
+ * named `clud-bug-review`, and GitHub's latest-run-wins semantics let that
+ * forged run satisfy the gate over the App's real verdict.
+ *
+ * The string-only `statusCheckContexts` above is still correct for the
+ * places that genuinely only need names (human-readable diff labels), but
+ * anything that ROUND-TRIPS entries back to the API must use this instead —
+ * rebuilding entries as bare `{ context }` silently drops the pin.
+ */
+function statusCheckEntries(params: Record<string, unknown>): StatusCheckEntry[] {
+  const list = params.required_status_checks;
+  if (!Array.isArray(list)) return [];
+  const out: StatusCheckEntry[] = [];
+  for (const c of list) {
+    if (!c || typeof c !== 'object') continue;
+    const { context, integration_id: pin } = c as StatusCheckEntry;
+    if (typeof context !== 'string') continue;
+    out.push(typeof pin === 'number' ? { context, integration_id: pin } : { context });
+  }
+  return out;
+}
+
 /**
  * Diffs an existing ruleset against the canonical desired payload. Returns
  * one human-readable line per difference the apply path would fix; an empty
@@ -614,13 +647,32 @@ function diffRuleParams(
   const changes: string[] = [];
   for (const [key, want] of Object.entries(desired)) {
     if (key === 'required_status_checks') {
-      const wantCtx = statusCheckContexts({ required_status_checks: want });
-      const haveCtx = new Set(
-        statusCheckContexts({ required_status_checks: existing[key] }),
+      const wantEntries = statusCheckEntries({ required_status_checks: want });
+      const haveByContext = new Map(
+        statusCheckEntries({ required_status_checks: existing[key] }).map((e) => [
+          e.context,
+          e,
+        ]),
       );
-      const missing = wantCtx.filter((c) => !haveCtx.has(c));
+      const missing = wantEntries
+        .filter((e) => !haveByContext.has(e.context))
+        .map((e) => e.context);
       if (missing.length > 0) {
         changes.push(`${type}.required_status_checks: add ${JSON.stringify(missing)}`);
+      }
+      // An UNPINNED (or wrong-pin) context that we ship pinned is drift, not
+      // a no-op. Without this the gate reports "already canonical" while the
+      // check name remains forgeable — the repo looks configured and isn't.
+      for (const wantEntry of wantEntries) {
+        if (wantEntry.integration_id === undefined) continue;
+        const have = haveByContext.get(wantEntry.context);
+        if (!have) continue; // already reported as missing above
+        if (have.integration_id !== wantEntry.integration_id) {
+          changes.push(
+            `${type}.required_status_checks["${wantEntry.context}"].integration_id: ` +
+              `${have.integration_id ?? '(unpinned)'} → ${wantEntry.integration_id}`,
+          );
+        }
       }
       continue;
     }
@@ -680,15 +732,45 @@ function mergeForPut(
   const rules = desired.rules.map((rule) => {
     const ex = existingByType.get(rule.type);
     if (rule.type === 'required_status_checks' && rule.parameters) {
-      const merged = unionContexts(
-        statusCheckContexts(ex?.parameters ?? {}),
-        statusCheckContexts(rule.parameters),
-      );
+      // Union by context, PRESERVING each entry's `integration_id`.
+      //
+      // This previously rebuilt every entry as a bare `{ context }`, which
+      // silently dropped the SPEC §10.3.3 App pin on every apply — including
+      // one an operator had set by hand in the GitHub UI. A pinless context
+      // is a forgeable gate (see `statusCheckEntries`), so the strip turned
+      // a correctly-configured repo back into an insecure one on the next
+      // `configure-github` run.
+      //
+      // Precedence is per-FIELD, not per-entry:
+      //   - a context we ship PINNED keeps OUR pin (it cannot be downgraded);
+      //   - a context we ship UNPINNED keeps the repo's own pin if it set one
+      //     (e.g. a repo pinning `check-links` to its own App);
+      //   - the repo's extra contexts carry through verbatim.
+      //
+      // Taking our entry wholesale would strip a repo's pin on every context
+      // we happen to ship without one — the same forgeability regression this
+      // fix exists to prevent, just one level over. We only ever ADD pin
+      // strength here, never remove it.
+      const desiredEntries = statusCheckEntries(rule.parameters);
+      const existingEntries = statusCheckEntries(ex?.parameters ?? {});
+      const existingByContext = new Map(existingEntries.map((e) => [e.context, e]));
+      const desiredByContext = new Map(desiredEntries.map((e) => [e.context, e]));
+
+      const mergedEntries: StatusCheckEntry[] = desiredEntries.map((wanted) => {
+        if (wanted.integration_id !== undefined) return wanted;
+        const theirs = existingByContext.get(wanted.context);
+        return theirs?.integration_id !== undefined ? theirs : wanted;
+      });
+      for (const existingEntry of existingEntries) {
+        if (!desiredByContext.has(existingEntry.context)) {
+          mergedEntries.push(existingEntry);
+        }
+      }
       return {
         ...rule,
         parameters: {
           ...rule.parameters,
-          required_status_checks: merged.map((context) => ({ context })),
+          required_status_checks: mergedEntries,
         },
       };
     }
@@ -716,18 +798,10 @@ function mergeForPut(
   };
 }
 
-/** Union of two context lists, preserving existing order then appending new. */
-function unionContexts(existing: string[], desired: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const c of [...existing, ...desired]) {
-    if (!seen.has(c)) {
-      seen.add(c);
-      out.push(c);
-    }
-  }
-  return out;
-}
+// `unionContexts` (string-only union) removed: `mergeForPut` now unions
+// entries via `statusCheckEntries` so the `integration_id` pin survives.
+// Leaving a string-only union in place invites the same strip to be
+// reintroduced by a future edit that reaches for the convenient helper.
 
 /** Compares two values as sets (order-insensitive). Non-arrays fall back to ===. */
 function arraysEqualAsSet(a: unknown, b: unknown): boolean {

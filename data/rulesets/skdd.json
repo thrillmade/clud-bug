@@ -31,7 +31,7 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "clud-bug-review" },
+          { "context": "clud-bug-review", "integration_id": 3944857 },
           { "context": "check-derived-docs" },
           { "context": "check-decisions" },
           { "context": "check-links" }

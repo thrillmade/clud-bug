@@ -4,6 +4,28 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Fixed
+
+- **🔴 The `clud-bug-review` merge gate was forgeable — `configure-github` shipped it unpinned, and
+  stripped the pin if you set one by hand.** SPEC §10.3.3 point 2 requires the required-status-check
+  entry to pin `integration_id` to the clud-bug App, so that only the App can satisfy the gate. Without
+  it the context is just a string: **any actor with `checks:write` — including the PR author — could post
+  a check run named `clud-bug-review`**, and GitHub's latest-run-wins semantics let that forged run
+  satisfy the gate over the App's real verdict.
+
+  Three defects, all fixed:
+  - The vendored presets (`data/rulesets/clud-bug.json`, `skdd.json`, `canonical-v1.json`) omitted the
+    pin. reporulez — the canonical source these are vendored from — has carried it since the Z6 pin
+    landed; our copies were stale.
+  - `mergeForPut` rebuilt every entry as a bare `{ context }`, **silently dropping the pin on every
+    apply** — including one an operator had set manually in the GitHub UI. A correctly-configured repo
+    was downgraded back to a forgeable one by the next `configure-github` run.
+  - The diff treated an unpinned context as canonical, so an affected repo reported **"already
+    canonical"** while its gate stayed open.
+
+  A repo's own extra required checks keep their own pins (the superset contract is unchanged).
+  Re-run `clud-bug configure-github <owner>/<repo>` to converge an already-configured repo.
+
 ## [0.7.0-rc.27] — 2026-07-26
 
 **Review independence: the reviewer stops borrowing the author's confidence, and the hook stops
