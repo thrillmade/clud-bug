@@ -425,6 +425,62 @@ test('apply: an UNPINNED clud-bug-review is drift, not already-canonical', async
   assert.equal(calls.updateRepoRuleset, 1);
 });
 
+test("apply: a repo's pin on a context WE ship unpinned is preserved", async () => {
+  // Self-review catch: taking our desired entry wholesale stripped the repo's
+  // pin on every context we happen to ship WITHOUT one (skdd ships
+  // check-links unpinned). Same forgeability regression as the headline bug,
+  // one level over. Precedence is per-FIELD: we only ever ADD pin strength.
+  const existing = canonicalRuleset();
+  existing.rules = existing.rules.map((r) =>
+    r.type === 'required_status_checks'
+      ? {
+          ...r,
+          parameters: {
+            ...r.parameters,
+            required_status_checks: r.parameters.required_status_checks.map((c) =>
+              c.context === 'check-links'
+                ? { context: c.context, integration_id: 12345 }
+                : c,
+            ),
+          },
+        }
+      : r,
+  );
+  // Drift an unrelated context so a PUT actually fires.
+  existing.rules = existing.rules.map((r) =>
+    r.type === 'required_status_checks'
+      ? {
+          ...r,
+          parameters: {
+            ...r.parameters,
+            required_status_checks: r.parameters.required_status_checks.filter(
+              (c) => c.context !== 'check-decisions',
+            ),
+          },
+        }
+      : r,
+  );
+  const { octokit, calls } = makeOctokitMock({ rulesets: [existing] });
+  await applyCanonicalRuleset(octokit, { owner: 'octo', repo: 'demo' });
+  assert.equal(calls.updateRepoRuleset, 1);
+  const rule = calls.lastUpdatePayload.rules.find(
+    (r) => r.type === 'required_status_checks',
+  );
+  const links = rule.parameters.required_status_checks.find(
+    (c) => c.context === 'check-links',
+  );
+  assert.equal(
+    links.integration_id,
+    12345,
+    `repo's own pin stripped: ${JSON.stringify(rule.parameters.required_status_checks)}`,
+  );
+  // ...and ours is still applied on the context we DO pin.
+  const review = rule.parameters.required_status_checks.find(
+    (c) => c.context === 'clud-bug-review',
+  );
+  assert.equal(review.integration_id, 3944857);
+});
+
 test("apply: a repo's own extra context keeps its own integration_id", async () => {
   // Superset contract: we own `clud-bug-review`, but a repo pinning its own
   // `lint` check to some other App must not have that pin clobbered either.

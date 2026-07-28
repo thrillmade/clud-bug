@@ -15,3 +15,16 @@
 
 ---
 
+## 2026-07-28 00:27 - F1a follow-up: pin precedence is per-FIELD, never per-entry
+
+**Reasoning:** Adversarial self-review of the F1a commit found the same forgeability regression one level over, confirmed by reproduction before fixing. The merge took our desired entry wholesale for any context we ship, so a repo that had pinned a context we ship UNPINNED — skdd ships check-links with no integration_id — had its own pin stripped on every apply. Identical class to the headline bug: an apply that silently reduces pin strength.
+
+**Alternatives considered:** Leave it: we only promise to manage contexts we ship. Rejected — we do not ship check-links pinned, so under that reading we would be free to strip a pin a repo deliberately set, which is the exact harm the fix exists to prevent.
+
+**Implications:**
+- Correct rule: our pin wins where we specify one so it cannot be downgraded; the repo pin is preserved where we specify none; repo extra contexts carry verbatim. We only ever ADD pin strength.
+- Regression test control-tested: reverting to take-ours-wholesale fails it
+- SPEC gap to propose upstream: 10.3.3 point 2 says pin clud-bug-review but says nothing about an applier never DOWNGRADING an existing pin. That is the normative rule this work produced.
+
+---
+

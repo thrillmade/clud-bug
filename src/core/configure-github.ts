@@ -741,13 +741,27 @@ function mergeForPut(
       // a correctly-configured repo back into an insecure one on the next
       // `configure-github` run.
       //
-      // Precedence: OUR entry wins for contexts we ship (so the canonical pin
-      // is applied and cannot be downgraded); the repo's own extra contexts
-      // are carried through verbatim, keeping any pin their owner chose.
+      // Precedence is per-FIELD, not per-entry:
+      //   - a context we ship PINNED keeps OUR pin (it cannot be downgraded);
+      //   - a context we ship UNPINNED keeps the repo's own pin if it set one
+      //     (e.g. a repo pinning `check-links` to its own App);
+      //   - the repo's extra contexts carry through verbatim.
+      //
+      // Taking our entry wholesale would strip a repo's pin on every context
+      // we happen to ship without one — the same forgeability regression this
+      // fix exists to prevent, just one level over. We only ever ADD pin
+      // strength here, never remove it.
       const desiredEntries = statusCheckEntries(rule.parameters);
+      const existingEntries = statusCheckEntries(ex?.parameters ?? {});
+      const existingByContext = new Map(existingEntries.map((e) => [e.context, e]));
       const desiredByContext = new Map(desiredEntries.map((e) => [e.context, e]));
-      const mergedEntries: StatusCheckEntry[] = [...desiredEntries];
-      for (const existingEntry of statusCheckEntries(ex?.parameters ?? {})) {
+
+      const mergedEntries: StatusCheckEntry[] = desiredEntries.map((wanted) => {
+        if (wanted.integration_id !== undefined) return wanted;
+        const theirs = existingByContext.get(wanted.context);
+        return theirs?.integration_id !== undefined ? theirs : wanted;
+      });
+      for (const existingEntry of existingEntries) {
         if (!desiredByContext.has(existingEntry.context)) {
           mergedEntries.push(existingEntry);
         }
