@@ -13,6 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-08
+
+- **2026-08-01** — Delete probe surface, replace with SPEC 2.0 §4.7 CI evidence (clud-bug#264/#260) *(fix/264-ci-evidence-delete-probes)* — [decisions-branches/fix__264-ci-evidence-delete-probes.md](decisions-branches/fix__264-ci-evidence-delete-probes.md)
+
 ## 2026-07 (40 decisions)
 
 - **2026-07-28** — F1a follow-up: pin precedence is per-FIELD, never per-entry *(fix/f1a-integration-id-pin)* — [decisions-branches/fix__f1a-integration-id-pin.md](decisions-branches/fix__f1a-integration-id-pin.md)
