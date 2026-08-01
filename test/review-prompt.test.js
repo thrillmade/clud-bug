@@ -322,6 +322,22 @@ describe('renderReviewRecipe', () => {
     // SEVERITY_RULE carries the same split
     expect(recipe).toMatch(/only the `conclusion` enum does that|conclusion.*is the.*forge.*own closed enum/i);
   });
+
+  it('§3c does not fetch `link` (the check run\'s author-controlled details_url) — coordinator follow-up on clud-bug#264/#260', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
+    const recipe = renderReviewRecipe({
+      plan,
+      trigger: 'pr',
+      ciChecks: { names: null },
+    });
+    // the --json field list must not request `link`
+    expect(recipe).toMatch(/--json name,state,conclusion,description(?!,link)/);
+    expect(recipe).not.toMatch(/--json name,state,conclusion,description,link/);
+    // the deliberate-omission note is present and explains why
+    expect(recipe).toMatch(/`link`.*deliberately NOT fetched/i);
+    expect(recipe).toMatch(/details_url/i);
+    expect(recipe).toMatch(/do not follow one if you see it elsewhere/i);
+  });
 });
 
 describe('review-prompt verb (integration)', () => {

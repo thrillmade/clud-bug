@@ -26,3 +26,16 @@
 
 ---
 
+## 2026-08-01 09:50 - Drop unfenced author-controlled link field from §3c CI-checks fetch (coordinator review of eed73e7)
+
+**Reasoning:** gh pr checks fetched name,state,conclusion,description,link but the round-2 trust split only enumerated four of those five fields as trusted-vs-author-controlled. link is the check run's details_url, set freely by whoever creates the check run via the Checks API — author-controlled exactly like name, and a URL, sitting in the reviewer's context beside prose explaining its neighbors are hostile with nothing saying whether to follow it. Control-tested first: grepped src/ + test/ for link usage (plus a known-matching control pattern) and confirmed nothing downstream consumes it.
+
+**Alternatives considered:** Fence link alongside name/description in the trust-tier paragraph and instruct the reviewer never to follow it — rejected in favor of dropping it: nothing consumes it, so removing the field is strictly less surface than fencing an unused one, and matches the coordinator's own preference between the two offered options when neither is clearly required by functionality.
+
+**Implications:**
+- src/cli/review-prompt.ts:382's gh pr checks --json list drops link; a one-line note in the rendered §3c step states link is deliberately not fetched (it's the details_url, author-controlled, a URL) and that one MUST NOT follow one seen elsewhere.
+- src/core/prompts.ts's CI-checks fetch never requested link in the first place (verified) — no change needed there.
+- test/review-prompt.test.js gained a dedicated assertion locking the --json field list to exclude link and asserting the deliberate-omission note is present, so this can't regress silently the way the old execution framing did.
+
+---
+
