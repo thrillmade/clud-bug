@@ -45,6 +45,16 @@
       "pattern": "a command you ran \\+ its observed output",
       "why": "SPEC 2.0 §4.7 bans reviewer execution unconditionally (clud-bug#264/#260) — a `reproduction` is a CI check the forge already ran, never a command the reviewer executes itself. Locks the deleted executable-probe framing out of the prompt (the negated form, 'never a command you ran', is the correct replacement and legitimately appears).",
       "category": "execution-ban"
+    },
+    {
+      "pattern": "trusted machine output",
+      "why": "Coordinator review of clud-bug#264/#260's first pass: this phrase told the reviewer a check's name/description text was un-arguable, but that free text is author-controlled (a PR editing .github/workflows/** decides it) — the same trust error §4.7's execution ban was written to prevent, one step removed. Only the `conclusion` enum is trusted; the free text must stay fenced. Locks the mis-scoped trust claim out of the prompt.",
+      "category": "ci-evidence-trust"
+    },
+    {
+      "pattern": "select\\(\\.name ==",
+      "why": "Coordinator review: a follow-up `--jq 'select(.name == \"<name>\")'` command that splices an observed (author-controlled) check name into a new shell command is a command-injection vector — a name containing a stray `'` breaks out of the outer single-quoted jq argument. The fetch now reads name+summary in ONE call instead of a per-name follow-up; locks the two-step pattern out.",
+      "category": "ci-evidence-trust"
     }
   ]
 }

@@ -1,11 +1,11 @@
 {
   "$schema-comment": "Size caps for the rendered prompt. UTF-8 byte counts. The CI gate fails if the actual size exceeds the cap. Caps are intentionally close to current size so 0.0.P trim work has headroom without inviting regression.",
   "max_prompt_bytes": {
-    "value": 19700,
-    "why": "Current rendered prompt is ~19.4 KB post-SPEC-2.0-§4.7 (clud-bug#264/#260): added a ~0.7 KB 'CI checks' fetch bullet + reconciled the `reproduction` grounding-form bullet, since §4.7 bans reviewer execution unconditionally and the sanctioned substitute (reading CI results the forge already produced, ON by default, narrowed only by `.clud-bug.json` `ciChecks`) has to be described for the Action to do it. This is load-bearing, not decorative: without it the self-hosted Action has no instruction to read CI evidence at all, and the old `reproduction: a command you ran` text described a now-banned behaviour. Cap bumped 18700 → 19700 (headroom above the 19.4 KB current). Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3 mid-review self-check-in rules. See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
+    "value": 20800,
+    "why": "Current rendered prompt is ~20.3 KB post-SPEC-2.0-§4.7 (clud-bug#264/#260): the 'CI checks' fetch bullet + reconciled `reproduction` grounding-form bullet, PLUS a trust-tier split added on review (a CI check's `name`/`description`/output text are author-controlled — a PR touching `.github/workflows/**` decides them — so they must be fenced like the untrusted PR-description marker; only the `conclusion` enum grounds a finding). This is load-bearing, not decorative: without the fetch instruction the Action can't read CI evidence at all, and without the trust split, attacker-authored check text would sit in the trusted tier and could argue a finding away or force its severity — the same class of bug the execution-ban deletion fixed, one step removed. Cap bumped 19700 → 20800 (headroom above the 20.3 KB current). Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3. See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
   },
   "max_prompt_lines": {
-    "value": 400,
-    "why": "Current is ~392 lines post-SPEC-2.0-§4.7 (+~7 lines for the CI-checks fetch bullet + the reconciled `reproduction` bullet — see max_prompt_bytes.why). Cap bumped 385 → 400. Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3 (+~26 lines). See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
+    "value": 415,
+    "why": "Current is ~405 lines post-SPEC-2.0-§4.7 (+~13 lines for the CI-checks fetch bullet + the reconciled `reproduction` bullet + the trust-tier fencing paragraph — see max_prompt_bytes.why). Cap bumped 400 → 415. Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3 (+~26 lines). See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
   }
 }

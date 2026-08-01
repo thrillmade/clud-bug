@@ -13,3 +13,16 @@
 
 ---
 
+## 2026-08-01 09:42 - Fence CI-check free text; only conclusion enum grounds a finding (coordinator review of f0b5193)
+
+**Reasoning:** The §3c CI-evidence text told the reviewer a failed check was 'trusted machine output, not a claim about the change' and forbade discounting it. But a check's name/description/output text are author-controlled — src/core/review-context.ts:7-16's TWO TRUST TIERS model says untrusted (author-authored) content may only focus attention, never suppress a finding, lower a severity, or relax a skill. A PR touching .github/workflows/** or a script a workflow runs decides what a check is named and what it says, so that free text was admitted into the trusted tier and made strictly more privileged than the fenced <!-- clud-bug: ... --> PR-description marker, which can only focus, not force a severity. Same trust error the execution-ban deletion fixed, one step removed.
+
+**Alternatives considered:** Leave the free text trusted but add a caveat — rejected: a caveat the model can weigh against isn't a fence; fenceUntrustedContext's contract is unconditional (never suppress, never lower severity), and this needed the same unconditional treatment., Drop CI-check evidence back to conclusion-only, no name/description in the prompt at all — rejected: the free text is still useful context for WHICH finding a check relates to, same as the untrusted PR marker is still shown to the reviewer; fencing (not deleting) is the established pattern.
+
+**Implications:**
+- src/cli/review-prompt.ts (SEVERITY_RULE + the §3c ciEvidenceStep) and src/core/prompts.ts (the CI-checks fetch bullet + the reproduction grounding-form bullet) now split trust explicitly: state/conclusion (forge's closed enum, un-authorable by the change) grounds/argues a finding; name/description/summary (author-controlled) are fenced like the untrusted PR marker — may focus attention, must never ground, suppress, argue away, or move severity.
+- Also closes a command-injection sub-case: prompts.ts no longer instructs a follow-up 'gh api ... --jq select(.name == "<name>")' command that splices an observed, attacker-influenced check name into a new shell invocation (a name containing a stray quote could break out of the outer single-quoted jq argument). Both surfaces now do ONE fetch (name+summary together) instead.
+- Golden fixtures updated: test/golden/must-contain.json gained 'the change under review cannot author them' + the fencing-contract phrase; test/golden/must-not-contain.json gained 'trusted machine output' and the select(.name == pattern; byte/line caps bumped again (19700→20800 bytes, 400→415 lines) for the added trust-tier paragraph. test/review-prompt.test.js gained a dedicated fencing assertion.
+
+---
+

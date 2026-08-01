@@ -25,6 +25,18 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
   its severity lowered; a check that hasn't reached a terminal outcome reports `unverified`, never
   `clean`, and never blocks waiting for it.
 
+  **Follow-up caught in review:** the first pass of this fix told the reviewer a check's failure was
+  "trusted machine output" full stop — but a check's `name`/`description`/output text are
+  author-controlled (a PR editing `.github/workflows/**` or a script a workflow runs decides what a
+  check is named and what it says), the same trust error §4.7's execution ban exists to prevent, one
+  step removed, and strictly more privileged than the fenced `<!-- clud-bug: … -->` PR-description
+  marker since it could force a severity outright. Only the forge's own `conclusion`/`state` enum —
+  which the change cannot author — now grounds or argues a finding; `name`/`description`/output text
+  are fenced like any other untrusted, author-supplied text (may focus attention, must never determine
+  a verdict). Also closes a command-injection sub-case: the Action prompt no longer builds a follow-up
+  `--jq 'select(.name == "<name>")'` command by splicing an observed (attacker-influenced) check name
+  into a new shell invocation — one fetch reads name + summary together instead.
+
 - **🔴 The `clud-bug-review` merge gate was forgeable — `configure-github` shipped it unpinned, and
   stripped the pin if you set one by hand.** SPEC §10.3.3 point 2 requires the required-status-check
   entry to pin `integration_id` to the clud-bug App, so that only the App can satisfy the gate. Without
