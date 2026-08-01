@@ -5,7 +5,7 @@ const REPO_URL = 'https://github.com/thrillmade/clud-bug';
 export const metadata: Metadata = {
   title: 'Multi-pass review — Clud Bug docs',
   description:
-    'The three naturalists of a multi-pass review — Beetle, Wasp, Mantis — the cross-check, consensus, and independent modes, and why a reproduction you ran grounds a finding as firmly as a quoted line.',
+    'The three naturalists of a multi-pass review — Beetle, Wasp, Mantis — the cross-check, consensus, and independent modes, and why a reproduction — a CI check that already ran — grounds a finding as firmly as a quoted line.',
   alternates: { canonical: '/docs/multi-pass' },
 };
 
@@ -167,9 +167,9 @@ export default function DocsMultiPass() {
               diff, with its line number;
             </li>
             <li>
-              <strong>a reproduction you ran</strong> — the command plus the
-              observed output that demonstrates the bug. A repro is{' '}
-              <em>stronger</em> evidence than a quote, not weaker;
+              <strong>a reproduction</strong> — a CI check that already ran
+              against the commit and failed, named, with its failing output.
+              A repro is <em>stronger</em> evidence than a quote, not weaker;
             </li>
             <li>
               <strong>a named violated invariant</strong> — a one-sentence
@@ -182,10 +182,11 @@ export default function DocsMultiPass() {
             waved through on suspicion — it is reproduced or named. A reproduction
             or a named invariant satisfies even a skill whose letter says
             &ldquo;quote the line&rdquo;: the wider grounding wins. This is the{' '}
-            <code>GROUNDING_RULE</code>, and it is paired with an execution-safety
-            boundary — a reproduction runs only against your own trusted work,
-            never against an untrusted contributor&rsquo;s diff, since running that
-            would be code execution with the reviewer&rsquo;s shell and tokens.
+            <code>GROUNDING_RULE</code>. The reviewer executes nothing of its
+            own, on trusted work or not — no probe, no build, no test run
+            against the diff. A reproduction is read from the checks the
+            repository&rsquo;s own forge already ran, never something the
+            reviewer runs itself.
           </p>
 
           <h2>4. What the benchmark found</h2>
@@ -227,13 +228,16 @@ export default function DocsMultiPass() {
             <a href={`${REPO_URL}/blob/main/benchmark/RESULTS.md`} rel="noopener">
               benchmark/RESULTS.md
             </a>
-            .
+            . Measured under the execution-grounded Phase R recipe, since
+            superseded by the CI-evidence model above; a fresh run against the
+            new recipe is pending.
           </p>
           <p>
-            Executable invariants are how you carry this discipline into your own
-            repo — a probe that runs RED is a reproduction the review does not have
-            to improvise. See <a href="/docs/config">the invariants block</a> for
-            how to declare one.
+            The <code>ciChecks</code> key is how you carry this discipline into
+            your own repo — narrowing which checks a review reads as evidence,
+            for a repo whose CI runs a flaky job or a deploy preview that fails
+            by design. See <a href="/docs/config">the ciChecks block</a> for how
+            to configure it.
           </p>
         </div>
 

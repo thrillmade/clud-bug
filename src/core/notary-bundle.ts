@@ -31,10 +31,12 @@ export const NOTARY_PROTOCOL_VERSION = '1.2.0';
 export type NotarySeverity = 'critical' | 'minor' | 'preexisting';
 
 /**
- * How a finding is grounded (mirrors the Phase R grounding forms: quote /
- * reproduction / invariant). The notary deterministically verifies `quote`
- * (the span must appear in the ground-truth diff); `reproduction`/`invariant`
- * carry no diff-checkable artifact and are deferred to the clean-case audit.
+ * How a finding is grounded (mirrors the SPEC 2.0 §4.2 grounding forms:
+ * quote / reproduction / invariant). The notary deterministically verifies
+ * `quote` (the span must appear in the ground-truth diff); `reproduction`/
+ * `invariant` carry no diff-checkable artifact and are deferred to the
+ * clean-case audit. `reproduction` is a CI check that failed, named, with
+ * its output — never a command the reviewer ran (§4.7 bans execution).
  */
 export type GroundingKind = 'quote' | 'reproduction' | 'invariant';
 
@@ -48,8 +50,8 @@ export interface NotaryFinding {
   summary: string;
   /**
    * Evidence anchoring the finding. REQUIRED for `critical` (the notary rejects
-   * a bare critical): a verbatim span from a changed line (`quote`), a
-   * reproduction's command+output (`reproduction`), or the violated-invariant
+   * a bare critical): a verbatim span from a changed line (`quote`), a named
+   * CI check that failed + its output (`reproduction`), or the violated-invariant
    * statement (`invariant`).
    */
   grounding?: string;

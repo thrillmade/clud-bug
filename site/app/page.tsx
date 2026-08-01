@@ -257,16 +257,17 @@ export default async function Home() {
         </header>
         <div className="section-body">
           <aside className="marginalia">
-            Reproductions run only on trusted, self-authored work. An untrusted
-            contributor&rsquo;s diff is grounded from the quoted line, or deferred
-            to a sandbox &mdash; never executed with the reviewer&rsquo;s shell.
+            The reviewer executes nothing of its own &mdash; no probe, no build,
+            no test run against the diff. A reproduction is a CI check the
+            repository&rsquo;s own forge already ran, read rather than run.
           </aside>
           <div className="section-prose">
             <p>
               Most review tools can only point at one suspicious line, so those
               are the only bugs they catch. Clud Bug grounds every finding one
-              of three ways &mdash; a line quoted from the diff, a reproduction it
-              actually runs, or a named invariant the change breaks. The
+              of three ways &mdash; a line quoted from the diff, a reproduction
+              &mdash; a CI check that already ran and failed, read rather than
+              run &mdash; or a named invariant the change breaks. The
               reproduction is the sharp end: a real bug often lives on{' '}
               <em>no</em> single changed line.
             </p>
@@ -286,7 +287,10 @@ export default async function Home() {
               6 clean look-alikes as precision controls, each scored by three
               independent reviewers &mdash; the hardened recipe caught every bug
               and false-flagged none: 100% recall, 100% precision, every catch
-              grounded by a reproduction the reviewer wrote and ran.
+              grounded by a reproduction the reviewer wrote and ran &mdash;
+              measured under the execution-grounded Phase R recipe, since
+              superseded by the CI-evidence model above; a fresh run against
+              the new recipe is pending.
             </p>
           </div>
         </div>

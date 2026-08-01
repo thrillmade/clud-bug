@@ -1,11 +1,11 @@
 {
   "$schema-comment": "Size caps for the rendered prompt. UTF-8 byte counts. The CI gate fails if the actual size exceeds the cap. Caps are intentionally close to current size so 0.0.P trim work has headroom without inviting regression.",
   "max_prompt_bytes": {
-    "value": 18700,
-    "why": "Current rendered prompt is ~18.2 KB post-ZP3 (added a ~1.5 KB Grounding block: every 🔴 critical must carry grounding + grounding_kind, since the CI review's structured_output is assembled into a notary attestation bundle and validateGrounding REJECTS an ungrounded critical → the whole bundle is refused). This is load-bearing, not decorative: without it the self-hosted Action can never get a green notarized check on any PR with a critical. Cap bumped 17500 → 18700 with ZP3 (headroom above the 18.2 KB current, at the 18500 pre-0.0.P ceiling ballpark). Earlier: v0.6.27 §5.5 Layer 3 mid-review self-check-in rules. See CHANGELOG [Unreleased] ZP3 + [0.6.27]."
+    "value": 19700,
+    "why": "Current rendered prompt is ~19.4 KB post-SPEC-2.0-§4.7 (clud-bug#264/#260): added a ~0.7 KB 'CI checks' fetch bullet + reconciled the `reproduction` grounding-form bullet, since §4.7 bans reviewer execution unconditionally and the sanctioned substitute (reading CI results the forge already produced, ON by default, narrowed only by `.clud-bug.json` `ciChecks`) has to be described for the Action to do it. This is load-bearing, not decorative: without it the self-hosted Action has no instruction to read CI evidence at all, and the old `reproduction: a command you ran` text described a now-banned behaviour. Cap bumped 18700 → 19700 (headroom above the 19.4 KB current). Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3 mid-review self-check-in rules. See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
   },
   "max_prompt_lines": {
-    "value": 385,
-    "why": "Current is ~375 lines post-ZP3 (+~24 lines for the Grounding block — see max_prompt_bytes.why). Cap bumped 365 → 385 with ZP3. Earlier: v0.6.27 §5.5 Layer 3 (+~26 lines). See CHANGELOG [Unreleased] ZP3 + [0.6.27]."
+    "value": 400,
+    "why": "Current is ~392 lines post-SPEC-2.0-§4.7 (+~7 lines for the CI-checks fetch bullet + the reconciled `reproduction` bullet — see max_prompt_bytes.why). Cap bumped 385 → 400. Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3 (+~26 lines). See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
   }
 }

@@ -58,8 +58,8 @@ export default function Docs() {
                   Every <code>.clud-bug.json</code> option —{' '}
                   <code>strictMode</code>, <code>reviewContext</code>,{' '}
                   <code>reviewPasses</code>, <code>design</code>,{' '}
-                  <code>autoResolve</code>, and the executable{' '}
-                  <code>invariants</code> — with a small example each.
+                  <code>autoResolve</code>, and{' '}
+                  <code>ciChecks</code> — with a small example each.
                 </td>
               </tr>
               <tr>

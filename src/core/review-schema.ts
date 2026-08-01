@@ -64,7 +64,7 @@ const FINDING_ITEM: JSONSchemaObject = {
     },
     grounding: {
       type: 'string',
-      description: 'Verbatim evidence anchoring the finding. STRONGLY EXPECTED on a 🔴 critical (the notary attestation rejects an ungrounded critical): the exact changed line quoted from the diff, OR a reproduction command + observed output, OR the one-sentence violated invariant. Optional on 🟡/🟣.',
+      description: 'Verbatim evidence anchoring the finding. STRONGLY EXPECTED on a 🔴 critical (the notary attestation rejects an ungrounded critical): the exact changed line quoted from the diff, OR a named CI check that failed + its observed output (never a command the reviewer ran — SPEC §4.7 bans execution), OR the one-sentence violated invariant. Optional on 🟡/🟣.',
     },
     grounding_kind: {
       type: 'string',

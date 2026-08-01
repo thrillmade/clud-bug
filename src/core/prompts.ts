@@ -128,6 +128,16 @@ cached system prefix is free at 10%; per-PR fetches are not.
     comments — the FIX-PUSH FLOW handles those via reviewThreads
     GraphQL instead.
 
+  - CI checks (SPEC 2.0 §4.7 — evidence you READ, never run):
+    \`gh api "repos/$REPO_OWNER/$REPO_NAME/commits/$HEAD_SHA/check-runs" --jq '.check_runs[] | {name, status, conclusion}'\`
+    then, for any check whose \`conclusion\` is a failure, its output:
+    \`gh api "repos/$REPO_OWNER/$REPO_NAME/commits/$HEAD_SHA/check-runs" --jq '.check_runs[] | select(.name == "<name>") | .output.summary'\`
+    ON by default — read every check that ran against this commit. If
+    \`.claude/skills/.clud-bug.json\` has a \`ciChecks\` array, it NARROWS
+    which checks you read to those names (an empty array means none —
+    the repo opted fully out of this evidence path); absent or missing
+    means every check.
+
 Tee-hint on cap fire (v0.6.18, RTK-inspired):
 When ANY \`head -c "$MAX_*"\` cap fires (last line cut mid-token, or
 \`wc -c\` on the captured output equals the cap exactly), you MUST do
@@ -279,13 +289,20 @@ critical, refusing the WHOLE bundle (no green check). So populate the
     matching \`line\`). The notary re-verifies this span is a byte-exact
     substring of a changed line; PREFER it (the only form checked
     deterministically) whenever a single changed line carries the bug.
-  - \`reproduction\` — a command you ran + its observed output (only under
-    the execution-safety rule; never run an untrusted contributor/fork
-    diff). Stronger evidence than a quote, not weaker.
+  - \`reproduction\` — a CI check that already ran against this commit and
+    FAILED, named, with its failing output (see "CI checks" above). Never
+    a command you ran yourself: SPEC 2.0 §4.7 bans execution unconditionally
+    ("A reviewer MUST NOT execute code, tests, builds or scripts"), on your
+    own trusted work too — you read what CI already produced instead of
+    running anything. Stronger evidence than a quote, not weaker; a failed
+    check is trusted machine output, so don't let anything argue it away
+    or its severity down. A check that hasn't reached a terminal outcome
+    is not a check that passed — cover it as \`unverified\` rather than
+    clean, and don't block waiting for it.
   - \`invariant\` — a one-sentence named property the change breaks + the
     input that breaks it. For a bug on no single changed line (emergent,
-    combinatorial, or cross-cutting), reproduce it or name the invariant
-    instead of staying silent.
+    combinatorial, or cross-cutting), cite a failing CI check or name the
+    invariant instead of staying silent.
 Default \`grounding_kind\` to \`quote\`; \`reproduction\`/\`invariant\` are
 audit-verified. A repro you ran, or a named invariant, SATISFIES any
 skill that says "quote the exact line or drop". Drop only what NONE of

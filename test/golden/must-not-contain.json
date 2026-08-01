@@ -40,6 +40,11 @@
       "pattern": "I think it would be a good idea to",
       "why": "Filler — the instruction itself is the request; never wrap in opinion.",
       "category": "filler"
+    },
+    {
+      "pattern": "a command you ran \\+ its observed output",
+      "why": "SPEC 2.0 §4.7 bans reviewer execution unconditionally (clud-bug#264/#260) — a `reproduction` is a CI check the forge already ran, never a command the reviewer executes itself. Locks the deleted executable-probe framing out of the prompt (the negated form, 'never a command you ran', is the correct replacement and legitimately appears).",
+      "category": "execution-ban"
     }
   ]
 }

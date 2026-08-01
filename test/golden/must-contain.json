@@ -120,6 +120,16 @@
       "pattern": "Do NOT post the summary yourself",
       "why": "0.0.O (v0.6.22). Prevents the LLM from double-posting (one free-form via gh pr comment AND the rendered post-step) which would clutter the PR thread.",
       "category": "structured-output"
+    },
+    {
+      "pattern": "repos/\\$REPO_OWNER/\\$REPO_NAME/commits/\\$HEAD_SHA/check-runs",
+      "why": "SPEC 2.0 §4.7 (clud-bug#264/#260): the CI-evidence fetch instruction. This is the sanctioned substitute for the deleted executable-probe surface — without it the Action has no instruction to read the CI checks GitHub already ran, and the `reproduction` grounding form has nothing to point at.",
+      "category": "ci-evidence"
+    },
+    {
+      "pattern": "A reviewer MUST NOT execute code, tests, builds or scripts",
+      "why": "SPEC 2.0 §4.7's execution ban, quoted verbatim (clud-bug#264/#260). Without this the prompt could regress to inviting a 'reproduction' the model runs itself, which is exactly the banned behaviour the probe-surface deletion removed.",
+      "category": "ci-evidence"
     }
   ]
 }

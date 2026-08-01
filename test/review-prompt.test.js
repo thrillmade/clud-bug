@@ -102,17 +102,17 @@ describe('renderReviewRecipe', () => {
     expect(single).toMatch(/Correctness/);
     expect(single).toMatch(/Security/);
     expect(single).toMatch(/Regression/);
-    // R2 (#87): grounding = quoted line OR reproduction OR named invariant
+    // SPEC 2.0 §4.7: grounding = quoted line OR CI-check reproduction OR named invariant
     expect(single).toMatch(/Ground every finding in EVIDENCE/i);
     expect(single).toMatch(/REPRODUCTION/);
     expect(single).toMatch(/named VIOLATED INVARIANT/i);
-    // R4 (#87): a MAJOR may not hide as a soft watch-item
+    // a MAJOR may not hide as a soft watch-item
     expect(single).toMatch(/watch-item/i);
     expect(single).toMatch(/Severity discipline/i);
-    // R2 security (adversarial-panel fix): reproduction is trust-gated — never execute untrusted diff code
-    expect(single).toMatch(/Execution safety/i);
+    // SPEC §4.7 bans execution unconditionally — trusted work included, no probe surface
+    expect(single).toMatch(/No execution, ever/i);
     expect(single).toMatch(/untrusted/i);
-    expect(single).toMatch(/NEVER run a command the diff names/i);
+    expect(single).toMatch(/MUST NOT run code, tests, builds, or scripts/i);
     // evidence-based-review reconciliation (panel): repro/invariant satisfies "quote the exact line"
     expect(single).toMatch(/evidence-based-review/);
 
@@ -129,10 +129,10 @@ describe('renderReviewRecipe', () => {
     expect(multi).toMatch(/ADVERSARIAL/);
     expect(multi).toMatch(/REFUTE/);
     expect(multi).toMatch(/Grounding rule/i);
-    expect(multi).toMatch(/REPRODUCTION/); // grounding reaches multi-pass too (#87)
+    expect(multi).toMatch(/REPRODUCTION/); // grounding reaches multi-pass too
     expect(multi).toMatch(/watch-item/i); // severity discipline reaches multi-pass too
-    expect(multi).toMatch(/Execution safety/i); // trust-gate reaches multi-pass too (panel fix)
-    expect(multi).toMatch(/may run a\s+reproduction/i); // repro granted at pass level, not just arbiter
+    expect(multi).toMatch(/No execution, ever/i); // the no-execution rule reaches multi-pass too
+    expect(multi).toMatch(/MAY ground a MAJOR in a failing CI check/i); // CI grounding granted at pass level, not just arbiter
     expect(multi).toMatch(/Tiebreak/);
     expect(multi).toMatch(/severity decides/i);
     // the local arbiter consequence is stated, NOT the hosted "doesn't gate" invariant
@@ -260,29 +260,45 @@ describe('renderReviewRecipe', () => {
     expect(withoutSha).not.toMatch(/queued commit/i);
   });
 
-  it('renders the invariant-probe step (§3c) only when probes are passed (R6, #87)', () => {
+  it('renders the CI-evidence step (§3c) only when ciChecks is passed (SPEC 2.0 §4.7, clud-bug#264/#260)', () => {
     const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
-    const withProbes = renderReviewRecipe({
+    const withCiChecks = renderReviewRecipe({
       plan,
       trigger: 'pr',
-      probes: {
-        invariants: [
-          { name: 'byte-parity', appliesTo: ['docs/**', 'templates/**'], probe: 'npm run render:check', expect: 'no diff vs golden' },
-          { name: 'no-token-push', appliesTo: ['.github/**'], probe: 'grep -rq X .github' },
-        ],
-      },
+      ciChecks: { names: null },
     });
-    expect(withProbes).toMatch(/## 3c\. Invariant probes/);
-    expect(withProbes).toMatch(/byte-parity/);
-    expect(withProbes).toMatch(/npm run render:check/);
-    expect(withProbes).toMatch(/no diff vs golden/); // expect rendered when present
-    expect(withProbes).toMatch(/no-token-push/);
-    expect(withProbes).toMatch(/execution-safety/i); // never run an untrusted diff
-    expect(withProbes).toMatch(/unverified/); // ties to the R3 verdict
+    expect(withCiChecks).toMatch(/## 3c\. CI evidence/);
+    expect(withCiChecks).toMatch(/gh pr checks/);
+    expect(withCiChecks).toMatch(/No narrowing configured/i); // absent ciChecks config → read every check
+    expect(withCiChecks).toMatch(/you run nothing yourself/i);
+    expect(withCiChecks).toMatch(/unverified/); // ties to the successor verdict for a not-yet-terminal check
 
-    // no probes arg → no §3c
-    const noProbes = renderReviewRecipe({ plan, trigger: 'pr' });
-    expect(noProbes).not.toMatch(/## 3c\. Invariant probes/);
+    // a narrowed name list renders the narrowing note instead
+    const narrowed = renderReviewRecipe({
+      plan,
+      trigger: 'pr',
+      ciChecks: { names: ['build', 'test'] },
+    });
+    expect(narrowed).toMatch(/## 3c\. CI evidence/);
+    expect(narrowed).toMatch(/`build`, `test`/);
+    expect(narrowed).not.toMatch(/No narrowing configured/i);
+
+    // no ciChecks arg → no §3c at all
+    const noCiChecks = renderReviewRecipe({ plan, trigger: 'pr' });
+    expect(noCiChecks).not.toMatch(/## 3c\. CI evidence/);
+  });
+
+  it('SPEC 2.0 §4.7: the deleted probe surface leaves no execution instructions behind (clud-bug#264/#260)', () => {
+    const plan = planReview({ skills: SKILLS, config: MULTIPASS_CONFIG, trigger: 'pr' });
+    const recipe = renderReviewRecipe({
+      plan,
+      trigger: 'pr',
+      ciChecks: { names: null },
+    });
+    expect(recipe).not.toMatch(/Invariant probes/i);
+    expect(recipe).not.toMatch(/RUN its `probe`/i);
+    expect(recipe).not.toMatch(/Execution safety/i);
+    expect(recipe).not.toMatch(/apply the operation twice and diff/i);
   });
 });
 
