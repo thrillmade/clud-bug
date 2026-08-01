@@ -13,9 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08
+## 2026-08 (3 decisions)
 
-- **2026-08-01** — Fence CI-check free text; only conclusion enum grounds a finding (coordinator review of f0b5193) *(fix/264-ci-evidence-delete-probes)* — [decisions-branches/fix__264-ci-evidence-delete-probes.md](decisions-branches/fix__264-ci-evidence-delete-probes.md)
+- **2026-08-01** — Drop unfenced author-controlled link field from §3c CI-checks fetch (coordinator review of eed73e7) *(fix/264-ci-evidence-delete-probes)* — [decisions-branches/fix__264-ci-evidence-delete-probes.md](decisions-branches/fix__264-ci-evidence-delete-probes.md)
+- *... 1 more decision ...*
 - **2026-08-01** — Delete probe surface, replace with SPEC 2.0 §4.7 CI evidence (clud-bug#264/#260) *(fix/264-ci-evidence-delete-probes)* — [decisions-branches/fix__264-ci-evidence-delete-probes.md](decisions-branches/fix__264-ci-evidence-delete-probes.md)
 
 ## 2026-07 (40 decisions)
