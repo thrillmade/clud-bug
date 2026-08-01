@@ -13,6 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-08
+
+- **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
+
 ## 2026-07 (40 decisions)
 
 - **2026-07-28** — F1a follow-up: pin precedence is per-FIELD, never per-entry *(fix/f1a-integration-id-pin)* — [decisions-branches/fix__f1a-integration-id-pin.md](decisions-branches/fix__f1a-integration-id-pin.md)
