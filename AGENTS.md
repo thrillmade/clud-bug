@@ -53,3 +53,21 @@ For agent invocations of the `clud-bug` CLI, prefer `CLUD_BUG_QUIET=1`
 
 _Installed at clud-bug v0.7.0-rc.20._
 <!-- clud-bug-end -->
+
+## Read the thread, not the issue body
+
+In several open issues the body describes a design that was superseded in
+that issue's own comments. Building from the body ships the wrong thing —
+always read the full comment thread before implementing, and treat the
+latest comment as the live spec.
+
+Confirmed cases:
+
+- **#260** — body asks to add a trust parameter to the probe surface; its
+  comment says delete the probe surface entirely (the body's version is
+  behaviour SPEC 2.0 §4.7 now bans).
+- **#256** — its own "RESOLVED" comment cites an intermediate ruling that
+  never shipped, so the fix text it recommends is wrong.
+- **#246** — body, first comment, and last comment each disagree with the
+  one before it; only the 2026-08-01 comment is live.
+- **#262 item 7** — duplicates #267.
