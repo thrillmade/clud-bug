@@ -3,7 +3,17 @@ import { strict as assert } from 'node:assert';
 import { mkdtemp, writeFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { applyToRepo, detectSkillRelPath, hasAgentsMdImport, removeBlock, renderBlock, upsertBlock } from '../src/cli/agents-md.js';
+import {
+  applyToRepo,
+  detectSkillRelPath,
+  hasAgentsMdImport,
+  hasAgentsMdRedirect,
+  insertStub,
+  removeBlock,
+  renderBlock,
+  renderStub,
+  upsertBlock,
+} from '../src/cli/agents-md.js';
 
 async function makeRepo(files = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-agents-md-'));
@@ -124,7 +134,8 @@ test('applyToRepo: appends to existing AGENTS.md without touching prior content'
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('applyToRepo: updates existing CLAUDE.md, .cursorrules, copilot-instructions.md', async () => {
+test('applyToRepo: redirects existing CLAUDE.md, .cursorrules, copilot-instructions.md', async () => {
+  // #265 / SPEC 2.0 §1.2: per-tool files get a redirect stub, NOT the block.
   const dir = await makeRepo({
     'AGENTS.md': '# AGENTS.md\n',
     'CLAUDE.md': '# CLAUDE\n\nstuff\n',
@@ -139,9 +150,215 @@ test('applyToRepo: updates existing CLAUDE.md, .cursorrules, copilot-instruction
       ['.cursorrules', '.github/copilot-instructions.md', 'AGENTS.md', 'CLAUDE.md'],
     );
     const claude = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
-    assert.match(claude, /<!-- clud-bug-start -->/);
-    assert.match(claude, /Strict mode is \*\*off\*\*/);
-    assert.match(claude, /^# CLAUDE/);
+    // No block, no copied instruction body.
+    assert.doesNotMatch(claude, /<!-- clud-bug-start -->/);
+    assert.doesNotMatch(claude, /Strict mode is/);
+    // A redirect, and the user's own content, both present.
+    assert.match(claude, /<!-- clud-bug-stub:/);
+    assert.match(claude, /\[AGENTS\.md\]\(AGENTS\.md\)/);
+    assert.match(claude, /# CLAUDE/);
+    assert.match(claude, /stuff/);
+    // AGENTS.md — and only AGENTS.md — carries the block.
+    const agents = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /<!-- clud-bug-start -->/);
+    assert.match(agents, /Strict mode is \*\*off\*\*/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('#265: NO per-tool file receives a copy of the block (§1.1)', async () => {
+  // The violation this issue reports, pinned across the whole list. §1.1:
+  // "AGENTS.md is the single source of agent instructions. A tool MUST NOT
+  //  copy its content into any other file."
+  const perTool = [
+    'CLAUDE.md',
+    'GEMINI.md',
+    '.github/copilot-instructions.md',
+    '.cursorrules',
+    '.windsurfrules',
+    '.clinerules',
+    '.continuerules',
+    '.cursor/rules/general.md',
+  ];
+  const seed = {};
+  for (const p of perTool) seed[p] = `# ${p}\n\nuser content\n`;
+  seed['AGENTS.md'] = '# AGENTS.md\n';
+  const dir = await makeRepo(seed);
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    // CONTROL: AGENTS.md really does get the block — so a zero below means
+    // "no copy", not "the block never rendered".
+    const agents = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /<!-- clud-bug-start -->/, 'control: AGENTS.md must carry the block');
+    assert.match(agents, /clud-bug-collaboration/, 'control: block body rendered');
+
+    for (const p of perTool) {
+      const c = await readFile(join(dir, p), 'utf8');
+      assert.doesNotMatch(c, /<!-- clud-bug-start -->/, `${p} carries a block`);
+      assert.doesNotMatch(c, /<!-- clud-bug-end -->/, `${p} carries a block`);
+      // A distinctive sentence from the block body — catches a marker-less copy.
+      assert.doesNotMatch(c, /Read that skill before pushing fixes/, `${p} carries block prose`);
+      // …and it does carry a redirect plus the user's own bytes.
+      assert.match(c, /<!-- clud-bug-stub:/, `${p} missing redirect stub`);
+      assert.match(c, /user content/, `${p} lost user content`);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('#265: stub link is relative to the file\'s depth', async () => {
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    'CLAUDE.md': '# c\n',
+    '.github/copilot-instructions.md': '# copilot\n',
+    '.cursor/rules/general.md': '# general\n',
+  });
+  try {
+    await applyToRepo(dir, { strictMode: true });
+    const root = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
+    const oneDeep = await readFile(join(dir, '.github/copilot-instructions.md'), 'utf8');
+    const twoDeep = await readFile(join(dir, '.cursor/rules/general.md'), 'utf8');
+    assert.match(root, /\]\(AGENTS\.md\)/);
+    assert.match(oneDeep, /\]\(\.\.\/AGENTS\.md\)/);
+    assert.match(twoDeep, /\]\(\.\.\/\.\.\/AGENTS\.md\)/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('#265: migration — a block copied by a pre-#265 clud-bug is stripped', async () => {
+  // .cursorrules never qualified for the 0.0.I.1 @AGENTS.md escape hatch
+  // (Cursor has no @-import), so every pre-#265 install left a copy here.
+  const stale = '# my rules\n\nAlways use tabs.\n\n<!-- clud-bug-start -->\n<!-- clud-bug-block-version: v2 -->\nOLD COPIED BLOCK\n<!-- clud-bug-end -->\n';
+  const dir = await makeRepo({ 'AGENTS.md': '# AGENTS.md\n', '.cursorrules': stale });
+  try {
+    const r = await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const cursor = await readFile(join(dir, '.cursorrules'), 'utf8');
+    assert.doesNotMatch(cursor, /clud-bug-start/);
+    assert.doesNotMatch(cursor, /OLD COPIED BLOCK/);
+    // Hand-written content around the block survives — this is the case the
+    // brief calls out: "a stub conversion must not eat it".
+    assert.match(cursor, /# my rules/);
+    assert.match(cursor, /Always use tabs\./);
+    assert.match(cursor, /<!-- clud-bug-stub:/);
+    assert.ok(r.touched.includes('.cursorrules'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('#265: an existing redirect is not duplicated (logmind stub, @-import, plain link)', async () => {
+  // A per-tool file needs ONE redirect, not one per installed tool. logmind
+  // owns per-tool file creation (§1.2 `agents.<name>`); if its stub is
+  // already there, clud-bug adds nothing.
+  const logmindStub = '<!-- logmind-stub: AI agent instructions for this project live in AGENTS.md -->\nSee [AGENTS.md](AGENTS.md) for project-specific AI agent instructions, including\nthe decision-logging requirement (logmind) and required reading.\n';
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    'CLAUDE.md': `@AGENTS.md\n\n${logmindStub}`,
+    '.cursorrules': logmindStub,
+    '.windsurfrules': '# rules\n\nSee [AGENTS.md](AGENTS.md).\n',
+  });
+  try {
+    const r = await applyToRepo(dir, { strictMode: true });
+    for (const p of ['CLAUDE.md', '.cursorrules', '.windsurfrules']) {
+      const c = await readFile(join(dir, p), 'utf8');
+      assert.doesNotMatch(c, /clud-bug-stub/, `${p} got a second, redundant stub`);
+      assert.equal(r.touched.includes(p), false, `${p} rewritten despite needing nothing`);
+    }
+    // logmind's stub is byte-identical to what it wrote.
+    assert.equal(await readFile(join(dir, '.cursorrules'), 'utf8'), logmindStub);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('#265: stub goes BELOW YAML frontmatter, never above it', async () => {
+  // Cursor's newer .cursor/rules/*.md format opens with frontmatter.
+  // Prepending above `---` stops it being frontmatter at all.
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    '.cursor/rules/general.md': '---\ndescription: general rules\nalwaysApply: true\n---\n\n# general\n',
+  });
+  try {
+    await applyToRepo(dir, { strictMode: true });
+    const c = await readFile(join(dir, '.cursor/rules/general.md'), 'utf8');
+    assert.ok(c.startsWith('---\n'), 'frontmatter must still open the file');
+    assert.match(c, /description: general rules/);
+    assert.match(c, /alwaysApply: true/);
+    // Stub sits after the closing fence, before the body.
+    const fmEnd = c.indexOf('\n---', 3) + 4;
+    assert.ok(c.indexOf('<!-- clud-bug-stub:') > fmEnd, 'stub must sit below frontmatter');
+    assert.match(c, /# general/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('#265: never writes markdown into the JSON per-tool files (§1.2)', async () => {
+  // §1.2: "Cody and Zed keep their settings in JSON that the user also owns.
+  //  A tool MUST write the JSON form to those paths and MUST NOT write
+  //  markdown into them, which would destroy the file."
+  // clud-bug writes neither form to these paths. This pins that: the stub
+  // pass must never grow to cover them by someone appending to the list.
+  const cody = '{\n  "cody.chat.preInstruction": "read AGENTS.md"\n}\n';
+  const zed = '{\n  "assistant": { "version": "2" }\n}\n';
+  const dir = await makeRepo({
+    'AGENTS.md': '# AGENTS.md\n',
+    '.sourcegraph/cody.json': cody,
+    '.zed/settings.json': zed,
+    'CONVENTIONS.md': '# aider conventions\n',
+    '.amazonq/rules.md': '# amazonq\n',
+  });
+  try {
+    const r = await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    // Byte-identical — and still parseable JSON.
+    assert.equal(await readFile(join(dir, '.sourcegraph/cody.json'), 'utf8'), cody);
+    assert.equal(await readFile(join(dir, '.zed/settings.json'), 'utf8'), zed);
+    JSON.parse(await readFile(join(dir, '.zed/settings.json'), 'utf8'));
+    assert.equal(r.touched.includes('.sourcegraph/cody.json'), false);
+    assert.equal(r.touched.includes('.zed/settings.json'), false);
+    // CONTROL: AGENTS.md WAS written on this same run, so the assertions
+    // above mean "left alone", not "applyToRepo did nothing".
+    assert.ok(r.touched.includes('AGENTS.md'), 'control: AGENTS.md must be touched');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('#265: idempotence repro — three runs, byte-identical after the first', async () => {
+  // The brief's explicit ask: "Running the command twice must be idempotent.
+  // Prove it: run it, run it again, diff."
+  const files = {
+    'AGENTS.md': '# AGENTS.md\n\nProject overview the humans own.\n',
+    'CLAUDE.md': '# CLAUDE\n\nhand-written\n',
+    'GEMINI.md': '# gemini\n',
+    '.github/copilot-instructions.md': '# copilot\n',
+    '.cursorrules': '# my rules\n\n<!-- clud-bug-start -->\nSTALE\n<!-- clud-bug-end -->\n\ntrailing note\n',
+    '.windsurfrules': '# windsurf\n',
+    '.clinerules': '# cline\n',
+    '.continuerules': '# continue\n',
+    '.cursor/rules/general.md': '---\ndescription: x\n---\n\n# general\n',
+  };
+  const paths = Object.keys(files);
+  const dir = await makeRepo(files);
+  try {
+    const opts = { version: '0.7.0', strictMode: true };
+    await applyToRepo(dir, opts);
+    const snap1 = {};
+    for (const p of paths) snap1[p] = await readFile(join(dir, p), 'utf8');
+
+    const r2 = await applyToRepo(dir, opts);
+    const snap2 = {};
+    for (const p of paths) snap2[p] = await readFile(join(dir, p), 'utf8');
+
+    const r3 = await applyToRepo(dir, opts);
+    const snap3 = {};
+    for (const p of paths) snap3[p] = await readFile(join(dir, p), 'utf8');
+
+    for (const p of paths) {
+      assert.equal(snap2[p], snap1[p], `run 2 changed ${p}`);
+      assert.equal(snap3[p], snap1[p], `run 3 changed ${p}`);
+    }
+    // Nothing reported as written after the first run — a no-op run must not
+    // dirty a tracked file (the sibling complaint in #265).
+    assert.deepEqual(r2.touched, [], 'run 2 wrote files');
+    assert.deepEqual(r3.touched, [], 'run 3 wrote files');
+    assert.deepEqual(r2.created, []);
+    // Exactly one stub per per-tool file, no accumulation.
+    for (const p of paths.filter((x) => x !== 'AGENTS.md')) {
+      assert.equal((snap3[p].match(/<!-- clud-bug-stub:/g) || []).length, 1, `${p} stub count`);
+    }
+    // The stale block is gone and the note that followed it survived.
+    assert.doesNotMatch(snap3['.cursorrules'], /STALE/);
+    assert.match(snap3['.cursorrules'], /trailing note/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -317,9 +534,12 @@ test('applyToRepo: REMOVES stale clud-bug block from CLAUDE.md when @AGENTS.md i
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('applyToRepo: STILL installs block into CLAUDE.md when @AGENTS.md import is absent', async () => {
-  // Back-compat: repos that don't use Claude Code's @-import still get the
-  // block in their tool stub files. The skip behavior is opt-in via import.
+// SUPERSEDED by #265. This slot used to hold
+// 'applyToRepo: STILL installs block into CLAUDE.md when @AGENTS.md import is
+// absent', which pinned the copy-into-per-tool-file behaviour as intentional
+// back-compat. §1.1/§1.2 forbid it, so the contract is now the inverse: no
+// import means a stub, not a block.
+test('#265: CLAUDE.md without an @AGENTS.md import gets a stub, not a block', async () => {
   const dir = await makeRepo({
     'AGENTS.md': '# AGENTS.md\n',
     'CLAUDE.md': '# CLAUDE.md\n\nstuff\n',
@@ -327,13 +547,13 @@ test('applyToRepo: STILL installs block into CLAUDE.md when @AGENTS.md import is
   try {
     await applyToRepo(dir, { version: '0.6.18', strictMode: true });
     const claude = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
-    assert.match(claude, /<!-- clud-bug-start -->/);
+    assert.doesNotMatch(claude, /<!-- clud-bug-start -->/);
+    assert.match(claude, /<!-- clud-bug-stub:/);
+    assert.match(claude, /stuff/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('applyToRepo: SKIPS .cursor/rules/*.md that import @AGENTS.md', async () => {
-  // Cursor rules can also use @-import. Same behaviour: skip the block
-  // when the import is present.
+test('applyToRepo: .cursor/rules/*.md — import satisfies the redirect, absence earns a stub', async () => {
   const dir = await makeRepo({
     'AGENTS.md': '# AGENTS.md\n',
     '.cursor/rules/general.md': '@AGENTS.md\n\n# general\n',
@@ -343,14 +563,140 @@ test('applyToRepo: SKIPS .cursor/rules/*.md that import @AGENTS.md', async () =>
     const r = await applyToRepo(dir, { strictMode: true });
     const general = await readFile(join(dir, '.cursor/rules/general.md'), 'utf8');
     const noImport = await readFile(join(dir, '.cursor/rules/no-import.md'), 'utf8');
-    // The @AGENTS.md one gets NO block.
+    // Neither gets a block (#265).
     assert.doesNotMatch(general, /<!-- clud-bug-start -->/);
-    // The other one DOES get the block (back-compat).
-    assert.match(noImport, /<!-- clud-bug-start -->/);
-    // Touched array reflects only the one we wrote to.
-    assert.ok(r.touched.includes('.cursor/rules/no-import.md'));
+    assert.doesNotMatch(noImport, /<!-- clud-bug-start -->/);
+    // The @-import already redirects — untouched, no second pointer.
+    assert.doesNotMatch(general, /clud-bug-stub/);
     assert.equal(r.touched.includes('.cursor/rules/general.md'), false);
+    // The other has no pointer at all, so it earns a stub.
+    assert.match(noImport, /<!-- clud-bug-stub:/);
+    assert.ok(r.touched.includes('.cursor/rules/no-import.md'));
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// --- #265: regression guards on the helpers the change reaches into ---------
+
+test('upsertBlock: preserves content after the end marker (non-greedy)', () => {
+  // The code comment used to claim this replace was "greedy". It is not —
+  // `[\s\S]*?` stops at the FIRST end marker. If someone "fixes" the comment
+  // by making the regex actually greedy, everything between the first start
+  // marker and the LAST end marker is eaten. This test is the tripwire.
+  const before = [
+    'HEAD',
+    '<!-- clud-bug-start -->', 'OLD', '<!-- clud-bug-end -->',
+    'MIDDLE',
+    '<!-- clud-bug-start -->', 'SECOND', '<!-- clud-bug-end -->',
+    'TAIL', '',
+  ].join('\n');
+  const after = upsertBlock(before, '<!-- clud-bug-start -->\nNEW\n<!-- clud-bug-end -->');
+  assert.match(after, /HEAD/);
+  assert.match(after, /NEW/);
+  assert.doesNotMatch(after, /OLD/);
+  assert.match(after, /MIDDLE/, 'content between the two blocks was eaten');
+  assert.match(after, /SECOND/, 'the second block was eaten');
+  assert.match(after, /TAIL/, 'content after the end marker was eaten');
+});
+
+test('removeBlock: strips EVERY block, not just the first', () => {
+  // A bad merge of two branches that each ran init can leave two copies.
+  // "MUST NOT carry a copy" is not satisfied by removing one of them.
+  const before = 'HEAD\n\n<!-- clud-bug-start -->\nA\n<!-- clud-bug-end -->\nMIDDLE\n\n<!-- clud-bug-start -->\nB\n<!-- clud-bug-end -->\nTAIL\n';
+  const after = removeBlock(before);
+  assert.doesNotMatch(after, /clud-bug-start/);
+  assert.doesNotMatch(after, /clud-bug-end/);
+  assert.doesNotMatch(after, /\bA\b/);
+  assert.doesNotMatch(after, /\bB\b/);
+  assert.equal(removeBlock(after), after, 'idempotent');
+});
+
+test('removeBlock: does NOT weld together the lines a block sat between', () => {
+  // Regression. The old replacement was '', which was only safe while the
+  // block was always the last thing in the file. With per-tool files now
+  // stripped in place, 'HEAD\n\n<block>\nMIDDLE' collapsed to 'HEADMIDDLE' —
+  // two unrelated user lines silently merged into one.
+  const before = 'HEAD\n\n<!-- clud-bug-start -->\nA\n<!-- clud-bug-end -->\nMIDDLE\n\n<!-- clud-bug-start -->\nB\n<!-- clud-bug-end -->\nTAIL\n';
+  assert.equal(removeBlock(before), 'HEAD\n\nMIDDLE\n\nTAIL\n');
+  assert.doesNotMatch(removeBlock(before), /HEADMIDDLE/);
+});
+
+test('removeBlock: leaves exactly one blank line where a block sat between paragraphs', () => {
+  // Blank line on BOTH sides of the block. The old trailing `\n?` consumed
+  // only one of the two newlines after the end marker, leaving a doubled
+  // blank line — a visible dent in a file we are supposed to tidy.
+  const before = '# rules\n\nAlways use tabs.\n\n<!-- clud-bug-start -->\nx\n<!-- clud-bug-end -->\n\ntrailing note I wrote\n';
+  assert.equal(removeBlock(before), '# rules\n\nAlways use tabs.\n\ntrailing note I wrote\n');
+  assert.doesNotMatch(removeBlock(before), /\n\n\n/);
+});
+
+test('removeBlock: keeps the file newline-terminated when the block ends it', () => {
+  assert.equal(
+    removeBlock('# rules\n\nAlways use tabs.\n\n<!-- clud-bug-start -->\nx\n<!-- clud-bug-end -->\n'),
+    '# rules\n\nAlways use tabs.\n',
+  );
+  // Block IS the whole file → empty, not a stray newline.
+  assert.equal(removeBlock('<!-- clud-bug-start -->\nx\n<!-- clud-bug-end -->\n'), '');
+});
+
+test('renderStub: matches the §1.2 form — one marker line plus a two-line pointer', () => {
+  const stub = renderStub(0);
+  const lines = stub.split('\n');
+  assert.equal(lines.length, 3, `stub should be 3 lines, got ${lines.length}`);
+  assert.match(lines[0], /^<!-- clud-bug-stub: .* -->$/);
+  assert.match(stub, /See \[AGENTS\.md\]\(AGENTS\.md\)/);
+  // It is a pointer, not a copy: none of the block's substance appears.
+  assert.doesNotMatch(stub, /Strict mode/);
+  assert.doesNotMatch(stub, /clud-bug-collaboration/);
+  // We do NOT write logmind's marker — that region belongs to logmind (§1.1).
+  assert.doesNotMatch(stub, /logmind-stub/);
+});
+
+test('hasAgentsMdRedirect: recognises every redirect form, rejects prose', () => {
+  assert.equal(hasAgentsMdRedirect('@AGENTS.md\n'), true);
+  assert.equal(hasAgentsMdRedirect('<!-- logmind-stub: x -->\n'), true);
+  assert.equal(hasAgentsMdRedirect('<!-- clud-bug-stub: x -->\n'), true);
+  assert.equal(hasAgentsMdRedirect('See [AGENTS.md](AGENTS.md).\n'), true);
+  assert.equal(hasAgentsMdRedirect('See [AGENTS.md](../AGENTS.md).\n'), true);
+  assert.equal(hasAgentsMdRedirect('See [AGENTS.md](../../AGENTS.md).\n'), true);
+  // CONTROL — these must NOT count, or every file would look redirected.
+  assert.equal(hasAgentsMdRedirect('read AGENTS.md sometime\n'), false);
+  assert.equal(hasAgentsMdRedirect('# rules\n'), false);
+  assert.equal(hasAgentsMdRedirect(''), false);
+  assert.equal(hasAgentsMdRedirect(null), false);
+});
+
+test('#265: a CRLF per-tool file stays CRLF and gains no blank-line dent', async () => {
+  // Windows checkouts. Before the fix, `\n*` matched only the `\n` half of
+  // each CRLF and stranded the `\r`s, so stripping a block from a CRLF
+  // .cursorrules produced '# my rules\r\n\r\n\n\r\n\r\ntrailing' — three
+  // blank lines where there had been one. Content preserved, file mangled.
+  const crlf = '# my rules\r\n\r\n<!-- clud-bug-start -->\r\nBLOCK\r\n<!-- clud-bug-end -->\r\n\r\ntrailing note\r\n';
+  assert.equal(removeBlock(crlf), '# my rules\r\n\r\ntrailing note\r\n');
+
+  const dir = await makeRepo({ 'AGENTS.md': '# AGENTS.md\n', '.cursorrules': crlf });
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const out = await readFile(join(dir, '.cursorrules'), 'utf8');
+    assert.doesNotMatch(out, /clud-bug-start/);
+    assert.match(out, /# my rules/);
+    assert.match(out, /trailing note/);
+    // No lone \r, and no LF that isn't part of a CRLF — line endings stayed uniform.
+    assert.doesNotMatch(out, /\r(?!\n)/, 'stray carriage return');
+    assert.doesNotMatch(out, /(?<!\r)\n/, 'LF smuggled into a CRLF file');
+    // Idempotent on CRLF too.
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    assert.equal(await readFile(join(dir, '.cursorrules'), 'utf8'), out);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('insertStub: never disturbs bytes it did not write', () => {
+  const stub = renderStub(0);
+  const body = '# rules\n\nAlways use tabs.\n';
+  const out = insertStub(body, stub);
+  assert.ok(out.startsWith(stub), 'stub leads a frontmatter-less file');
+  assert.ok(out.endsWith(body), 'original body preserved byte-for-byte');
+  // Empty file → just the stub, no leading blank line.
+  assert.equal(insertStub('', stub), `${stub}\n`);
 });
 
 // v0.6.25 / gotcha #2 — publisher SKILL.md path detection.
