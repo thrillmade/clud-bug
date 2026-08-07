@@ -23,6 +23,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { detect, buildDescriptionLine } from '../core/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { reviewPrompt } from '../core/prompts.js';
+import { SPEC_VERSION, renderVersionDeclaration } from '../core/spec-version.js';
 import { SkillsClient, rankAndCap } from '../core/skills.js';
 import {
   writeSkills, writeSkill, loadBaseline, loadDesignKit,
@@ -93,6 +94,9 @@ function parseArgs(argv) {
     dryRun: false,
     branch: null,
     preset: null,
+    // SPEC §7.3 (#267): the optional `--spec-version`, which prints the spec
+    // semver alone so a routing tool can read it without parsing a sentence.
+    specVersion: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -101,6 +105,9 @@ function parseArgs(argv) {
     else if (a === '--commit') args.commit = true;
     else if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--version' || a === '-v') args.version = true;
+    // SPEC §7.3: "A tool MAY also accept `--spec-version`, printing
+    // `<spec-semver>` alone on one line."
+    else if (a === '--spec-version') args.specVersion = true;
     else if (a === '--quiet' || a === '-q') args.quiet = true;
     else if (a === '--since') args.since = argv[++i];
     else if (a === '--changed-in') args.changedIn = argv[++i];
@@ -175,7 +182,7 @@ Commands:
   configure-github <owner>/<repo>
                         One-stop repo setup: repo conveniences (squash-only merges,
                         auto-merge, delete-branch-on-merge, PR title/body squash
-                        message — ALL presets) + the SPEC §7 canonical branch
+                        message — ALL presets) + the SPEC §6.1 canonical branch
                         ruleset. \`--preset baseline|clud-bug|skdd|public-guard\`
                         picks the variant (default: skdd). Auth: GITHUB_TOKEN env
                         first, then \`gh auth token\`. Use --dry-run to print the
@@ -214,7 +221,7 @@ Commands:
                         GitHub-markdown summary comment shape. Invoked by the
                         workflow post-step; output is what \`gh pr comment\`
                         receives. Empty stdin or non-object payload exits 2.
-  select-review-event   Compute the SPEC §7.2.1 formal-review event (APPROVE /
+  select-review-event   Compute the formal-review event (APPROVE /
    --stdin               REQUEST_CHANGES / COMMENT / skip) from a structured-output
                         JSON payload + a few env-passed PR-author fields. Used by
                         the v0.7.0-rc.3 workflow post-step to post a formal
@@ -340,7 +347,9 @@ Options:
   --scope <glob>        Limit audit to files matching <glob>; repeatable. (audit only)
   --out <path>          Where to write the audit stub. Default: audits/YYYY-MM-DD.md
   --help,-h             Show this help.
-  --version,-v          Show version.
+  --version,-v          Declare the version and areas implemented (SPEC §7.3):
+                        \`clud-bug <ver> (spec <spec-ver>)\` then an \`areas:\` line.
+  --spec-version        Print the SPEC version alone, one line.
 `;
 
 async function readPkgVersion() {
@@ -351,7 +360,18 @@ async function readPkgVersion() {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(HELP); return; }
-  if (args.version) { process.stdout.write((await readPkgVersion()) + '\n'); return; }
+  // SPEC §7.3 "What a tool declares" — two lines, the first formatted exactly
+  // `<tool-name> <tool-semver> (spec <spec-semver>)` with a REQUIRED single
+  // trailing newline, the second naming areas from the fixed vocabulary.
+  // §5.3 routes a contract change from this declaration, so a bare npm semver
+  // (what this printed before #267) leaves clud-bug unroutable.
+  if (args.specVersion) { process.stdout.write(SPEC_VERSION + '\n'); return; }
+  if (args.version) {
+    process.stdout.write(
+      renderVersionDeclaration({ toolName: 'clud-bug', toolVersion: await readPkgVersion() }),
+    );
+    return;
+  }
   if (args.quiet) setQuiet(true);
 
   const cmd = args._[0];
@@ -654,7 +674,7 @@ async function runSelectReviewEvent(args) {
     // weakest external tier and the safest default — selectReviewEvent
     // routes it to COMMENT (never APPROVE, never REQUEST_CHANGES).
     process.stderr.write(
-      `clud-bug select-review-event: unrecognized PR_AUTHOR_ASSOCIATION="${rawAssoc}" — treating as external (fail-closed per SPEC §7.2.1).\n`,
+      `clud-bug select-review-event: unrecognized PR_AUTHOR_ASSOCIATION="${rawAssoc}" — treating as external (fail-closed).\n`,
     );
     authorAssociation = 'NONE';
   }
