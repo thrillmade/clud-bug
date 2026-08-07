@@ -1,4 +1,4 @@
-# clud-bug-template-version: v14
+# clud-bug-template-version: v15
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -56,7 +56,9 @@ jobs:
   #   - Files in the allowlist are non-executable; modifying them can't
   #     grant code execution.
   #   - strictMode toggle is read from BASE ref so a PR can't disable
-  #     strict-mode on itself.
+  #     strict-mode on itself, and (clud-bug#260 item 1) the whole
+  #     `.claude/skills` tree is re-pinned to the BASE ref before the
+  #     reviewer runs, so a PR can't add or edit the skills that judge it.
   #
   # (b) Trivial PRs (v0.6.15 / 0.0.R): if the PR author is a dep-bumping
   # bot (dependabot, renovate) OR the diff is small (<2KB) AND only
@@ -330,9 +332,86 @@ jobs:
         with:
           # fetch-depth: 0 so the strict-mode gate can `git show
           # origin/<base_ref>:.claude/skills/.clud-bug.json` to read the base
-          # ref's manifest. Default depth=1 doesn't set up origin/<base_ref>
-          # and the gate would silently fall back to advisory.
+          # ref's manifest, and so the base-ref skill pin below can resolve
+          # `origin/<base_ref>`. Default depth=1 doesn't set up
+          # origin/<base_ref>: the gate would silently fall back to advisory
+          # and the pin would fail closed to a skill-less review.
           fetch-depth: 0
+
+      # ── SECURITY — a PR must not pick the skills that judge it ───────────
+      # (clud-bug#260 item 1; SPEC 2.0 §4.1 + §6.3)
+      #
+      # The checkout above has no `ref:`, so on `pull_request` the workspace
+      # is the MERGE ref — it contains the change. The reviewer then reads its
+      # skills out of that workspace: `Bash(cat .claude/skills/.clud-bug.json)`
+      # and `Bash(cat .claude/skills/*/SKILL.md)` are in --allowedTools below,
+      # and the system prompt's "Skills carry authority" block tells the model
+      # to load `.claude/skills/<name>/SKILL.md` and treat it as authority.
+      # src/core/review-context.ts is explicit that skills are the TRUSTED
+      # tier — a PR *description* gets fenced, a skill file does not. So
+      # without this step, a PR that adds or edits
+      # `.claude/skills/<anything>/SKILL.md` writes its own judge.
+      #
+      # SPEC §4.1: "The reviewer MUST read its skill selection and its
+      # configuration from the pull request's base ref, never from the head —
+      # otherwise a pull request picks the skills that judge it."
+      #
+      # MECHANISM — the same one already used for `strictMode` and `notary`:
+      # the Notarize, Strict-mode gate and Formal review steps below all
+      # resolve `git show "origin/${BASE_REF}:.claude/skills/.clud-bug.json"`.
+      # This step applies that identical base-ref resolution to the WHOLE
+      # `.claude/skills` tree by replacing the workspace copy in place, so
+      # every downstream reader (the model, the manifest reads, skill-usage)
+      # sees base-ref bytes. Replacing the tree rather than teaching each
+      # reader a new path is deliberate: no second mechanism to keep in sync,
+      # and nothing downstream can forget to use it.
+      #
+      # FAILS CLOSED. The merge-ref copy is deleted BEFORE the base copy is
+      # restored, so every failure path degrades the review to the baseline
+      # discipline instead of falling back to the PR's own skills. The
+      # degradation is announced, never silent (SPEC §6.5).
+      #
+      # The PR's skill changes are still REVIEWED — they are in the diff the
+      # model fetches with `gh pr diff`. They are just not OBEYED.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Pin review skills to the base ref
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+
+          # Delete first — this line is what makes the step fail closed.
+          rm -rf .claude/skills
+
+          # `origin/<base_ref>` is the primary: the exact expression the
+          # strict-mode / notary / formal-review steps already resolve, made
+          # available by `fetch-depth: 0` above. `base.sha` is the fallback —
+          # it comes from the event payload rather than the workspace, and it
+          # is a parent of the merge commit, so it is present locally even if
+          # the remote-tracking ref is not. Neither is writable by the PR.
+          PIN=$(git rev-parse --verify --quiet "origin/${BASE_REF}^{commit}" || true)
+          if [ -z "$PIN" ]; then
+            PIN=$(git rev-parse --verify --quiet "${BASE_SHA}^{commit}" || true)
+          fi
+
+          if [ -z "$PIN" ]; then
+            echo "::warning title=Clud Bug 🐛::Could not resolve the base ref (origin/${BASE_REF} or ${BASE_SHA}); reviewing with NO repo skills. A PR must never supply the skills that judge it — the baseline discipline still applies."
+            exit 0
+          fi
+
+          if ! git cat-file -e "${PIN}:.claude/skills" 2>/dev/null; then
+            echo "::notice title=Clud Bug 🐛::Base ref ${BASE_REF} (${PIN}) declares no .claude/skills — reviewing against the baseline discipline."
+            exit 0
+          fi
+
+          if git archive "$PIN" -- .claude/skills | tar -xf -; then
+            SKILL_COUNT=$(find .claude/skills -name 'SKILL.md' -type f | wc -l | tr -d ' ')
+            echo "::notice title=Clud Bug 🐛::Pinned ${SKILL_COUNT} review skill(s) to base ref ${BASE_REF} (${PIN}). Skills this PR adds or edits are reviewed, never obeyed."
+          else
+            rm -rf .claude/skills
+            echo "::warning title=Clud Bug 🐛::Could not restore .claude/skills from ${PIN}; reviewing with NO repo skills rather than the PR's own."
+          fi
 
       # Three-way guard around the Claude action:
       #   1. Secret present → no-op pass-through, action runs normally.
