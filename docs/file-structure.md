@@ -85,6 +85,7 @@ clud-bug
 │   ├── notary-bundle.test.js
 │   ├── notary-submit.test.js
 │   ├── notary-validate.test.js
+│   ├── pre-push-hook.test.js
 │   ├── prompt-builder.test.js
 │   ├── prompts.eval.test.js
 │   ├── prompts.test.js
@@ -92,6 +93,7 @@ clud-bug
 │   ├── render-review.test.js
 │   ├── render.test.js
 │   ├── review-context.test.js
+│   ├── review-prompt-push.test.js
 │   ├── review-prompt.test.js
 │   ├── review-schema-zod.test.js
 │   ├── review-writeback.test.js
@@ -103,6 +105,7 @@ clud-bug
 │   ├── skills.test.js
 │   ├── strict-mode-gate-classifier.test.js
 │   ├── update-notifier.test.js
+│   ├── update-pre-push.test.js
 │   ├── update-skill-usage.test.js
 │   ├── update.test.js
 │   └── usage.test.js

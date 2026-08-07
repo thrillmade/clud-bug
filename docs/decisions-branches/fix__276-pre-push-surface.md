@@ -11,3 +11,14 @@
 
 ---
 
+## 2026-08-07 17:46 - Regen derived docs for the #276 pre-push surface
+
+**Reasoning:** check-derived-docs regenerates and compares, so timeline.md and file-structure.md must match what the generator produces on this branch
+
+**Alternatives considered:** let the regen bot push it — it lands ~1:1 with commits and would just add a round trip
+
+**Implications:**
+- the file-structure tree root was regenerated as the WORKTREE directory name (wf_14b1bd88-5b1-2) and had to be corrected back to clud-bug by hand; CI generates it from a dir actually named clud-bug
+
+---
+
