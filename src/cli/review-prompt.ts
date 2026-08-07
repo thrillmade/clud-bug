@@ -20,6 +20,7 @@ import {
   readReviewContext,
   readNotaryConfig,
   parseFrontmatter,
+  resolveSkillKind,
   type ReviewPlan,
   type ReviewPlanSkill,
   type ReviewTrigger,
@@ -142,6 +143,13 @@ export function renderReviewRecipe(input: {
    */
   design?: { skills: string[]; config: DesignConfig };
   /**
+   * Prose lens (clud-bug#263). The `kind: writing` skills the repo installed —
+   * SPEC 2.0 §2.2 routes these to their own pass, which reads the text a change
+   * ships rather than its code. Present only when at least one is installed, so
+   * the common recipe is unchanged.
+   */
+  prose?: { skills: string[] };
+  /**
    * CI evidence (SPEC 2.0 §4.7). Present whenever the caller's gate passed
    * (`shouldReadCiChecks`): the repo hasn't explicitly disabled it (ON by
    * default) and this is a `pr` trigger — no CI has run yet at commit/push.
@@ -176,7 +184,8 @@ export function renderReviewRecipe(input: {
    */
   targetSha?: string;
 }): string {
-  const { plan, trigger, design, reviewContext, ciChecks, notaryUrl, noVerifyFlagged, targetSha } = input;
+  const { plan, trigger, design, prose, reviewContext, ciChecks, notaryUrl, noVerifyFlagged, targetSha } =
+    input;
 
   // H2 — the contextual layer. Three parts, each trusted differently:
   //   1. trusted standing instructions from `.clud-bug.json` (if any);
@@ -366,6 +375,22 @@ ${design.skills.map((s) => `  - \`.claude/skills/${s}/SKILL.md\``).join('\n')}
    }`
     : '';
 
+  // 3d (clud-bug#263) — the prose lens. SPEC 2.0 §2.2 gives `kind: writing`
+  // skills a pass of their own because they read a different input (the text
+  // the change ships, not the diff's logic), and caps what they may justify:
+  // "A `writing` skill MAY justify a finding on its own, but only about prose.
+  // It MUST NOT be the sole citation for a finding about code behaviour."
+  // Rendering them here — instead of folding them into §3's skill list — is
+  // what makes that cap real: a reviewer that never sees a writing skill in
+  // the code lens cannot cite one for a code-behaviour finding.
+  const proseStep = prose
+    ? `\n\n## 3d. Prose lens (\`kind: writing\` skills)
+Review the **text this change ships** — documentation, error and log messages, product copy, UI strings — against the writing skills below. This is a separate read from §3: its input is the prose in the diff, not the code's behaviour.
+${prose.skills.map((s) => `  - \`.claude/skills/${s}/SKILL.md\``).join('\n')}
+
+**Authority limit (SPEC 2.0 §2.2):** a writing skill may be the sole citation for a finding **about prose only**. It MUST NOT be the sole citation for a finding about code behaviour — if a writing skill is the only thing supporting a claim that the code is wrong, drop the finding or re-ground it on a \`kind: rule\` skill. Record prose findings with \`file\`, \`line\`, \`severity\`, the writing \`skill\`, and a one-line \`summary\`; tag them \`<!-- pass: prose -->\`.`
+    : '';
+
   // 3c (SPEC 2.0 §4.7) — CI evidence. Replaces the deleted executable-probe
   // step (Phase R / #87 — clud-bug#264 / #260): §4.7 bans reviewer execution
   // unconditionally, so instead of running anything, the agent reads the
@@ -450,7 +475,7 @@ a review.
 ${contextStep}
 
 ## 3. Review
-${reviewStep}${designStep}${ciEvidenceStep}
+${reviewStep}${designStep}${proseStep}${ciEvidenceStep}
 
 ## 4. Report
 Render the body in clud-bug's standard shape (§1.8.1) — omit any empty section:
@@ -524,6 +549,8 @@ export interface ResolvedReviewInputs {
   plan: ReviewPlan;
   reviewContext?: string;
   design?: { skills: string[]; config: DesignConfig };
+  /** `kind: writing` skills (SPEC 2.0 §2.2 prose pass). Absent when none. */
+  prose?: { skills: string[] };
   ciChecks?: { names: string[] | null };
   notaryUrl: string | null;
 }
@@ -560,11 +587,19 @@ export async function resolveReviewInputs(
     }
   }
 
-  // Partition by lens: `kind: design` skills drive the visual design-critic
-  // pass, not the code-correctness multi-pass plan. Code skills go to
-  // planReview; design skills go to the (gated) design step.
-  const designSkills = skills.filter((s) => s.frontmatter.kind === 'design');
-  const codeSkills = skills.filter((s) => s.frontmatter.kind !== 'design');
+  // Partition by lens — SPEC 2.0 §2.2: "A planner MUST route a skill to the
+  // pass matching its `kind` and MUST NOT feed it to another." Three kinds,
+  // three destinations: `rule` → the code-correctness plan (planReview),
+  // `writing` → the prose lens, `design` → the (gated) design step.
+  //
+  // Normalise through `resolveSkillKind` rather than reading `frontmatter.kind`
+  // directly: a `!== 'design'` test sweeps every non-design value into the code
+  // pass, which is exactly how clud-bug#263's unrecognised `kind` ended up with
+  // rule authority. Routing on the resolved tier means a typo lands in prose.
+  const kindOf = (s: ReviewPlanSkill) => resolveSkillKind(s.frontmatter.kind);
+  const designSkills = skills.filter((s) => kindOf(s) === 'design');
+  const writingSkills = skills.filter((s) => kindOf(s) === 'writing');
+  const codeSkills = skills.filter((s) => kindOf(s) === 'rule');
 
   const config = readReviewPassesConfig(manifest);
   const plan = planReview({
@@ -582,6 +617,11 @@ export async function resolveReviewInputs(
   const design = shouldRunDesign(designConfig, designSkills.length, trigger)
     ? { skills: designSkills.map((s) => s.slug), config: designConfig }
     : undefined;
+
+  // clud-bug#263 — the prose lens. Ungated (SPEC 2.0 §2.2 table: the prose
+  // pass "Runs: always"), but rendered only when the repo actually installs a
+  // `kind: writing` skill, so a repo with none sees a byte-identical recipe.
+  const prose = writingSkills.length > 0 ? { skills: writingSkills.map((s) => s.slug) } : undefined;
 
   // H2 — trusted standing review instructions (`.clud-bug.json` `reviewContext`).
   const reviewContext = readReviewContext(manifest).instructions;
@@ -606,6 +646,7 @@ export async function resolveReviewInputs(
     plan,
     ...(reviewContext ? { reviewContext } : {}),
     ...(design ? { design } : {}),
+    ...(prose ? { prose } : {}),
     ...(ciChecks ? { ciChecks } : {}),
     notaryUrl,
   };
@@ -620,7 +661,7 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
   const cwd = args.cwd ?? process.cwd();
   const trigger = normalizeTrigger(args.trigger);
 
-  const { plan, reviewContext, design, ciChecks, notaryUrl } = await resolveReviewInputs(
+  const { plan, reviewContext, design, prose, ciChecks, notaryUrl } = await resolveReviewInputs(
     cwd,
     trigger,
     args.diffSizeBytes,
@@ -639,6 +680,7 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
       notaryUrl,
       ...(reviewContext ? { reviewContext } : {}),
       ...(design ? { design } : {}),
+      ...(prose ? { prose } : {}),
       ...(ciChecks ? { ciChecks } : {}),
       ...(noVerifyFlagged ? { noVerifyFlagged: true } : {}),
     }) + '\n',

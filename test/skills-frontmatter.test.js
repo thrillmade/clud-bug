@@ -10,7 +10,12 @@
 import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 
-import { appliesToAuthor, parseFrontmatter, stripFrontmatter } from '../src/core/skills.js';
+import {
+  appliesToAuthor,
+  parseFrontmatter,
+  resolveSkillKind,
+  stripFrontmatter,
+} from '../src/core/skills.js';
 
 // ---------------------------------------------------------------------------
 // Valid frontmatter
@@ -232,37 +237,37 @@ test('stripFrontmatter: handles CRLF line endings', () => {
 });
 
 // ---------------------------------------------------------------------------
-// v0.7.0-rc.6 — SPEC v0.5.0+ kind + voice_scope surfaced on frontmatter
-// (Wave 4d reviewer-flagged silent-drop, now formalized in v0.5.1)
+// clud-bug#263 — SPEC 2.0 §2.1/§2.2 `kind` resolution.
+//
+// Two rules, and the whole point is that they fail in OPPOSITE directions:
+//   §2.1 "A skill with no `kind` is a `rule` skill."      → absent       → rule
+//   §2.2 "An unrecognised `kind` MUST be treated as `writing`."          → writing
+//
+// Before this, EVERY value outside the ladder resolved to `undefined`, and
+// `undefined` is indistinguishable from absent — so a typo, and the not-yet-in-
+// the-ladder `writing`, inherited §2.1's `rule` default: the HIGHEST authority
+// tier, able to be the sole citation for a finding about code behaviour, which
+// §2.2 exists to withhold from a prose skill.
 // ---------------------------------------------------------------------------
 
-test('parseFrontmatter: kind: voice + voice_scope: org surfaced on parsed frontmatter', () => {
-  const raw = `---
-name: voice-acme
-description: Acme org voice for the bot.
-kind: voice
-voice_scope: org
----
+const KIND = (kind) => `---
+name: kind-fixture
+description: A skill with a kind.
+${kind === null ? '' : `kind: ${kind}\n`}---
 Body.
 `;
-  const fm = parseFrontmatter(raw);
-  assert.equal(fm.kind, 'voice');
-  assert.equal(fm.voice_scope, 'org');
-});
 
 test('parseFrontmatter: kind: rule surfaced explicitly', () => {
-  const raw = `---
-name: my-rule
-description: A rule skill.
-kind: rule
----
-Body.
-`;
-  const fm = parseFrontmatter(raw);
-  assert.equal(fm.kind, 'rule');
+  assert.equal(parseFrontmatter(KIND('rule')).kind, 'rule');
 });
 
-test('parseFrontmatter: kind: design surfaced (visual-review lens, no scope required)', () => {
+test('parseFrontmatter: kind: writing is RECOGNISED (SPEC 2.0 renamed it from `voice`)', () => {
+  // The bug in #263: `writing` was absent from the ladder, so it fell to
+  // `undefined` → read as the absent-kind default → `rule`.
+  assert.equal(parseFrontmatter(KIND('writing')).kind, 'writing');
+});
+
+test('parseFrontmatter: kind: design surfaced (visual-review lens)', () => {
   const raw = `---
 name: visual-polish
 description: A design skill.
@@ -273,41 +278,96 @@ Body.
 `;
   const fm = parseFrontmatter(raw);
   assert.equal(fm.kind, 'design');
-  // design needs no voice_scope (unlike kind: voice)
-  assert.equal(fm.voice_scope, undefined);
   assert.equal(fm.review_mode, 'dedicated');
 });
 
-test('parseFrontmatter: unknown kind silently drops (defensive)', () => {
+test('parseFrontmatter: absent kind → rule (SPEC 2.0 §2.1 default)', () => {
+  assert.equal(parseFrontmatter(MINIMAL_VALID).kind, 'rule');
+  assert.equal(parseFrontmatter(KIND(null)).kind, 'rule');
+});
+
+// The regression this issue is about: every one of these MUST land on
+// `writing`, and NOT ONE of them may come back `rule`.
+for (const garbage of [
+  'enterprise', // a value that never existed
+  'writng', // a plausible typo of the real value
+  'Writing', // right word, wrong case — SPEC enumerates lowercase values
+  'voice', // the retired pre-2.0 name; demotes, and prose is where it belonged
+  'rule ; design', // punctuation soup
+  '[]', // parses as an inline list, not a scalar
+  '"writing", "rule"', // two values where one is allowed
+]) {
+  test(`parseFrontmatter: unrecognised kind ${JSON.stringify(garbage)} → writing, never rule (SPEC 2.0 §2.2)`, () => {
+    const fm = parseFrontmatter(KIND(garbage));
+    assert.equal(fm.kind, 'writing');
+    assert.notEqual(fm.kind, 'rule');
+  });
+}
+
+test('parseFrontmatter: a bare `kind:` with no value → writing, not rule', () => {
+  // The hand-rolled parser reads a valueless key as a nested block (`{}`), so
+  // this arrives as a non-string. Present-but-unusable is a mistake, and a
+  // mistake resolves DOWN (§2.2), not to §2.1's absent-key default.
   const raw = `---
-name: weird
-description: Weird kind.
-kind: enterprise
+name: bare-kind
+description: A skill whose kind line has no value.
+kind:
 ---
 Body.
 `;
-  const fm = parseFrontmatter(raw);
-  assert.equal(fm.kind, undefined);
+  assert.equal(parseFrontmatter(raw).kind, 'writing');
 });
 
-test('parseFrontmatter: unknown voice_scope silently drops', () => {
+test('parseFrontmatter: an unrecognised kind still LOADS the skill (degrade, never reject)', () => {
+  // SPEC 2.0 §2.1: "A consumer MUST NOT refuse to load a skill because of a key
+  // it does not recognise"; §2.2: "A skill loads and is applied — a typo does
+  // not discard it". So this must not throw, and must keep every other field.
+  const fm = parseFrontmatter(KIND('enterprise'));
+  assert.equal(fm.name, 'kind-fixture');
+  assert.equal(fm.description, 'A skill with a kind.');
+  assert.equal(fm.source, 'manual');
+  assert.equal(fm.review_mode, 'shared');
+});
+
+test('parseFrontmatter: voice_scope is gone — SPEC 2.0 dropped it from the schema', () => {
   const raw = `---
-name: weird-voice
-description: Weird scope.
+name: voice-acme
+description: A skill still carrying the retired pre-2.0 fields.
 kind: voice
-voice_scope: galaxy
+voice_scope: org
 ---
 Body.
 `;
   const fm = parseFrontmatter(raw);
-  assert.equal(fm.kind, 'voice');
+  // Unknown keys are dropped from the parsed shape, never a load failure.
   assert.equal(fm.voice_scope, undefined);
+  assert.equal(fm.kind, 'writing');
 });
 
-test('parseFrontmatter: absent kind + voice_scope → both undefined (v0.5.0 default)', () => {
-  const fm = parseFrontmatter(MINIMAL_VALID);
-  assert.equal(fm.kind, undefined);
-  assert.equal(fm.voice_scope, undefined);
+// ---------------------------------------------------------------------------
+// resolveSkillKind — the rule on its own, so a consumer that builds a
+// frontmatter by hand (rather than via parseFrontmatter) routes identically.
+// ---------------------------------------------------------------------------
+
+test('resolveSkillKind: absent (undefined/null) → rule', () => {
+  assert.equal(resolveSkillKind(undefined), 'rule');
+  assert.equal(resolveSkillKind(null), 'rule');
+});
+
+test('resolveSkillKind: the three recognised values round-trip', () => {
+  assert.equal(resolveSkillKind('rule'), 'rule');
+  assert.equal(resolveSkillKind('writing'), 'writing');
+  assert.equal(resolveSkillKind('design'), 'design');
+});
+
+test('resolveSkillKind: whitespace around a recognised value is tolerated', () => {
+  assert.equal(resolveSkillKind('  design  '), 'design');
+});
+
+test('resolveSkillKind: non-string and unrecognised inputs → writing, never rule', () => {
+  for (const bad of ['enterprise', '', '  ', 42, true, {}, [], ['writing'], () => {}]) {
+    assert.equal(resolveSkillKind(bad), 'writing', `resolveSkillKind(${String(bad)})`);
+  }
 });
 
 // ---------------------------------------------------------------------------
