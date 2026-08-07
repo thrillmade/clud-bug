@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (7 decisions)
+## 2026-08 (18 decisions)
 
-- **2026-08-07** — Declare SPEC 2.0 once: spec-version marker, notary bundle, and --version (#277, #267, #278) *(fix/spec-version-and-stale-citations)* — [decisions-branches/fix__spec-version-and-stale-citations.md](decisions-branches/fix__spec-version-and-stale-citations.md)
-- *... 5 more decisions ...*
+- **2026-08-07** — Merge dev again (#288 base-ref skills + #292 fork-checks) and refresh timeline *(fix/265-redirect-stubs)* — [decisions-branches/fix__265-redirect-stubs.md](decisions-branches/fix__265-redirect-stubs.md)
+- *... 16 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
