@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (8 decisions)
+## 2026-08 (9 decisions)
 
 - **2026-08-07** — Docs: say the base-ref skill read now holds on the Action too, not just the hosted App *(fix/260-base-ref-skills)* — [decisions-branches/fix__260-base-ref-skills.md](decisions-branches/fix__260-base-ref-skills.md)
-- *... 6 more decisions ...*
+- *... 7 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
