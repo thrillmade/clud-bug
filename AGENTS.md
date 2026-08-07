@@ -77,3 +77,18 @@ Confirmed cases:
 - **#246** — body, first comment, and last comment each disagree with the
   one before it; only the 2026-08-01 comment is live.
 - **#262 item 7** — duplicates #267.
+- **#264** — its body quotes §4.7 backwards, as opt-in with "absent means the
+  reviewer reads none." The merged SPEC says the opposite: on by default,
+  absent means every check. Filed ~2.5 hours *before* the rewrite landed, so
+  the body was never wrong — it aged out. Bodies do that; comments do not
+  update them.
+- **clud-bug-app#87** — its P0 design is now half-MUST, half-FORBIDDEN. The
+  2026-08-01 comment supersedes the body: rebuild it on CI evidence, not on
+  the probe surface §4.7 bans.
+- **clud-bug-app#14** — milder, but the body's framing was reworked in its own
+  comments. Read them before acting on it.
+
+This list is a snapshot, not a guarantee. It was assembled by reading every
+open issue on 2026-08-01; an issue that acquires a superseding comment
+tomorrow will not appear here. The rule above is what protects you — the
+list only names the cases already known to trip it.
