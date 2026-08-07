@@ -31,7 +31,7 @@ export const MANIFEST_VERSION = 1;
 // skill content, bump BASELINE_SKILLS_REF below in the same clud-bug PR
 // that ships the corresponding bundled fallback update.
 // See thrillmade/agent-skills — skills.sh `skills/<name>/SKILL.md` layout.
-const BASELINE_SKILLS_REF = 'bd1b554037ec08d4150e9fee89a087cc937092b5';
+const BASELINE_SKILLS_REF = '2dc8360c8bdfb916d37fc85c23b04f63559daad6';
 const AGENT_SKILLS_BASE =
   process.env['CLUD_BUG_AGENT_SKILLS_BASE'] ??
   `https://raw.githubusercontent.com/thrillmade/agent-skills/${BASELINE_SKILLS_REF}/skills`;
