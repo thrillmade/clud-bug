@@ -11,3 +11,14 @@
 
 ---
 
+## 2026-08-07 17:33 - Rename branch worktree-wf_14b1bd88-5b1-3 -> fix/265-redirect-stubs and move its decision file to match
+
+**Reasoning:** The orchestrator seeded this worktree with a machine-generated branch name. Every other PR on this repo uses the fix/<issue>-<slug> convention (fix/260-base-ref-skills, fix/263-skill-kind-writing, fix/264-ci-evidence-delete-probes), and logmind routes decisions to docs/decisions-branches/<branch>.md — so the branch rename has to carry the decision file with it or the file is orphaned under a name no branch owns.
+
+**Alternatives considered:** Leave the worktree branch name (rejected: an opaque PR head ref nobody can read, and it breaks the naming pattern reviewers scan by). Delete and re-log the decision on the new branch (rejected: rewrites the timestamp and loses the original entry).
+
+**Implications:**
+- PR head ref is fix/265-redirect-stubs. No code change in this commit — pure rename, so a reviewer can skip it.
+
+---
+
