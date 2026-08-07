@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (5 decisions)
+## 2026-08 (6 decisions)
 
-- **2026-08-07** — Fix 258: map dependabot secrets explicitly instead of secrets: inherit *(fix/258-secrets-mapping)* — [decisions-branches/fix__258-secrets-mapping.md](decisions-branches/fix__258-secrets-mapping.md)
-- *... 3 more decisions ...*
+- **2026-08-07** — SPEC 4.9: unset the default $5 per-PR cost ceiling in core/budget-plan *(spec-4-9-unset-per-pr-cost-cap)* — [decisions-branches/spec-4-9-unset-per-pr-cost-cap.md](decisions-branches/spec-4-9-unset-per-pr-cost-cap.md)
+- *... 4 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
