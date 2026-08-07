@@ -95,17 +95,18 @@ export function deriveCheck(input: DeriveCheckInput): DerivedCheck {
       summary = `${n}critical finding(s); advisory only (strict mode off) — does not block merge.${selfAttested}`;
     }
   } else if (verdict === 'unverified') {
-    // R3 (#87) — the review ran, but an invariant/probe-touching change could not be
-    // VERIFIED here (no probe ran, or a finding could not be safely reproduced —
-    // e.g. an untrusted diff the local reviewer must not execute). It is NOT clean
-    // (never a false-green) and NOT a hard block (never an outage on our own
-    // inability to verify): a `neutral` signal that defers to an independent
-    // sandbox/CI probe, which resolves it to clean or critical.
+    // SPEC 2.0 §4.7 — the review ran, but a critical could not be VERIFIED
+    // here: a relevant named CI check had not reached a terminal outcome, or
+    // a concern could be neither grounded in a failed check/quote/invariant
+    // nor cleanly cleared. It is NOT clean (never a false-green) and NOT a
+    // hard block (never an outage on our own inability to verify): a
+    // `neutral` signal that defers to CI, which resolves it to clean or
+    // critical once it finishes.
     conclusion = 'neutral';
     title = 'clud-bug review — unverified';
     summary =
-      `This change touched a probe/invariant surface that could not be verified in this review; it ` +
-      `needs independent sandbox/CI verification. Not a pass, not a block.${selfAttested}`;
+      `This change has a finding that could not be verified in this review; it needs independent CI ` +
+      `verification. Not a pass, not a block.${selfAttested}`;
   } else {
     // failed — never block on our own inability to run.
     conclusion = 'neutral';

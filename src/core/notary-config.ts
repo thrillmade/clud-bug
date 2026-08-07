@@ -6,7 +6,7 @@
 // opt-IN. Phase ZP2 flips that (CEO decision): local max mode now certifies
 // via the hosted notary by DEFAULT, and a repo opts OUT via `.clud-bug.json`.
 //
-// This module is the shared, pure brain — like `design.ts` / `invariants.ts` —
+// This module is the shared, pure brain — like `design.ts` / `ci-checks.ts` —
 // so every consumer (`post-check-run`, `review-prompt`) resolves the SAME
 // origin the SAME way and policy can't fork between them.
 

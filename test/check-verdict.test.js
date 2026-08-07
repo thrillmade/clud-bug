@@ -45,8 +45,8 @@ describe('deriveCheck', () => {
   it('failed → neutral (never block on our own inability to run)', () => {
     expect(deriveCheck({ verdict: 'failed', strictMode: true }).conclusion).toBe('neutral');
   });
-  it('unverified → neutral (invariant-touching change we could not verify; never a false-green, never a hard block)', () => {
-    // R3 (#87): no "clean" without a green probe on an invariant-touching PR — emit unverified instead
+  it('unverified → neutral (a finding we could not verify; never a false-green, never a hard block)', () => {
+    // SPEC 2.0 §4.7: no "clean" without CI evidence that finished — emit unverified instead
     expect(deriveCheck({ verdict: 'unverified', strictMode: true }).conclusion).toBe('neutral');
     expect(deriveCheck({ verdict: 'unverified', strictMode: false }).conclusion).toBe('neutral');
     const d = deriveCheck({ verdict: 'unverified' });

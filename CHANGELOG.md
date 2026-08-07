@@ -6,6 +6,37 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ### Fixed
 
+- **🔴 The reviewer could execute untrusted diff content — SPEC 2.0 §4.7 bans this unconditionally
+  (clud-bug#264 → #260).** `src/core/invariants.ts`'s executable-probe surface let a repo self-enable
+  a reviewer-runs-a-shell-command behaviour by declaring a single `invariants` entry in
+  `.clud-bug.json` — armed, not dormant, by `readInvariantsConfig`'s own design ("declaring at least
+  one valid invariant is the explicit opt-in"). The local recipe additionally instructed "Resolve it
+  by EXECUTION where you can: REPRODUCE it" on the reviewer's own trusted work, and the Action's
+  default prompt offered "a command you ran + its observed output" as a grounding form. SPEC 2.0 §4.7
+  is unconditional: "A reviewer MUST NOT execute code, tests, builds or scripts... so no surface runs
+  one and none is specified."
+
+  The probe surface — `invariants.ts`, `shouldRunProbes`, the `invariants[].probe` config key, and
+  every execution instruction in both prompts (local recipe + Action) — is **deleted**, not gated. In
+  its place: reading the CI checks the repository's own forge already ran (§4.7's sanctioned
+  substitute), **ON by default**, narrowed only by a new `ciChecks` key in `.clud-bug.json` — absent
+  means every check; an explicit empty array is the one way to opt fully out. A concluded failure
+  grounds a `reproduction` finding exactly as a quoted line does and MUST NOT be argued away or have
+  its severity lowered; a check that hasn't reached a terminal outcome reports `unverified`, never
+  `clean`, and never blocks waiting for it.
+
+  **Follow-up caught in review:** the first pass of this fix told the reviewer a check's failure was
+  "trusted machine output" full stop — but a check's `name`/`description`/output text are
+  author-controlled (a PR editing `.github/workflows/**` or a script a workflow runs decides what a
+  check is named and what it says), the same trust error §4.7's execution ban exists to prevent, one
+  step removed, and strictly more privileged than the fenced `<!-- clud-bug: … -->` PR-description
+  marker since it could force a severity outright. Only the forge's own `conclusion`/`state` enum —
+  which the change cannot author — now grounds or argues a finding; `name`/`description`/output text
+  are fenced like any other untrusted, author-supplied text (may focus attention, must never determine
+  a verdict). Also closes a command-injection sub-case: the Action prompt no longer builds a follow-up
+  `--jq 'select(.name == "<name>")'` command by splicing an observed (attacker-influenced) check name
+  into a new shell invocation — one fetch reads name + summary together instead.
+
 - **🔴 The `clud-bug-review` merge gate was forgeable — `configure-github` shipped it unpinned, and
   stripped the pin if you set one by hand.** SPEC §10.3.3 point 2 requires the required-status-check
   entry to pin `integration_id` to the clud-bug App, so that only the App can satisfy the gate. Without
