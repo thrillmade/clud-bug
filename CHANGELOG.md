@@ -37,6 +37,31 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
   `--jq 'select(.name == "<name>")'` command by splicing an observed (attacker-influenced) check name
   into a new shell invocation — one fetch reads name + summary together instead.
 
+- **🟡 The per-PR cost ceiling defaulted to $5 and silently truncated reviews nobody asked to
+  truncate (SPEC §4.9).** `core/budget-plan.ts` applied `DEFAULT_PER_PR_CAP_USD = 5.0`
+  unconditionally: `estimateBudget` fell back to it whenever a caller passed no `perPrCapUsd`, and
+  no caller ever passes one — not the CLI's `resolveReviewInputs`, not the hosted orchestrator. A
+  plan estimated over $5 was denied, and the customer got a "clud-bug paused this review" comment
+  telling them to lower `reviewPasses.count`.
+
+  §4.9 is explicit that the repository's own ceiling is the customer's choice, "configurable per
+  install and **defaulting to unset** — no ceiling until someone chooses one, because a default cap
+  silently truncates reviews nobody asked to truncate."
+
+  `estimateBudget` now treats an omitted `perPrCapUsd` as **no ceiling** and can never deny on that
+  path; `BudgetEstimate.capUsd` is `number | null` and reports `null` when unset. An
+  **explicitly-configured ceiling behaves exactly as before**, including `0` (a choice, not "unset")
+  and the `billingExempt` bypass.
+
+  Two nearby mechanisms §4.9 keeps separate are deliberately **unchanged**: the hosted App's
+  runaway guard (`clud-bug-app/lib/runaway-guard.ts`, $5/PR/24h on the operator's own spend, applied
+  to every install), which §4.9 explicitly permits; and `estimateVerifierBudget`'s D.2.6 cap, whose
+  deny routes threads through the heuristic fallback rather than truncating a review.
+
+  `DEFAULT_PER_PR_CAP_USD` is renamed `SUGGESTED_PER_PR_CAP_USD` — a value a caller may *choose*,
+  never one that is applied. The old name is kept as a deprecated alias so existing importers keep
+  compiling, and goes in a major (SPEC §7.5).
+
 - **🔴 The `clud-bug-review` merge gate was forgeable — `configure-github` shipped it unpinned, and
   stripped the pin if you set one by hand.** SPEC §10.3.3 point 2 requires the required-status-check
   entry to pin `integration_id` to the clud-bug App, so that only the App can satisfy the gate. Without
