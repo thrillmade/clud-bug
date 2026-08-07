@@ -22,3 +22,14 @@
 
 ---
 
+## 2026-08-07 17:33 - Regenerate docs/timeline.md on the branch so check-derived-docs starts green
+
+**Reasoning:** check-derived-docs (inside regen-timeline.yml, not a file of that name) regenerates the derived docs in CI and pushes a fix commit when they are stale. Doing it here means the PR opens coherent instead of collecting a bot commit.
+
+**Alternatives considered:** Let the bot regenerate it (rejected: adds a commit to the PR and re-runs every check for no reason). Also regenerate docs/file-structure.md (rejected: this session runs inside a git worktree, where logmind renders the WORKTREE DIRECTORY as the tree root and corrupts the file — and this change adds no files, so file-structure has nothing to pick up).
+
+**Implications:**
+- docs/timeline.md now lists the #265 entries. docs/file-structure.md deliberately left alone.
+
+---
+
