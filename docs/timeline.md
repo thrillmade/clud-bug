@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (12 decisions)
+## 2026-08 (16 decisions)
 
 - **2026-08-07** — Merge dev (incl. #263 skill-kind fix) and refresh timeline so GitHub sees no conflict *(fix/265-redirect-stubs)* — [decisions-branches/fix__265-redirect-stubs.md](decisions-branches/fix__265-redirect-stubs.md)
-- *... 10 more decisions ...*
+- *... 14 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
