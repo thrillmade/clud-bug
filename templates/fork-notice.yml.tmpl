@@ -1,0 +1,113 @@
+# clud-bug-template-version: v1
+name: Clud Bug 🐛 Fork Notice
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THIS FILE EXISTS
+#
+# SPEC §6.5: "Where a gate's credential cannot reach the change at all — a pull
+# request from a fork — the gate MUST NOT block it. The check is set to neutral,
+# never passing, and the pull request carries a comment stating that the check
+# was skipped and why. […] An unannounced skip is a false green."
+#
+# The review workflow (clud-bug-review.yml) cannot satisfy either half of that
+# rule on a fork pull request, for two mechanical reasons:
+#
+#   1. "The GITHUB_TOKEN has read-only permissions in pull requests from forked
+#      repositories" (GitHub docs, Events that trigger workflows). A `permissions:`
+#      block cannot raise it. So that run can post neither a check-run nor the
+#      announcement comment — its `gh pr comment` has always silently failed.
+#   2. A workflow JOB has no `neutral` conclusion. Job conclusions are success /
+#      failure / cancelled / skipped, and GitHub's protected-branch rule is
+#      "Required status checks must have a successful, skipped, or neutral status
+#      before collaborators can make changes to a protected branch" — so BOTH a
+#      green job and a skipped job read as satisfied. There is no job outcome
+#      that means "nothing was reviewed".
+#
+# `pull_request_target` is the one trigger that runs in the base repository's
+# context with a writable token, which is exactly what GitHub documents it for:
+# workflows that "label or comment on pull requests from forks".
+#
+# SECURITY — this workflow never touches the fork's code:
+#   • no `actions/checkout` at any point, so nothing from the head ref is
+#     fetched, built, or executed;
+#   • every value that originates with the contributor (head repo name, SHA) is
+#     passed through `env:` and read as a shell variable, never interpolated into
+#     a `run:` block as `${{ ... }}` where it could close a quote;
+#   • permissions are the two this job needs and nothing else;
+#   • no repository secret is referenced. `secrets.GITHUB_TOKEN` is the ambient
+#     job token, not a stored secret.
+# That is the whole job. It posts a neutral check and a comment saying nothing
+# was reviewed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  # Keyed on the PR, not the SHA: a rapid push sequence should leave one notice,
+  # and the last run wins because it carries the current head SHA.
+  group: clud-bug-fork-notice-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Default to nothing; the single job opts into exactly what it needs.
+permissions: {}
+
+jobs:
+  # NAME THIS ANYTHING EXCEPT `clud-bug-review`.
+  #
+  # The merge gate is the check-run named `clud-bug-review` that this job POSTS
+  # via the API. If the job were itself named `clud-bug-review`, GitHub would
+  # create a second check-run under that name from the job's own conclusion, and
+  # the gate would have two producers whose latest-wins race decides the merge.
+  # One name, one producer.
+  fork-notice:
+    # Fork pull requests only. On a same-repo PR the review workflow's own token
+    # is writable and it posts the check itself, so this job must stay out of
+    # the way — an unconditional run here would be a second producer again.
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
+    steps:
+      - name: Post the neutral clud-bug-review check (SPEC §6.5)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REPO: ${{ github.repository }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+
+          # --owner/--repo are explicit because there is no checkout for
+          # `gh repo view` to read a remote from.
+          npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-check-run \
+            --sha "$HEAD_SHA" \
+            --owner "${BASE_REPO%%/*}" \
+            --repo "${BASE_REPO##*/}" \
+            --source ci \
+            --no-notary \
+            --verdict skipped \
+            --skip-reason "This pull request was opened from a fork ($HEAD_REPO). GitHub withholds repository secrets from fork-triggered workflows, so the reviewer could not authenticate and no review ran."
+
+      - name: Announce the skip on the pull request (SPEC §6.5)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+
+          # Dedup: `synchronize` fires on every push to a long-running fork PR,
+          # and one identical comment per push is noise, not an announcement.
+          EXISTING=$(gh api "repos/${BASE_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length' \
+            2>/dev/null || echo 0)
+          if [ "${EXISTING:-0}" != "0" ]; then
+            echo "::notice title=Clud Bug 🐛::Skip notice already posted on this PR; not repeating it."
+            exit 0
+          fi
+
+          BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis pull request came from a fork, so clud-bug did not review it — **nothing here was checked**.\n\nGitHub deliberately withholds repository secrets from fork-triggered workflows, so the reviewer could not authenticate against Anthropic.\n\nThe `clud-bug-review` check is set to `neutral`, not `success`. Neutral does not block this pull request, and it does not claim the change was reviewed. Review the diff manually before merging.\n')
+          gh pr comment "$PR_NUMBER" --repo "$BASE_REPO" --body "$BODY"

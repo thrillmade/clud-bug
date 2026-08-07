@@ -164,7 +164,11 @@ jobs:
             echo "threads_count=$THREAD_COUNT"
           } >> "$GITHUB_OUTPUT"
 
-  clud-bug-review:
+  # RENAMED from `clud-bug-review` in template v15 so the job stops producing a
+  # second check-run under the merge gate's name. See workflow.yml.tmpl for the
+  # full rationale; the required context is still `clud-bug-review`, now posted
+  # only through the API. Consumers' branch-protection config is unchanged.
+  review:
     needs: paths-check
     if: needs.paths-check.outputs.is_workflow_only != 'true'
     runs-on: ubuntu-latest
@@ -248,14 +252,21 @@ jobs:
           IS_BOT=false; case "$PR_AUTHOR" in *\[bot\]) IS_BOT=true ;; esac
           if $IS_FORK || $IS_BOT; then
             REASON=$($IS_BOT && echo "bot author ($PR_AUTHOR)" || echo "fork ($HEAD_REPO)")
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Clud Bug 🐛::Skipped — $REASON cannot access repository secrets. NOTHING was reviewed."
+            # Fork PRs: this token is read-only (GitHub docs), so neither the
+            # comment nor a check-run can be written from here — the notice
+            # workflow owns both. See workflow.yml.tmpl for the full note.
+            if $IS_FORK; then
+              echo "::notice title=Clud Bug 🐛::Fork PR — the neutral clud-bug-review check + skip notice come from clud-bug-fork-notice.yml. Run \`clud-bug update\` if it is not on your default branch."
+              exit 0
+            fi
             EXISTING=$(gh api "repos/${BASE_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
-              --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length')
+              --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length' 2>/dev/null || echo 0)
             if [ "${EXISTING:-0}" = "0" ]; then
-              BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis PR is from a %s. GitHub deliberately does not pass repository secrets to such workflows, so Clud Bug could not authenticate against Anthropic. Review the diff manually.' "$REASON")
+              BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis PR is from a %s, so clud-bug did not review it — **nothing here was checked**. GitHub deliberately does not pass repository secrets to such workflows, so Clud Bug could not authenticate against Anthropic.\n\nThe `clud-bug-review` check is set to `neutral`, not `success`: it does not block this PR, and it does not claim the change was reviewed. Review the diff manually.' "$REASON")
               gh pr comment "$PR_NUMBER" --body "$BODY" || true
             fi
-            echo "::warning title=Clud Bug 🐛::Skipped — $REASON cannot access repository secrets."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "::error title=Clud Bug 🐛::ANTHROPIC_API_KEY secret is not set on this repository."
@@ -550,3 +561,53 @@ jobs:
             -f body="$BODY" \
             > /dev/null \
             || echo "::warning title=Clud Bug 🐛::Formal review POST failed (likely 422 self-PR or missing perms); degrading to comment-only."
+
+  # ── The gate (template v15) ──────────────────────────────────────────────
+  # Full design notes in workflow.yml.tmpl. Summary: the merge gate is the
+  # API-posted check-run named `clud-bug-review`, never a job conclusion, because
+  # a job has no `neutral` and GitHub reads both green and skipped jobs as
+  # satisfying a required check. This job guarantees the check exists on every
+  # outcome and never overwrites one someone else already posted.
+  gate:
+    needs: [paths-check, review]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Ensure a clud-bug-review check exists (SPEC §6.5)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          IS_WORKFLOW_ONLY: ${{ needs.paths-check.outputs.is_workflow_only }}
+        run: |
+          set -uo pipefail
+          EXISTING=$(gh api "repos/${BASE_REPO}/commits/${HEAD_SHA}/check-runs?check_name=clud-bug-review&per_page=100" \
+            --jq '.check_runs | length' 2>/dev/null || echo 0)
+          if [ "${EXISTING:-0}" != "0" ]; then
+            echo "::notice title=Clud Bug 🐛::clud-bug-review already posted for ${HEAD_SHA}; gate job is a no-op."
+            exit 0
+          fi
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::notice title=Clud Bug 🐛::Fork PR — clud-bug-fork-notice.yml owns the neutral check here (this run's token is read-only)."
+            exit 0
+          fi
+          if [ "$IS_WORKFLOW_ONLY" = "true" ]; then
+            REASON="This diff is clud-bug's own propagation output (workflow + allowlisted files), which carries no review surface, so the review was skipped by design."
+          elif [ "$REVIEW_RESULT" = "success" ]; then
+            REASON="The review job finished without producing a verdict — the most likely cause is a missing ANTHROPIC_API_KEY on a bot-authored pull request."
+          else
+            REASON="The review job did not complete (result: ${REVIEW_RESULT}), so no verdict was produced. Re-run the workflow to retry."
+          fi
+          npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-check-run \
+            --sha "$HEAD_SHA" \
+            --owner "${BASE_REPO%%/*}" \
+            --repo "${BASE_REPO##*/}" \
+            --source ci \
+            --no-notary \
+            --verdict skipped \
+            --skip-reason "$REASON"

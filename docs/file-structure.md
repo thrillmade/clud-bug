@@ -58,6 +58,7 @@ clud-bug
 │   ├── skills
 │   ├── audit.yml.tmpl
 │   ├── clud-bug-review.md.tmpl
+│   ├── fork-notice.yml.tmpl
 │   ├── self-update.yml.tmpl
 │   ├── workflow-py.yml.tmpl
 │   ├── workflow-ts.yml.tmpl
