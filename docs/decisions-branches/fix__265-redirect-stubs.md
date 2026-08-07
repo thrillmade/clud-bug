@@ -33,3 +33,14 @@
 
 ---
 
+## 2026-08-07 17:34 - Sync docs/timeline.md after the rebase onto dev
+
+**Reasoning:** The branch was cut from a main-derived point, not dev, so a PR --base dev would have carried 10 unrelated commits (the pending main->dev sync). Rebased the three #265 commits onto origin/dev; the rebase's timeline merge left the decision count one behind, and the file-structure.md regen was discarded because it had rewritten the tree root as the worktree directory name (wf_14b1bd88-5b1-3) instead of clud-bug.
+
+**Alternatives considered:** Open the PR from the main-based branch (rejected: 10 unrelated commits in the diff makes the review useless). Keep logmind's file-structure.md regen (rejected: it is corrupt in a worktree — verified by eye, the tree root read wf_14b1bd88-5b1-3).
+
+**Implications:**
+- PR diff vs dev is now exactly the #265 work: 6 files. docs/file-structure.md is byte-identical to dev's copy.
+
+---
+
