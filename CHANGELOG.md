@@ -6,6 +6,34 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ### Fixed
 
+- **A skill with an unrecognised `kind` was applied with the *highest* authority, not the lowest
+  (#263).** `parseFrontmatter` recognised `rule`, `design` and the pre-2.0 `voice`; everything else
+  resolved to `undefined`. But `undefined` is indistinguishable from an absent `kind`, and an absent
+  `kind` **is** a `rule` skill (SPEC 2.0 §2.1) — so every value outside the ladder inherited the tier
+  that may be the sole citation for a finding about code behaviour. `kind: writing` was one of those
+  values: SPEC 2.0 renamed `voice` → `writing`, and the ladder never followed, so the first prose skill
+  to ship would have been read as a code rule. §2.2 exists to withhold exactly that.
+
+  Three changes:
+  - `SkillKind` is now `rule | writing | design`. The retired `voice` value and its `voice_scope`
+    companion are gone from the schema (SPEC 2.0 §2.1 lists neither). A skill still carrying them
+    loads — unknown keys are dropped, never a load failure — and `kind: voice` now resolves to
+    `writing`, which is the tier it always belonged in.
+  - New `resolveSkillKind()` (exported from `clud-bug/core`) is the one implementation of the two
+    rules, and they fail in opposite directions: **absent → `rule`** (§2.1's default), **unrecognised
+    → `writing`** (§2.2: "An unrecognised `kind` MUST be treated as `writing`"). Unknown values
+    degrade rather than reject — §2.2 is explicit that "a typo does not discard it" — and they do not
+    fall to `design`, which routes to a pass that may not run at all.
+  - `review-prompt` now partitions three ways instead of testing `!== 'design'`. `kind: writing`
+    skills are rendered in their own **§3d Prose lens** block carrying §2.2's limit ("MUST NOT be the
+    sole citation for a finding about code behaviour") instead of being folded into the §3
+    code-correctness skill list. The block renders only when a writing skill is installed, so a repo
+    with none gets a byte-identical recipe.
+
+  No skill in the catalog uses `kind: writing` today, so nothing shipped was mis-applied — this had to
+  land before the first one does. The three-pass `review.passes` model (SPEC 2.0 §2.2 + §1.6) is still
+  not built; this is the routing fix, not that feature.
+
 - **🔴 The reviewer could execute untrusted diff content — SPEC 2.0 §4.7 bans this unconditionally
   (clud-bug#264 → #260).** `src/core/invariants.ts`'s executable-probe surface let a repo self-enable
   a reviewer-runs-a-shell-command behaviour by declaring a single `invariants` entry in
