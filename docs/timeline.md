@@ -13,11 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (3 decisions)
+## 2026-08
 
-- **2026-08-01** — Drop unfenced author-controlled link field from §3c CI-checks fetch (coordinator review of eed73e7) *(fix/264-ci-evidence-delete-probes)* — [decisions-branches/fix__264-ci-evidence-delete-probes.md](decisions-branches/fix__264-ci-evidence-delete-probes.md)
-- *... 1 more decision ...*
-- **2026-08-01** — Delete probe surface, replace with SPEC 2.0 §4.7 CI evidence (clud-bug#264/#260) *(fix/264-ci-evidence-delete-probes)* — [decisions-branches/fix__264-ci-evidence-delete-probes.md](decisions-branches/fix__264-ci-evidence-delete-probes.md)
+- **2026-08-07** — Fix 258: map dependabot secrets explicitly instead of secrets: inherit *(fix/258-secrets-mapping)* — [decisions-branches/fix__258-secrets-mapping.md](decisions-branches/fix__258-secrets-mapping.md)
+- **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
 
