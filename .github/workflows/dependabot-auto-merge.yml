@@ -18,4 +18,16 @@ jobs:
     if: github.actor == 'dependabot[bot]'
     # Pinned to thrillmade/.github commit 6e1f9df for supply-chain immutability (per clud-bug-review on PR #144). Bump via dependabot or manual edit.
     uses: thrillmade/.github/.github/workflows/dependabot-auto-merge.yml@6e1f9dfd2695396d5ae2b14af9a84ca132784a94
-    secrets: inherit
+    # Map explicitly — `secrets: inherit` does NOT work here.
+    #
+    # `inherit` forwards the caller's secrets under THEIR OWN names, so the
+    # callee received `THRILLMADE_ORCHESTRATOR_APP_ID`. But the reusable
+    # workflow declares its inputs in kebab-case (`orchestrator-app-id`,
+    # `orchestrator-private-key`, both `required: true`), so those were never
+    # populated and every Dependabot PR silently failed to auto-merge.
+    #
+    # clud-bug was the only caller using `inherit`; logmind, agent-skills and
+    # reporulez all map explicitly, exactly as below. Keep it that way.
+    secrets:
+      orchestrator-app-id: ${{ secrets.THRILLMADE_ORCHESTRATOR_APP_ID }}
+      orchestrator-private-key: ${{ secrets.THRILLMADE_ORCHESTRATOR_PRIVATE_KEY }}
