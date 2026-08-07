@@ -1,4 +1,4 @@
-# clud-bug-template-version: v14
+# clud-bug-template-version: v15
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -56,7 +56,9 @@ jobs:
   #   - Files in the allowlist are non-executable; modifying them can't
   #     grant code execution.
   #   - strictMode toggle is read from BASE ref so a PR can't disable
-  #     strict-mode on itself.
+  #     strict-mode on itself, and (clud-bug#260 item 1) the whole
+  #     `.claude/skills` tree is re-pinned to the BASE ref before the
+  #     reviewer runs, so a PR can't add or edit the skills that judge it.
   #
   # (b) Trivial PRs (v0.6.15 / 0.0.R): if the PR author is a dep-bumping
   # bot (dependabot, renovate) OR the diff is small (<2KB) AND only
@@ -303,7 +305,22 @@ jobs:
             echo "threads_count=$THREAD_COUNT"
           } >> "$GITHUB_OUTPUT"
 
-  clud-bug-review:
+  # RENAMED from `clud-bug-review` in template v15. The merge gate is the
+  # check-run named `clud-bug-review`, posted through the API by the `Notarize
+  # review` step below and by the `gate` job at the end of this file. While THIS
+  # job also carried that name, GitHub minted a second check-run under it from
+  # the job's own conclusion — two producers on one required context, resolved by
+  # whichever finished last.
+  #
+  # That is what made fork pull requests a false green: the steps below are all
+  # skipped on a fork (no ANTHROPIC_API_KEY), the job exits 0, and a green
+  # check-run appeared under the gate's name having reviewed nothing. A job has
+  # no `neutral` conclusion to offer instead — see fork-notice.yml.tmpl's header
+  # for the two GitHub rules that close off every other option.
+  #
+  # Consumers do NOT need to change their branch-protection config: the required
+  # context is still `clud-bug-review`. What changed is who produces it.
+  review:
     needs: paths-check
     if: needs.paths-check.outputs.is_workflow_only != 'true'
     runs-on: ubuntu-latest
@@ -330,16 +347,97 @@ jobs:
         with:
           # fetch-depth: 0 so the strict-mode gate can `git show
           # origin/<base_ref>:.claude/skills/.clud-bug.json` to read the base
-          # ref's manifest. Default depth=1 doesn't set up origin/<base_ref>
-          # and the gate would silently fall back to advisory.
+          # ref's manifest, and so the base-ref skill pin below can resolve
+          # `origin/<base_ref>`. Default depth=1 doesn't set up
+          # origin/<base_ref>: the gate would silently fall back to advisory
+          # and the pin would fail closed to a skill-less review.
           fetch-depth: 0
+
+      # ── SECURITY — a PR must not pick the skills that judge it ───────────
+      # (clud-bug#260 item 1; SPEC 2.0 §4.1 + §6.3)
+      #
+      # The checkout above has no `ref:`, so on `pull_request` the workspace
+      # is the MERGE ref — it contains the change. The reviewer then reads its
+      # skills out of that workspace: `Bash(cat .claude/skills/.clud-bug.json)`
+      # and `Bash(cat .claude/skills/*/SKILL.md)` are in --allowedTools below,
+      # and the system prompt's "Skills carry authority" block tells the model
+      # to load `.claude/skills/<name>/SKILL.md` and treat it as authority.
+      # src/core/review-context.ts is explicit that skills are the TRUSTED
+      # tier — a PR *description* gets fenced, a skill file does not. So
+      # without this step, a PR that adds or edits
+      # `.claude/skills/<anything>/SKILL.md` writes its own judge.
+      #
+      # SPEC §4.1: "The reviewer MUST read its skill selection and its
+      # configuration from the pull request's base ref, never from the head —
+      # otherwise a pull request picks the skills that judge it."
+      #
+      # MECHANISM — the same one already used for `strictMode` and `notary`:
+      # the Notarize, Strict-mode gate and Formal review steps below all
+      # resolve `git show "origin/${BASE_REF}:.claude/skills/.clud-bug.json"`.
+      # This step applies that identical base-ref resolution to the WHOLE
+      # `.claude/skills` tree by replacing the workspace copy in place, so
+      # every downstream reader (the model, the manifest reads, skill-usage)
+      # sees base-ref bytes. Replacing the tree rather than teaching each
+      # reader a new path is deliberate: no second mechanism to keep in sync,
+      # and nothing downstream can forget to use it.
+      #
+      # FAILS CLOSED. The merge-ref copy is deleted BEFORE the base copy is
+      # restored, so every failure path degrades the review to the baseline
+      # discipline instead of falling back to the PR's own skills. The
+      # degradation is announced, never silent (SPEC §6.5).
+      #
+      # The PR's skill changes are still REVIEWED — they are in the diff the
+      # model fetches with `gh pr diff`. They are just not OBEYED.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Pin review skills to the base ref
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+
+          # Delete first — this line is what makes the step fail closed.
+          rm -rf .claude/skills
+
+          # `origin/<base_ref>` is the primary: the exact expression the
+          # strict-mode / notary / formal-review steps already resolve, made
+          # available by `fetch-depth: 0` above. `base.sha` is the fallback —
+          # it comes from the event payload rather than the workspace, and it
+          # is a parent of the merge commit, so it is present locally even if
+          # the remote-tracking ref is not. Neither is writable by the PR.
+          PIN=$(git rev-parse --verify --quiet "origin/${BASE_REF}^{commit}" || true)
+          if [ -z "$PIN" ]; then
+            PIN=$(git rev-parse --verify --quiet "${BASE_SHA}^{commit}" || true)
+          fi
+
+          if [ -z "$PIN" ]; then
+            echo "::warning title=Clud Bug 🐛::Could not resolve the base ref (origin/${BASE_REF} or ${BASE_SHA}); reviewing with NO repo skills. A PR must never supply the skills that judge it — the baseline discipline still applies."
+            exit 0
+          fi
+
+          if ! git cat-file -e "${PIN}:.claude/skills" 2>/dev/null; then
+            echo "::notice title=Clud Bug 🐛::Base ref ${BASE_REF} (${PIN}) declares no .claude/skills — reviewing against the baseline discipline."
+            exit 0
+          fi
+
+          if git archive "$PIN" -- .claude/skills | tar -xf -; then
+            SKILL_COUNT=$(find .claude/skills -name 'SKILL.md' -type f | wc -l | tr -d ' ')
+            echo "::notice title=Clud Bug 🐛::Pinned ${SKILL_COUNT} review skill(s) to base ref ${BASE_REF} (${PIN}). Skills this PR adds or edits are reviewed, never obeyed."
+          else
+            rm -rf .claude/skills
+            echo "::warning title=Clud Bug 🐛::Could not restore .claude/skills from ${PIN}; reviewing with NO repo skills rather than the PR's own."
+          fi
 
       # Three-way guard around the Claude action:
       #   1. Secret present → no-op pass-through, action runs normally.
-      #   2. Secret missing AND PR is bot-authored or from a fork → post an
-      #      advisory comment explaining the skip, then exit 0 (green check).
-      #      GitHub deliberately withholds secrets from such PRs by design;
-      #      failing red is the wrong signal.
+      #   2. Secret missing AND PR is bot-authored or from a fork → announce the
+      #      skip and exit 0 WITHOUT reviewing. GitHub deliberately withholds
+      #      secrets from such PRs by design; failing red is the wrong signal.
+      #      The merge gate for this case is a NEUTRAL `clud-bug-review` check —
+      #      posted by the `gate` job below on a same-repo bot PR, and by
+      #      clud-bug-fork-notice.yml on a fork PR (this run's token is
+      #      read-only there and can write nothing at all). SPEC §6.5: neutral,
+      #      never passing, and say why.
       #   3. Secret missing AND PR is owner-authored → fail loud with an
       #      actionable error so the maintainer knows to set the secret.
       - name: Guard — require ANTHROPIC_API_KEY
@@ -364,17 +462,32 @@ jobs:
 
           if $IS_FORK || $IS_BOT; then
             REASON=$($IS_BOT && echo "bot author ($PR_AUTHOR)" || echo "fork ($HEAD_REPO)")
-            # Dedup: don't post the advisory comment if one already exists.
-            # pull_request: synchronize on a long-running Dependabot PR would
-            # otherwise stack one identical comment per rebase.
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=$REASON" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Clud Bug 🐛::Skipped — $REASON cannot access repository secrets. NOTHING was reviewed."
+
+            if $IS_FORK; then
+              # The announcement for a fork PR is posted by
+              # clud-bug-fork-notice.yml, not here. "The GITHUB_TOKEN has
+              # read-only permissions in pull requests from forked repositories"
+              # (GitHub docs) — this `gh pr comment` failed silently behind its
+              # `|| true` for as long as it existed, which is precisely the
+              # unannounced skip SPEC §6.5 calls a false green. Don't pretend.
+              echo "::notice title=Clud Bug 🐛::Fork PR — this run's token is read-only. The neutral clud-bug-review check + the skip notice come from clud-bug-fork-notice.yml (pull_request_target). If that workflow is not on your default branch, run \`clud-bug update\`."
+              exit 0
+            fi
+
+            # Same-repo bot PR: the token here CAN usually write. Dedup so a
+            # long-running Dependabot PR doesn't stack one identical comment per
+            # rebase. Best-effort — Dependabot-triggered runs also get a
+            # read-only token, and the `gate` job is what guarantees the check.
             EXISTING=$(gh api "repos/${BASE_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
-              --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length')
+              --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length' \
+              2>/dev/null || echo 0)
             if [ "${EXISTING:-0}" = "0" ]; then
-              BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis PR is from a %s. GitHub deliberately does not pass repository secrets to such workflows, so Clud Bug could not authenticate against Anthropic. Review the diff manually.' "$REASON")
+              BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis PR is from a %s, so clud-bug did not review it — **nothing here was checked**. GitHub deliberately does not pass repository secrets to such workflows, so Clud Bug could not authenticate against Anthropic.\n\nThe `clud-bug-review` check is set to `neutral`, not `success`: it does not block this PR, and it does not claim the change was reviewed. Review the diff manually.' "$REASON")
               gh pr comment "$PR_NUMBER" --body "$BODY" || true
             fi
-            echo "::warning title=Clud Bug 🐛::Skipped — $REASON cannot access repository secrets."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -658,9 +771,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .claude/skills
-          # If a .clud-bug.json already exists in the workspace (PR's
-          # snapshot), keep it. Otherwise initialize an empty shell so
-          # update-skill-usage has something to merge into.
+          # If a .clud-bug.json already exists in the workspace, keep it.
+          # Since clud-bug#260 that file is the BASE ref's manifest (the
+          # "Pin review skills to the base ref" step replaced the merge-ref
+          # copy), which is the right snapshot to record usage against —
+          # a PR's own manifest edits should not enter the usage record.
+          # Otherwise initialize an empty shell so update-skill-usage has
+          # something to merge into.
           if [ ! -f .claude/skills/.clud-bug.json ]; then
             echo '{"version": 1}' > .claude/skills/.clud-bug.json
           fi
@@ -881,3 +998,83 @@ jobs:
             -f body="$BODY" \
             > /dev/null \
             || echo "::warning title=Clud Bug 🐛::Formal review POST failed (likely 422 self-PR or missing perms); degrading to comment-only."
+
+  # ── The gate (template v15) ──────────────────────────────────────────────
+  #
+  # The merge gate is the check-run named `clud-bug-review`. Until v15 it was
+  # produced by the review JOB's own conclusion, which meant every path that did
+  # not review — a fork PR, a bot PR with no secret, a propagation diff, a run
+  # that died — still ended green under the gate's name. SPEC §6.5: "A gate that
+  # cannot run MUST report that it could not, and MUST NOT exit successfully in
+  # silence."
+  #
+  # The gate is now always an API-posted check-run, and this job is the backstop
+  # that guarantees one exists. It runs on EVERY outcome (`if: always()`), and it
+  # is a no-op whenever the check has already been posted:
+  #
+  #   • review completed → the `Notarize review` step already posted the real
+  #     verdict (notarized where the notary is reachable). Nothing to do here.
+  #   • hosted App also installed → the App posted it. Nothing to do here.
+  #   • nothing posted it → post NEUTRAL, naming which path was taken.
+  #
+  # Never `failure`: a repository that could not review a change must not block
+  # the contributor over its own gap. Neutral satisfies branch protection
+  # ("Required status checks must have a successful, skipped, or neutral status")
+  # without claiming a review happened.
+  #
+  # Fork PRs: this job's token is read-only, so the POST here fails and
+  # clud-bug-fork-notice.yml (pull_request_target) is what posts the gate. The
+  # `--skip-reason` below never reaches a fork PR's check.
+  gate:
+    needs: [paths-check, review]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Ensure a clud-bug-review check exists (SPEC §6.5)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          IS_WORKFLOW_ONLY: ${{ needs.paths-check.outputs.is_workflow_only }}
+        run: |
+          set -uo pipefail
+
+          # Already produced? Then this job has nothing to add. Counting the
+          # check-runs by name is the whole test — we deliberately do NOT look at
+          # their conclusion, because overwriting someone else's verdict is how a
+          # gate becomes forgeable.
+          EXISTING=$(gh api "repos/${BASE_REPO}/commits/${HEAD_SHA}/check-runs?check_name=clud-bug-review&per_page=100" \
+            --jq '.check_runs | length' 2>/dev/null || echo 0)
+          if [ "${EXISTING:-0}" != "0" ]; then
+            echo "::notice title=Clud Bug 🐛::clud-bug-review already posted for ${HEAD_SHA} (${EXISTING} run(s)); gate job is a no-op."
+            exit 0
+          fi
+
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            # Read-only token; the POST below would 403. Say so rather than
+            # emitting a warning that looks like a bug.
+            echo "::notice title=Clud Bug 🐛::Fork PR — clud-bug-fork-notice.yml owns the neutral check here."
+            exit 0
+          fi
+
+          if [ "$IS_WORKFLOW_ONLY" = "true" ]; then
+            REASON="This diff is clud-bug's own propagation output (workflow + allowlisted files), which carries no review surface, so the review was skipped by design."
+          elif [ "$REVIEW_RESULT" = "success" ]; then
+            REASON="The review job finished without producing a verdict — the most likely cause is a missing ANTHROPIC_API_KEY on a bot-authored pull request."
+          else
+            REASON="The review job did not complete (result: ${REVIEW_RESULT}), so no verdict was produced. Re-run the workflow to retry."
+          fi
+
+          npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-check-run \
+            --sha "$HEAD_SHA" \
+            --owner "${BASE_REPO%%/*}" \
+            --repo "${BASE_REPO##*/}" \
+            --source ci \
+            --no-notary \
+            --verdict skipped \
+            --skip-reason "$REASON"

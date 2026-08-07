@@ -655,8 +655,62 @@ export type SkillReviewMode = 'shared' | 'dedicated';
  * `PromptSkillFrontmatter` is a narrower subset (name + description +
  * applies_to) so we keep the full shape here.
  */
-export type SkillKind = 'rule' | 'voice' | 'design';
-export type VoiceScope = 'personal' | 'team' | 'org' | 'community';
+/**
+ * SPEC 2.0 §2.2 — `kind` routes a skill to the pass that reads it.
+ * `rule` reads the diff, `writing` reads the prose the change ships,
+ * `design` reads the rendered surface.
+ *
+ * Renamed from the pre-2.0 `voice` (SPEC 2.0 dropped that value, and its
+ * `voice_scope` companion, from the frontmatter schema).
+ */
+export type SkillKind = 'rule' | 'writing' | 'design';
+
+const RECOGNISED_SKILL_KINDS: ReadonlySet<string> = new Set<SkillKind>([
+  'rule',
+  'writing',
+  'design',
+]);
+
+/**
+ * Resolve a raw frontmatter `kind` value to the kind a consumer routes on.
+ * The one place SPEC 2.0 §2.1 + §2.2's two rules are implemented:
+ *
+ *   - **Absent → `rule`.** §2.1 lists `kind` as `no — rule`, and §2.2:
+ *     "A skill with no `kind` is a `rule` skill."
+ *   - **Unrecognised → `writing`.** §2.2: "An unrecognised `kind` MUST be
+ *     treated as `writing`. […] Coercing an unknown value to `rule` hands a
+ *     misspelling *more* power than the value its author meant, which is the
+ *     wrong direction for a mistake to fail in. `design` is weaker still, but
+ *     it routes to a pass that may not run at all, so resolving a typo there
+ *     would discard the skill rather than demote it."
+ *
+ * So an unknown value degrades — it is never rejected and never discarded.
+ * That is §2.1's "A consumer MUST NOT refuse to load a skill because of a key
+ * it does not recognise" applied to the value as well as the key: a typo costs
+ * the skill its authority over code behaviour, not its existence.
+ *
+ * A `kind` that is present but not a string (a bare `kind:` parses as an empty
+ * nested block, not a scalar) is unrecognised too, and demotes the same way —
+ * only a genuinely absent key takes §2.1's `rule` default.
+ *
+ * Prior to v0.7.0-rc.28 this ladder produced `undefined` for anything it did
+ * not recognise, which every consumer then read as the absent-kind default —
+ * i.e. `rule`, the *highest* authority tier. `kind: writing` hit that path
+ * (the ladder still spelled the value `voice`), so the first prose skill to
+ * ship would have been applied as a code rule. See clud-bug#263.
+ */
+export function resolveSkillKind(raw: unknown): SkillKind {
+  // Genuinely absent — §2.1's documented default.
+  if (raw === undefined || raw === null) return 'rule';
+  // Present and recognised — route to its own pass.
+  if (typeof raw === 'string' && RECOGNISED_SKILL_KINDS.has(raw.trim())) {
+    return raw.trim() as SkillKind;
+  }
+  // Present and unrecognised (typo, retired value like `voice`, empty, or a
+  // non-scalar) — §2.2 demotes to the least authority a skill can be applied
+  // with while still being applied at all.
+  return 'writing';
+}
 
 export interface SkillFrontmatter {
   name: string;
@@ -664,17 +718,16 @@ export interface SkillFrontmatter {
   source: SkillSource | string; // string fallback for forward-compat
   review_mode: SkillReviewMode;
   /**
-   * SPEC §1.10.1 v0.5.0+ skill classification. OPTIONAL — absent =
-   * `kind: rule` (the v0.4.0 default). Surfaced on the parsed
-   * frontmatter (v0.7.0-rc.6+) so consumers can route on the field;
-   * v0.7.0-rc.5 and earlier silently dropped it.
+   * SPEC 2.0 §2.1/§2.2 skill classification — which pass reads this skill.
+   *
+   * `parseFrontmatter` ALWAYS populates this (via `resolveSkillKind`), so a
+   * parsed frontmatter never carries `undefined` here. The field stays
+   * optional on the type only so hand-built `SkillFrontmatter` literals still
+   * compile; routing sites MUST normalise with `resolveSkillKind(fm.kind)`
+   * rather than reading the raw field, so a literal that omits it still lands
+   * on §2.1's `rule` default instead of falling through a `!== 'design'` test.
    */
   kind?: SkillKind;
-  /**
-   * SPEC §1.10.1 v0.5.0+ voice scope. REQUIRED when `kind: voice`,
-   * absent otherwise. Surfaced on the parsed frontmatter (v0.7.0-rc.6+).
-   */
-  voice_scope?: VoiceScope;
   applies_to?: {
     paths?: string[];
     extensions?: string[];
@@ -770,29 +823,17 @@ export function parseFrontmatter(raw: string): SkillFrontmatter {
   const reviewMode: SkillReviewMode =
     out['review_mode'] === 'dedicated' ? 'dedicated' : 'shared';
 
-  // v0.7.0-rc.6 — surface SPEC §1.10.1 v0.5.0+ kind + voice_scope on
-  // the parsed frontmatter. v0.7.0-rc.5 silently dropped these fields
-  // (the Wave 4d reviewer-flagged silent-drop). Validation is lenient:
-  // unknown values are surfaced as undefined so downstream code sees a
-  // clean type rather than a malformed value. SPEC enforcement (e.g.,
-  // "voice_scope REQUIRED when kind: voice") is the caller's job.
-  const kindRaw = out['kind'];
-  const kind: SkillKind | undefined =
-    kindRaw === 'voice'
-      ? 'voice'
-      : kindRaw === 'design'
-        ? 'design'
-        : kindRaw === 'rule'
-          ? 'rule'
-          : undefined;
-  const voiceScopeRaw = out['voice_scope'];
-  const voiceScope: VoiceScope | undefined =
-    voiceScopeRaw === 'personal' ||
-    voiceScopeRaw === 'team' ||
-    voiceScopeRaw === 'org' ||
-    voiceScopeRaw === 'community'
-      ? voiceScopeRaw
-      : undefined;
+  // clud-bug#263 — resolve SPEC 2.0 §2.1/§2.2 `kind` to a concrete tier here
+  // rather than leaving an unrecognised value as `undefined`. `undefined` was
+  // indistinguishable from an absent key, and an absent key IS `rule` (§2.1) —
+  // so every unknown value, including the not-yet-in-the-ladder `writing`, was
+  // silently promoted to the highest-authority tier. `resolveSkillKind` fails
+  // the other way: absent → `rule`, anything unrecognised → `writing`.
+  //
+  // The result is ALWAYS set, so no consumer has to re-apply the default (and
+  // no consumer can forget to). SPEC enforcement beyond routing is still the
+  // caller's job.
+  const kind = resolveSkillKind(out['kind']);
 
   const appliesToRaw = out['applies_to'] as
     | { paths?: unknown; extensions?: unknown; author?: unknown }
@@ -834,8 +875,7 @@ export function parseFrontmatter(raw: string): SkillFrontmatter {
     description,
     source,
     review_mode: reviewMode,
-    ...(kind !== undefined ? { kind } : {}),
-    ...(voiceScope !== undefined ? { voice_scope: voiceScope } : {}),
+    kind,
     ...(appliesTo !== undefined ? { applies_to: appliesTo } : {}),
   };
 }

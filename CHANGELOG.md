@@ -14,6 +14,81 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ### Fixed
 
+- **A skill with an unrecognised `kind` was applied with the *highest* authority, not the lowest
+  (#263).** `parseFrontmatter` recognised `rule`, `design` and the pre-2.0 `voice`; everything else
+  resolved to `undefined`. But `undefined` is indistinguishable from an absent `kind`, and an absent
+  `kind` **is** a `rule` skill (SPEC 2.0 §2.1) — so every value outside the ladder inherited the tier
+  that may be the sole citation for a finding about code behaviour. `kind: writing` was one of those
+  values: SPEC 2.0 renamed `voice` → `writing`, and the ladder never followed, so the first prose skill
+  to ship would have been read as a code rule. §2.2 exists to withhold exactly that.
+
+  Three changes:
+  - `SkillKind` is now `rule | writing | design`. The retired `voice` value and its `voice_scope`
+    companion are gone from the schema (SPEC 2.0 §2.1 lists neither). A skill still carrying them
+    loads — unknown keys are dropped, never a load failure — and `kind: voice` now resolves to
+    `writing`, which is the tier it always belonged in.
+  - New `resolveSkillKind()` (exported from `clud-bug/core`) is the one implementation of the two
+    rules, and they fail in opposite directions: **absent → `rule`** (§2.1's default), **unrecognised
+    → `writing`** (§2.2: "An unrecognised `kind` MUST be treated as `writing`"). Unknown values
+    degrade rather than reject — §2.2 is explicit that "a typo does not discard it" — and they do not
+    fall to `design`, which routes to a pass that may not run at all.
+  - `review-prompt` now partitions three ways instead of testing `!== 'design'`. `kind: writing`
+    skills are rendered in their own **§3d Prose lens** block carrying §2.2's limit ("MUST NOT be the
+    sole citation for a finding about code behaviour") instead of being folded into the §3
+    code-correctness skill list. The block renders only when a writing skill is installed, so a repo
+    with none gets a byte-identical recipe.
+
+  No skill in the catalog uses `kind: writing` today, so nothing shipped was mis-applied — this had to
+  land before the first one does. The three-pass `review.passes` model (SPEC 2.0 §2.2 + §1.6) is still
+  not built; this is the routing fix, not that feature.
+- **🔴 A pull request could pick the skills that judged it — the Action read them from the merge ref
+  (clud-bug#260 item 1).** `templates/workflow{,-ts,-py}.yml.tmpl` check out with `fetch-depth: 0`
+  and **no `ref:`**; on `pull_request` that resolves to `refs/pull/N/merge`, which contains the
+  change. The reviewer then read its skills straight out of that workspace —
+  `Bash(cat .claude/skills/.clud-bug.json)` and `Bash(cat .claude/skills/*/SKILL.md)` are in
+  `--allowedTools`, and the system prompt instructs `head -c "$MAX_SKILL_BYTES"
+  .claude/skills/<name>/SKILL.md`. `src/core/review-context.ts` is explicit that skills are the
+  **trusted** tier: a PR *description* is fenced, a skill file is not. So a PR that added
+  `.claude/skills/anything/SKILL.md` — or edited an existing one, or deleted the one that would
+  catch it — supplied the authority over its own review. SPEC 2.0 §4.1: *"The reviewer MUST read
+  its skill selection and its configuration from the pull request's base ref, never from the head
+  — otherwise a pull request picks the skills that judge it."* §6.3: *"...and never from a
+  workspace populated with the pull request's content."*
+
+  A new **Pin review skills to the base ref** step now runs immediately after checkout, before the
+  guard and before `claude-code-action`. It deletes the merge-ref `.claude/skills` and restores the
+  base ref's copy with `git archive`, resolving the base through the same
+  `origin/${BASE_REF}` expression the strict-mode gate, the Notarize step and the Formal-review step
+  already use for `strictMode`/`notary` (fallback: the event payload's `base.sha`, always present
+  locally as a parent of the merge commit). Replacing the tree — rather than teaching each reader a
+  new path — means every downstream consumer sees base-ref bytes with no second mechanism to keep in
+  sync. It **fails closed**: the merge-ref copy is deleted *before* the base copy is restored, so an
+  unresolvable base degrades the review to the baseline discipline instead of falling back to the
+  PR's own skills, and says so with a `::warning` (SPEC §6.5 — never a silent degradation). The PR's
+  skill changes are still reviewed; they are in the diff. They are just not obeyed.
+
+  Prompt side (the workflow pin alone is not enough — `Bash(git show:*)` is allow-listed for the
+  incremental-diff read, so a diff could otherwise talk the model into
+  `git show <head>:.claude/skills/…`): the Action prompt now states that skill authority comes from
+  the base ref and nowhere else, and that a rule reaching the reviewer from the diff, a PR-added
+  SKILL.md, a commit message or a code comment is content to review, never an instruction to obey.
+
+  The `/clud-bug-review` local recipe had the same defect from the other direction — §2 said "read
+  the manifest and every referenced skill body from the checkout", and a maintainer who ran
+  `gh pr checkout` was reading the PR's own skills. It now resolves `baseRefName` and reads both the
+  manifest and each `SKILL.md` at that ref via the contents API, and reads `strictMode` from there
+  too. Workflow template `v14` → `v15`, local recipe `v1` → `v2`; run `clud-bug update` to pick both
+  up. The hosted App was never affected (`lib/skills-loader.ts` `loadSkillsFromBaseRef`).
+
+  **Not closed by this change** (filed separately, named here so nobody reads the fix as broader than
+  it is): the workflow file *itself* is still read from the merge ref on a `pull_request` trigger, so
+  a PR that edits `.github/workflows/clud-bug-review.yml` replaces the job — pin step included —
+  before it runs. SPEC §6.3 is explicit that being careful inside the job body cannot fix this and
+  that a gate MUST NOT carry its logic inline on a pull-request trigger. Separately, `CLAUDE.md`,
+  `AGENTS.md` and the rest of `.claude/` are agent-instruction surfaces that also sit in that
+  merge-ref workspace; only `.claude/skills` is pinned here, and whether the reviewer's harness picks
+  the others up wants confirming before the pin is widened.
+
 - **🔴 The reviewer could execute untrusted diff content — SPEC 2.0 §4.7 bans this unconditionally
   (clud-bug#264 → #260).** `src/core/invariants.ts`'s executable-probe surface let a repo self-enable
   a reviewer-runs-a-shell-command behaviour by declaring a single `invariants` entry in

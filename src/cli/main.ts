@@ -143,6 +143,9 @@ function parseArgs(argv) {
     // H3: `clud-bug post-check-run` flags.
     else if (a === '--sha') args.sha = argv[++i];
     else if (a === '--verdict') args.verdict = argv[++i];
+    // SPEC §6.5: `--verdict skipped` MUST say why. Free text, rendered into the
+    // neutral check's summary.
+    else if (a === '--skip-reason') args.skipReason = argv[++i];
     else if (a === '--critical-count') args.criticalCount = Number(argv[++i]);
     else if (a === '--source') args.source = argv[++i];
     else if (a === '--strict') args.strict = true;
@@ -271,10 +274,14 @@ Commands:
                         HEAD when no sha is given.
   post-check-run        Post the \`clud-bug-review\` GitHub check so branch
                         protection can gate the merge (H3). --verdict
-                        clean|critical|failed --sha <sha> [--critical-count N]
+                        clean|critical|failed|unverified|skipped --sha <sha>
+                        [--critical-count N] [--skip-reason "..."]
                         [--source local|ci] [--strict|--no-strict]
                         [--notary|--no-notary] [--dry-run].
                         clean→success, critical+strict→failure, else neutral.
+                        \`skipped\` is SPEC §6.5 — no review ran (fork PR, or a
+                        propagation diff with no review surface). It posts
+                        neutral and names the cause; never a green.
                         With CLUD_BUG_NOTARY_URL set + --bundle <file>, submits a
                         notary attestation bundle instead (Phase Z); the notary
                         issues the check. Falls back to the self-attested post if
@@ -1405,6 +1412,18 @@ async function runInit(args) {
     const selfUpdatePath = join(cwd, '.github', 'workflows', 'clud-bug-self-update.yml');
     await writeFile(selfUpdatePath, selfUpdateTmpl);
     log(`    wrote ${rel(cwd, selfUpdatePath)}`);
+
+    // Install the fork-notice workflow. SPEC §6.5: a fork pull request gets a
+    // NEUTRAL `clud-bug-review` check plus a comment saying nothing was
+    // reviewed. The review workflow physically cannot do either — GitHub gives
+    // it a read-only token on fork PRs, and a job conclusion has no `neutral`.
+    // `pull_request_target` is the one trigger that runs with the base repo's
+    // writable token, so this tiny workflow (no checkout, no secrets, no head
+    // code) owns the fork case. See templates/fork-notice.yml.tmpl's header.
+    const forkNoticeTmpl = await renderFile(join(TEMPLATES, 'fork-notice.yml.tmpl'), {});
+    const forkNoticePath = join(cwd, '.github', 'workflows', 'clud-bug-fork-notice.yml');
+    await writeFile(forkNoticePath, forkNoticeTmpl);
+    log(`    wrote ${rel(cwd, forkNoticePath)}`);
   }
 
   // v0.7.0 (Wave 6b): optional local-review slash command. Scaffolds
@@ -1554,6 +1573,7 @@ async function runInit(args) {
             '.github/workflows/clud-bug-review.yml',
             '.github/workflows/clud-bug-audit.yml',
             '.github/workflows/clud-bug-self-update.yml',
+            '.github/workflows/clud-bug-fork-notice.yml',
           ]),
       ...agentDocs.created,
       ...agentDocs.touched,

@@ -459,20 +459,126 @@ test('all 3 rendered workflow templates declare a paths-check pre-flight job (v0
   }
 });
 
-test('all 3 rendered workflow templates: clud-bug-review depends on paths-check + skips on workflow-only', async () => {
+test('all 3 rendered workflow templates: the review job depends on paths-check + skips on workflow-only', async () => {
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
     const out = await renderFile(join(TEMPLATES, tmpl), {
       REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
     });
     assert.match(out, /needs: paths-check/,
-      `${tmpl} clud-bug-review must depend on paths-check`);
+      `${tmpl} the review job must depend on paths-check`);
     assert.match(
       out,
       /if:\s*needs\.paths-check\.outputs\.is_workflow_only\s*!=\s*'true'/,
-      `${tmpl} clud-bug-review must skip when paths-check reports workflow-only`,
+      `${tmpl} the review job must skip when paths-check reports workflow-only`,
     );
   }
+});
+
+// --- SPEC §6.5 (template v15): the merge gate has ONE producer -------------
+//
+// The gate is the check-run named `clud-bug-review`, posted through the API.
+// While the review JOB also carried that name, GitHub minted a second check-run
+// under it from the job's own conclusion — and on a fork PR (every step skipped,
+// job exits 0) that conclusion was `success` on a change nothing had reviewed.
+// A job has no `neutral` conclusion to offer instead, so the only fix is for the
+// job to stop owning the name.
+test('all 3 rendered workflow templates: no JOB is named clud-bug-review (one producer per gate)', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    // Job keys sit at exactly two spaces of indentation under `jobs:`.
+    const jobKeys = [...out.matchAll(/^ {2}([a-z][a-z0-9_-]*):$/gm)].map((m) => m[1]);
+    // Control: the probe finds jobs at all. A regex that matched nothing would
+    // "pass" the assertion below while proving nothing.
+    assert.ok(jobKeys.length >= 3, `${tmpl}: job-key probe found ${jobKeys.length} jobs (expected >= 3) — probe is broken`);
+    assert.ok(jobKeys.includes('review'), `${tmpl}: expected a 'review' job, got ${jobKeys.join(', ')}`);
+    assert.ok(jobKeys.includes('gate'), `${tmpl}: expected a 'gate' job, got ${jobKeys.join(', ')}`);
+    assert.ok(
+      !jobKeys.includes('clud-bug-review'),
+      `${tmpl}: a job named clud-bug-review makes the workflow a second producer of the merge gate's context`,
+    );
+  }
+});
+
+test('all 3 rendered workflow templates: the gate job posts a NEUTRAL skipped check, never a green', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    });
+    assert.match(out, /--verdict skipped/, `${tmpl}: gate must post the SPEC §6.5 skipped verdict`);
+    assert.match(out, /--skip-reason/, `${tmpl}: a §6.5 skip must say why`);
+    // It runs on every outcome, not just success — the paths a review never
+    // reached are exactly the ones that used to end green.
+    assert.match(out, /if: always\(\)/, `${tmpl}: the gate job must run on every outcome`);
+    assert.match(out, /needs: \[paths-check, review\]/, `${tmpl}: the gate job must wait on both prior jobs`);
+  }
+});
+
+// --- SPEC §6.5: the fork-notice workflow -----------------------------------
+test('fork-notice template: pull_request_target, fork-only, neutral check, no checkout', async () => {
+  const out = await renderFile(join(TEMPLATES, 'fork-notice.yml.tmpl'), {});
+
+  assert.match(out, /^# clud-bug-template-version: v\d+/m,
+    'fork-notice must carry a template-version marker or `clud-bug update` refuses to refresh it');
+
+  // pull_request_target is the ONLY trigger that runs with a writable token on a
+  // fork PR — "The GITHUB_TOKEN has read-only permissions in pull requests from
+  // forked repositories" (GitHub docs) applies to `pull_request`.
+  assert.match(out, /pull_request_target:/, 'fork-notice must use pull_request_target');
+
+  // Fork-only. On a same-repo PR the review workflow posts the check itself, and
+  // an unconditional run here would be a second producer of the gate.
+  assert.match(
+    out,
+    /github\.event\.pull_request\.head\.repo\.full_name != github\.repository/,
+    'fork-notice must run only for fork PRs',
+  );
+
+  // Neutral, and it says why.
+  assert.match(out, /--verdict skipped/);
+  assert.match(out, /--skip-reason/);
+
+  // The security property that makes pull_request_target safe here: the fork's
+  // code is never fetched, so it is never built or executed.
+  //
+  // Strip comment lines before asserting. The template's own header EXPLAINS
+  // that it never checks out — a naive substring probe matches that prose and
+  // reports a checkout that does not exist.
+  const strip = (yaml) => yaml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const outCode = strip(out);
+  assert.ok(!/actions\/checkout/.test(outCode),
+    'fork-notice must NOT check out the head ref — pull_request_target runs with a writable token');
+  // Control for that negative: the string DOES appear in the review template's
+  // code (not just its comments), so the probe is capable of matching.
+  const reviewOut = await renderFile(join(TEMPLATES, 'workflow.yml.tmpl'), {
+    REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: 'generic' }),
+  });
+  assert.match(strip(reviewOut), /actions\/checkout/, 'control: actions/checkout probe must be able to match');
+
+  // No repository secret is referenced. GITHUB_TOKEN is the ambient job token,
+  // not a stored secret, so exclude it before asserting.
+  const secretRefs = [...outCode.matchAll(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]);
+  assert.deepEqual(
+    secretRefs.filter((n) => n !== 'GITHUB_TOKEN'),
+    [],
+    `fork-notice must reference no repository secrets; found ${secretRefs.join(', ')}`,
+  );
+  // Control for that too: the probe finds GITHUB_TOKEN, so it is matching.
+  assert.ok(secretRefs.includes('GITHUB_TOKEN'), 'control: secrets.* probe must be able to match');
+
+  // The job must NOT be named clud-bug-review — it POSTS that check-run, and a
+  // job of the same name would make it a second producer.
+  const jobKeys = [...outCode.matchAll(/^ {2}([a-z][a-z0-9_-]*):$/gm)].map((m) => m[1]);
+  assert.ok(jobKeys.length >= 1, `control: job-key probe found ${jobKeys.length} jobs`);
+  assert.ok(!jobKeys.includes('clud-bug-review'), `fork-notice job must not be named clud-bug-review (got ${jobKeys.join(', ')})`);
+
+  // The §6.5 announcement half.
+  assert.match(out, /Clud Bug skipped/, 'fork-notice must post the skip announcement comment');
+  assert.match(out, /neutral/, 'the announcement must say the check is neutral');
 });
 
 test('paths-check classifier: 0.0.W² allow-list + workflow-change signal (v0.6.26+)', async () => {
