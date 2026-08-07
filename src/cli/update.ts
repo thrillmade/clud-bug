@@ -86,6 +86,25 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
       }),
     });
     await maybeRefreshVersioned(reviewPath, newReview, changed, unchanged, skipped, 'review workflow');
+
+    // 1b. The fork-notice workflow is CREATED here, not gated on already
+    //     existing like the audit/self-update ones below. It has to be, and the
+    //     asymmetry is load-bearing:
+    //
+    //     Template v15 renamed the review JOB off `clud-bug-review` so the merge
+    //     gate has exactly one producer — the API-posted check-run. On a FORK
+    //     pull request the review workflow's token is read-only, so it can post
+    //     nothing at all; clud-bug-fork-notice.yml (pull_request_target, base
+    //     repo context, writable token) is the only surface that can. A repo
+    //     that refreshed to v15 WITHOUT gaining this file would have no producer
+    //     for fork PRs, and a required `clud-bug-review` would hang unsatisfied
+    //     forever — turning a false green into a hard block, which is worse.
+    //
+    //     It is bound to the review workflow's presence, so a `--local-only`
+    //     (max-mode) install still gets no Action workflows.
+    const forkNoticePath = join(cwd, '.github/workflows/clud-bug-fork-notice.yml');
+    const newForkNotice = await renderFile(join(templatesDir, 'fork-notice.yml.tmpl'), {});
+    await maybeRefreshVersioned(forkNoticePath, newForkNotice, changed, unchanged, skipped, 'fork-notice workflow');
   }
 
   // 2. Re-render audit workflow if it's installed (init from v0.3+ ships it).
