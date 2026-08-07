@@ -60,7 +60,7 @@ test('runUpdate: rewrites stale-marker workflow + baseline; leaves custom skills
     // Workflow refreshed
     const wf = await readFile(join(dir, '.github/workflows/clud-bug-review.yml'), 'utf8');
     assert.match(wf, /allowedTools/);
-    assert.match(wf, /^# clud-bug-template-version: v14/);
+    assert.match(wf, /^# clud-bug-template-version: v15/);
     // Baseline rewritten with current shipped content
     const baseline = await readFile(join(dir, '.claude/skills/critical-issues-only/SKILL.md'), 'utf8');
     assert.match(baseline, /critical-issues-only/);
@@ -75,7 +75,7 @@ test('runUpdate: rewrites stale-marker workflow + baseline; leaves custom skills
     // The refreshed workflow records a from/to version note.
     const wfChange = r.changed.find((c) => c.label === 'review workflow');
     assert.equal(wfChange.from, 'v0');
-    assert.equal(wfChange.to, 'v14');
+    assert.equal(wfChange.to, 'v15');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -255,5 +255,63 @@ test('runUpdate: a --local-only repo (manifest, no workflow) does NOT get a revi
       created = false;
     }
     assert.equal(created, false, 'update must not create the review workflow in a workflow-less (local-only) repo');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// --- SPEC §6.5 (template v15): the fork-notice workflow must ARRIVE on update.
+//
+// v15 renamed the review JOB off `clud-bug-review`, so the gate is now only ever
+// the API-posted check-run. On a fork PR the review workflow's token is
+// read-only and can post nothing, which leaves clud-bug-fork-notice.yml
+// (pull_request_target) as the sole producer. A repo that refreshed to v15
+// WITHOUT gaining that file would have no producer for fork PRs at all — a
+// required `clud-bug-review` would hang unsatisfied forever. That turns a false
+// green into a hard block, which is strictly worse, so unlike the audit and
+// self-update workflows this one is CREATED rather than refresh-if-present.
+test('runUpdate: creates clud-bug-fork-notice.yml on a repo that has the review workflow', async () => {
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+    '.github/workflows/clud-bug-review.yml': '# clud-bug-template-version: v0\n# stale\n',
+    '.claude/skills/.clud-bug.json': JSON.stringify({ version: 1, installed: [] }),
+  });
+  try {
+    // Control: the file genuinely is absent before the update, so the assertion
+    // after it is evidence of a write and not of a pre-seeded fixture.
+    let pre = null;
+    try { pre = await readFile(join(dir, '.github/workflows/clud-bug-fork-notice.yml'), 'utf8'); } catch { pre = null; }
+    assert.equal(pre, null, 'control: fork-notice must not exist before runUpdate');
+
+    await runUpdate({
+      cwd: dir, templatesDir: TEMPLATES, baselineDir: BASELINE, ourVersion: '0.7.0',
+      loadBaselineOpts: offlineLoadBaseline,
+    });
+
+    const notice = await readFile(join(dir, '.github/workflows/clud-bug-fork-notice.yml'), 'utf8');
+    assert.match(notice, /pull_request_target:/);
+    assert.match(notice, /--verdict skipped/);
+    assert.match(notice, /^# clud-bug-template-version: v\d+/m);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('runUpdate: --local-only style repo (no review workflow) gets NO fork-notice workflow', async () => {
+  // Max-mode installs deliberately carry no GitHub Action. `update` must not
+  // introduce one through the back door — the same rule that already gates the
+  // review workflow's re-render.
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+    '.claude/skills/.clud-bug.json': JSON.stringify({
+      version: 1,
+      installed: [{ slug: 'critical-issues-only', kind: 'baseline' }],
+    }),
+    '.claude/skills/critical-issues-only/SKILL.md': '# stale\n',
+  });
+  try {
+    await runUpdate({
+      cwd: dir, templatesDir: TEMPLATES, baselineDir: BASELINE, ourVersion: '0.7.0',
+      loadBaselineOpts: offlineLoadBaseline,
+    });
+    let after = null;
+    try { after = await readFile(join(dir, '.github/workflows/clud-bug-fork-notice.yml'), 'utf8'); } catch { after = null; }
+    assert.equal(after, null, 'a max-mode install must not gain an Action workflow on update');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
