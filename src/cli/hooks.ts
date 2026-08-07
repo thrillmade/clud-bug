@@ -87,6 +87,23 @@
  * broken `type: agent` hook — replace it in place. */
 export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
 
+/** #276 — stable marker embedded in the git `pre-push` hook, so a re-install
+ * (or `clud-bug update`) replaces OUR script in place and never clobbers a
+ * hook somebody else wrote. Deliberately distinct from `CLUD_BUG_HOOK_MARKER`:
+ * the two surfaces install into different files and are chosen independently
+ * (SPEC 2.0 §4.1 — "the repository chooses when: after a commit, or before a
+ * push"). */
+export const CLUD_BUG_PREPUSH_MARKER = 'clud-bug-pre-push-review';
+
+/** Basename of the git hook we own, inside `git rev-parse --git-path hooks`. */
+export const PREPUSH_HOOK_FILE = 'pre-push';
+
+/** Where a PRE-EXISTING foreign `pre-push` is preserved when clud-bug takes
+ * ownership. SPEC 2.0 §6.7: "Git allows one `pre-push` hook, so ownership
+ * follows what is installed: … both tools → either, and it MUST invoke the
+ * other." We move theirs aside (never delete it) and invoke it first. */
+export const PREPUSH_CHAINED_FILE = 'pre-push.clud-bug-chained';
+
 /** `.git/clud-bug-pending` (relative to the git COMMON dir) — one sha per
  * line, durable queue of reviews that fired but never confirmed `done`
  * (a usage-limit kill) or whose recipe fetch failed (a tooling error).
@@ -374,4 +391,279 @@ export function mergeLocalReviewHook(existing: unknown, command: string): Claude
   hooks.PostToolUse = [...otherEntries, ourEntry];
   base.hooks = hooks;
   return base;
+}
+
+// ---------------------------------------------------------------------------
+// #276 — the PRE-PUSH surface (SPEC 2.0 §6.7 / §4.1).
+//
+// Until this landed, `git grep -inE 'pre-push|prePush|pre_push' origin/main --
+// src/ templates/` returned ZERO hits (control probe: `PostToolUse` → 2 files),
+// while SPEC 2.0 §4.1 says of the local review: "Where it is enabled, the
+// repository chooses when: after a commit, or before a push. A reviewer MUST
+// support both, and push is the default". §6.7 names the mechanism outright:
+// "Git allows one `pre-push` hook, so ownership follows what is installed".
+//
+// WHY A GIT HOOK AND NOT A SECOND CLAUDE CODE HOOK. The commit surface is a
+// Claude Code `PostToolUse` entry because there is no git hook that fires
+// after a Bash `git commit` inside a session without blocking it. Push is the
+// opposite: git HAS a `pre-push` hook, §6.7 names it by that name, and a git
+// hook covers the terminal user too. It also still reaches the agent — inside
+// a session `git push` is a Bash tool call, so this script's stderr lands in
+// the tool result the agent reads. One mechanism, both audiences.
+//
+// WHY NO NETWORK IN THIS SCRIPT. `buildCommitReviewCommand` can afford an
+// `npx` round-trip because Claude Code runs it detached (`async: true,
+// asyncRewake: true, timeout: 180` — see `buildLocalReviewHook`). Git offers
+// no such affordance: a `pre-push` hook is SYNCHRONOUS and sits on the
+// critical path of every push, so a hung registry call would stall the very
+// command §4.1 says must not be blocked. This script therefore does no I/O
+// that can hang — it prints the exact `review-prompt --trigger push` command,
+// with the computed range already filled in, and the agent (which has Bash)
+// runs it.
+//
+// THE ORDER IS FIXED (§6.7): "the mechanical check runs first, and the model
+// only runs if it passes." So: chained hook → declared test command → review
+// directive. A failing DECLARED test command blocks the push. Nothing else
+// does — §4.1 "The local review is advisory and MUST NOT block the command
+// that triggered it", and §6.7 "An engine that is missing, stale, or cannot
+// resolve its configuration ALLOWS … A broken binary MUST NOT be able to
+// wedge a push." Every allow-path still SAYS why it allowed, because §6.5
+// forbids the silent version: "A gate that cannot run MUST report that it
+// could not, and MUST NOT exit successfully in silence."
+//
+// NOT BUILT HERE, AND DELIBERATELY: the rest of §6.7's declaration matrix —
+// suite DETECTION, `Setup MUST ask, and MUST NOT complete without an answer`,
+// and the three rows that BLOCK a push when the declaration is missing or
+// contradicted. Shipping "block every push" before the setup flow that
+// collects the declaration exists would wedge every repo that upgrades. The
+// missing-declaration path therefore allows *and reports*, and the gap is
+// tracked rather than silently defaulted.
+
+/** Parses `tests` out of a `.clud-bug.json` on stdin and prints it. A real
+ * parser (§ evidence discipline: never ad-hoc-parse a structured file from
+ * shell). Single-quote-free so it can be embedded in `node -e '…'`. */
+const TESTS_DECL_PARSER =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
+  'try{var j=JSON.parse(s);var t=j&&j.tests;' +
+  'if(typeof t==="string")process.stdout.write(t.trim());' +
+  'else if(t&&typeof t==="object"&&typeof t.command==="string")process.stdout.write(t.command.trim())}' +
+  'catch(e){}})';
+
+/**
+ * Build the POSIX-sh body of the git `pre-push` hook.
+ *
+ * Pure, like `buildCommitReviewCommand` — the caller writes it to
+ * `git rev-parse --git-path hooks`/pre-push and chmods it. `pin` selects the
+ * npm dist-tag named in the printed command (floating `next` by default, same
+ * rationale as the commit hook: always the newest recipe).
+ *
+ * The script, in order:
+ *   1. Slurp git's ref lines from stdin (`<local ref> <local oid> <remote ref>
+ *      <remote oid>`, one per pushed ref) so they can be REPLAYED to a chained
+ *      hook — consuming stdin without replaying it is how chaining silently
+ *      breaks the other tool.
+ *   2. §6.7 ownership — invoke a pre-existing foreign hook we moved aside, with
+ *      stdin replayed and our own argv forwarded, and honour its exit status.
+ *   3. Compute ONE range per pushed ref (see `--range` in review-prompt.ts for
+ *      why one review of the range, not one per commit). A branch DELETION has
+ *      nothing to review; a NEW branch has no remote oid, so the base comes
+ *      from the merge-base with the remote's default head, falling back to the
+ *      parent of the oldest not-yet-remote commit.
+ *   4. §6.7 mechanical check — resolve the `tests` declaration from the
+ *      DEFAULT BRANCH ("read from the default branch, never the working tree"),
+ *      through a real JSON parser, and run it. Non-zero blocks; the model does
+ *      not run.
+ *   5. Print the review directive naming the exact command + range, and exit 0.
+ *
+ * Every `git` invocation inside the ref loop redirects stdin from /dev/null:
+ * the loop reads from a here-doc, and a child that inherits it would eat the
+ * remaining ref lines.
+ */
+export function buildPrePushHookScript(pin: string = 'next'): string {
+  return [
+    `#!/bin/sh`,
+    `# ${CLUD_BUG_PREPUSH_MARKER} v1 — the local gate before work is published (SPEC 2.0 6.7).`,
+    `#`,
+    `# Order is fixed (6.7): the mechanical check runs first, and the model only`,
+    `# runs if it passes. The review half is ADVISORY and never blocks the push`,
+    `# (4.1); only a DECLARED test command that fails blocks it. Everything else`,
+    `# fails OPEN, and says why (6.5 forbids the silent version).`,
+    `#`,
+    `# Managed by clud-bug. Edits are replaced on the next 'clud-bug init'/'update'.`,
+    ``,
+    `remote=$1`,
+    `[ -n "$remote" ] || remote=origin`,
+    `refs=$(cat 2>/dev/null) || refs=`,
+    `hooksdir=$(git rev-parse --git-path hooks 2>/dev/null </dev/null) || hooksdir=`,
+    ``,
+    `# --- 1. chained hook (6.7: "both tools -> either, and it MUST invoke the other")`,
+    `chained="$hooksdir/${PREPUSH_CHAINED_FILE}"`,
+    `if [ -n "$hooksdir" ] && [ -x "$chained" ]; then`,
+    `  if [ -n "$refs" ]; then`,
+    `    printf '%s\\n' "$refs" | "$chained" "$@"`,
+    `  else`,
+    `    "$chained" "$@" </dev/null`,
+    `  fi`,
+    `  chainstatus=$?`,
+    `  if [ "$chainstatus" -ne 0 ]; then`,
+    `    printf 'clud-bug: push blocked by the pre-push hook clud-bug chained to (exit %s).\\n' "$chainstatus" >&2`,
+    `    exit "$chainstatus"`,
+    `  fi`,
+    `fi`,
+    ``,
+    `# --- 2. what is actually being published`,
+    `range=`,
+    `nrefs=0`,
+    `nreal=0`,
+    `while read -r lref loid rref roid; do`,
+    `  [ -n "$lref" ] || continue`,
+    // An all-zero LOCAL oid is a branch deletion — no diff exists to review.
+    `  isreal=0`,
+    `  case "$loid" in *[!0]*) isreal=1 ;; esac`,
+    `  [ "$isreal" = 1 ] || continue`,
+    `  nreal=$((nreal + 1))`,
+    // An all-zero REMOTE oid is a branch the remote has never seen.
+    `  base=`,
+    `  case "$roid" in *[!0]*) base=$roid ;; esac`,
+    `  if [ -z "$base" ]; then`,
+    `    base=$(git merge-base "$loid" "refs/remotes/$remote/HEAD" 2>/dev/null </dev/null) || base=`,
+    `  fi`,
+    `  if [ -z "$base" ]; then`,
+    `    oldest=$(git rev-list "$loid" --not --remotes 2>/dev/null </dev/null | tail -n 1) || oldest=`,
+    `    if [ -n "$oldest" ]; then`,
+    `      base=$(git rev-parse --verify --quiet "$oldest^" 2>/dev/null </dev/null) || base=`,
+    `    fi`,
+    `  fi`,
+    `  [ -n "$base" ] || continue`,
+    `  nrefs=$((nrefs + 1))`,
+    `  if [ -z "$range" ]; then range="$base..$loid"; fi`,
+    `done <<CLUD_BUG_REFS`,
+    `$refs`,
+    `CLUD_BUG_REFS`,
+    ``,
+    `if [ "$nreal" -eq 0 ]; then`,
+    // Every pushed ref was a deletion (or the stdin protocol gave us nothing):
+    // there is no diff in existence to review, and no gate to report on.
+    `  printf 'clud-bug: nothing to review on this push (no ref carries a diff). Push allowed.\\n' >&2`,
+    `  exit 0`,
+    `fi`,
+    ``,
+    `# --- 3. mechanical check FIRST (6.7). The declaration is read from the`,
+    `#        DEFAULT BRANCH, never the working tree — 6.3 applied on the machine,`,
+    `#        so editing the local config changes nothing until it is merged.`,
+    `baseref=$(git symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null </dev/null) || baseref=`,
+    `if [ -z "$baseref" ]; then`,
+    `  for cand in main master; do`,
+    `    if git rev-parse --verify --quiet "refs/remotes/$remote/$cand" >/dev/null 2>&1 </dev/null; then`,
+    `      baseref="$remote/$cand"`,
+    `      break`,
+    `    fi`,
+    `  done`,
+    `fi`,
+    `testdecl=`,
+    `if [ -n "$baseref" ]; then`,
+    `  cfg=$(git show "$baseref:.claude/skills/.clud-bug.json" 2>/dev/null </dev/null) || cfg=`,
+    `  if [ -n "$cfg" ]; then`,
+    `    testdecl=$(printf '%s' "$cfg" | node -e '${TESTS_DECL_PARSER}' 2>/dev/null) || testdecl=`,
+    `  fi`,
+    `fi`,
+    `if [ -z "$baseref" ]; then`,
+    // 6.5: a gate that could not run must say so rather than exit 0 in silence.
+    `  printf 'clud-bug: no default-branch ref for remote %s — mechanical check skipped (6.7: a gate that cannot resolve its configuration allows).\\n' "$remote" >&2`,
+    `elif [ -z "$testdecl" ]; then`,
+    `  printf 'clud-bug: no "tests" declaration on %s — mechanical check skipped. SPEC 6.7 wants one: add "tests": "<command>" (or "none") to .claude/skills/.clud-bug.json on the default branch.\\n' "$baseref" >&2`,
+    `elif [ "$testdecl" = "none" ]; then`,
+    `  printf 'clud-bug: %s declares "tests": "none" — no mechanical check to run.\\n' "$baseref" >&2`,
+    `else`,
+    `  printf 'clud-bug: pre-push mechanical check (6.7 — tests before review): %s\\n' "$testdecl" >&2`,
+    `  sh -c "$testdecl" >&2 </dev/null`,
+    `  teststatus=$?`,
+    `  if [ "$teststatus" -ne 0 ]; then`,
+    `    printf 'clud-bug: PUSH BLOCKED — the declared test command exited %s. SPEC 6.7: a failing mechanical check blocks and the model does not run. Fix the tests, then push again.\\n' "$teststatus" >&2`,
+    `    exit 1`,
+    `  fi`,
+    `fi`,
+    ``,
+    `# --- 4. the model half. ADVISORY: printed, never blocking (4.1). No network`,
+    `#        happens here — see the buildPrePushHookScript header for why.`,
+    `cmd="npx clud-bug@${pin} review-prompt --trigger push"`,
+    // No computable base (a root-commit push, or a remote with no default head)
+    // — omit --range and let the recipe fall back to its own branch-vs-base diff
+    // rather than fabricate a range that would review the wrong thing.
+    `if [ -n "$range" ]; then`,
+    `  cmd="$cmd --range $range"`,
+    `else`,
+    `  printf 'clud-bug: could not compute the pushed range — the recipe will fall back to diffing this branch against its base.\\n' >&2`,
+    `fi`,
+    `printf 'clud-bug pre-push review (max mode — runs on this session subscription, nothing billed).\\n' >&2`,
+    `printf 'The push is NOT blocked (SPEC 4.1: the local review is advisory). Run this now and act on what it finds:\\n\\n  %s\\n\\n' "$cmd" >&2`,
+    `printf 'Then follow the recipe it prints: review that range against the skills it names and surface the findings here. This is a LOCAL run — post nothing, write no file (SPEC 4.3).\\n' >&2`,
+    `if [ "$nrefs" -gt 1 ]; then`,
+    `  printf 'clud-bug: %s refs were pushed; the range above covers the first. Re-run review-prompt with --range for the others.\\n' "$nrefs" >&2`,
+    `fi`,
+    `exit 0`,
+  ].join('\n') + '\n';
+}
+
+/** What `clud-bug init` / `clud-bug update` should do about `pre-push`. */
+export interface PrePushInstallPlan {
+  /**
+   * - `write`   — no hook there; write ours.
+   * - `refresh` — ours is already there; replace it in place.
+   * - `chain`   — a FOREIGN hook is there; move it to `moveExistingTo` and
+   *               write ours, which invokes it first (§6.7).
+   * - `skip`    — refuse rather than risk destroying user content.
+   */
+  action: 'write' | 'refresh' | 'chain' | 'skip';
+  /** The script to write. Absent on `skip`. */
+  content?: string;
+  /** `chain` only — the basename the existing hook must be moved to first. */
+  moveExistingTo?: string;
+  /** One line, suitable for `log()` / a warning. */
+  reason: string;
+}
+
+/**
+ * Decide how to install the `pre-push` hook without ever clobbering a hook
+ * clud-bug did not write. Pure — the caller does the fs work, exactly like
+ * `mergeLocalReviewHook` leaves the settings.json write to `main.ts`.
+ *
+ * Idempotent: re-running against our own hook yields `refresh`, so a version
+ * bump rewrites the script and a `chain` never happens twice (the chained file
+ * stays put across refreshes, and the script finds it by a fixed basename).
+ */
+export function planPrePushInstall(input: {
+  /** Current content of `<hooks>/pre-push`, or undefined when absent. */
+  existing?: string | undefined;
+  /** Whether `<hooks>/pre-push.clud-bug-chained` already exists. */
+  chainedExists?: boolean;
+  script: string;
+}): PrePushInstallPlan {
+  const { existing, chainedExists = false, script } = input;
+
+  if (existing === undefined || existing.trim() === '') {
+    return { action: 'write', content: script, reason: 'no existing pre-push hook' };
+  }
+  if (existing.includes(CLUD_BUG_PREPUSH_MARKER)) {
+    return { action: 'refresh', content: script, reason: 'refreshed the clud-bug pre-push hook in place' };
+  }
+  if (chainedExists) {
+    // Two foreign hooks would have to be preserved and only one slot exists to
+    // preserve them in. Refuse — a lost user hook is unrecoverable; a skipped
+    // install is not.
+    return {
+      action: 'skip',
+      reason:
+        `a foreign pre-push hook is installed AND ${PREPUSH_CHAINED_FILE} already exists — ` +
+        `refusing to overwrite either. Resolve by hand, then re-run.`,
+    };
+  }
+  return {
+    action: 'chain',
+    content: script,
+    moveExistingTo: PREPUSH_CHAINED_FILE,
+    reason:
+      `preserved your existing pre-push hook as ${PREPUSH_CHAINED_FILE} and chained to it ` +
+      `(SPEC 6.7: the owner MUST invoke the other)`,
+  };
 }

@@ -4,15 +4,32 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Added
+
+- **A `pre-push` local review surface (#276).** There was none: `git grep -inE 'pre-push|prePush|pre_push' origin/main -- src/ templates/` returned **0 hits** (control probe `PostToolUse` → 2 files, so the search itself worked), while SPEC 2.0 §4.1 says "A reviewer MUST support both, and **push is the default**" and §6.7 names the mechanism: "Git allows one `pre-push` hook, so ownership follows what is installed."
+
+  `clud-bug init` now writes a git `pre-push` hook (`hooks.ts:buildPrePushHookScript`, installed the way `mergeLocalReviewHook` installs the commit hook — pure builder, marker-based replace-in-place, never clobbers foreign content). In §6.7's fixed order it:
+  - invokes a pre-existing foreign `pre-push` hook first, preserved as `pre-push.clud-bug-chained`, with git's ref lines replayed on its stdin, and honours its exit status ("both tools → either, and it MUST invoke the other");
+  - runs the repo's declared test command — read from the **default branch**, never the working tree, through a real JSON parser — and **blocks the push** if it fails, without running the model ("the mechanical check runs first, and the model only runs if it passes");
+  - prints `review-prompt --trigger push --range <base>..<head>` for the refs actually being published, and exits 0.
+
+  The hook does **no network I/O**. The commit hook can afford an `npx` round-trip because Claude Code runs it detached (`async: true, asyncRewake: true`); a git `pre-push` hook is synchronous and sits on the critical path of the very command §4.1 says must not be blocked.
+
+  Declare the test command as `"tests": "npm test"` (or `"none"`) in `.claude/skills/.clud-bug.json`.
+
 ### Changed
 
+- **`init --with-hooks` installs the pre-push surface by default (#276)** — §4.1: "the repository chooses when: after a commit, or before a push … push is the default". `--hook-trigger commit` restores the previous commit-time hook; `--hook-trigger both` installs each; `--no-hooks` still installs neither (§4.1: the local review "is off unless asked for"). `clud-bug update` refreshes whichever surface is already installed and never adds one.
+- **`review-prompt` defaults to `--trigger push`** (was `commit`), same §4.1 clause. Every automated caller already passes `--trigger` explicitly, so this governs a human typing the verb bare.
+- **`review-prompt --range <base>..<head>`** — the push trigger reviews the range **once**, not once per commit. Reviewing commit-by-commit at push time reintroduces the defect §4.1 rejects commit-time review for: reporting a bug in commit 3 that commit 5 already fixed. The value is validated (`sanitizeRange`), not escaped — it is rendered into a `bash` fence the agent is told to run.
 - **Bundled `evidence-based-review` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `critical-issues-only` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `respect-existing-conventions` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 
-
 ### Fixed
+
+- **🔴 `review-prompt --trigger push` instructed a §4.3 violation (#276).** `push` fell through to the pull-request branch of the recipe, whose surface step says to "post or edit … the clud-bug summary comment". SPEC 2.0 §4.3: "A review run locally has no pull request to comment on — it writes its findings to the terminal … and **MUST NOT post anything or write a file**." The push trigger now renders a terminal-only surface.
 
 - **A skill with an unrecognised `kind` was applied with the *highest* authority, not the lowest
   (#263).** `parseFrontmatter` recognised `rule`, `design` and the pre-2.0 `voice`; everything else

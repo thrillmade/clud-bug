@@ -54,9 +54,36 @@ const MODE_AGGREGATION: Record<ReviewPassMode, string> = {
 
 const TRIGGER_INTRO: Record<ReviewTrigger, string> = {
   commit: 'a fast review of the commit you just made',
-  push: 'a review of the branch you are about to push',
+  push: 'a review of the work you are about to push',
   pr: "a review of this branch's open PR",
 };
+
+/**
+ * #276 — a `--range` that survives being rendered into a ```bash fence the
+ * agent is told to RUN. The pre-push hook is a trusted producer, but this flag
+ * is on the public CLI surface, so the value is treated as untrusted: only
+ * characters that can appear in a git revision range get through, and the
+ * result must contain a `..`. Anything else is rejected (the caller falls back
+ * to the branch-vs-base diff) rather than escaped — there is no legitimate
+ * range containing a `;`, a backtick, or `$(`.
+ *
+ * Leading `-` is refused too: `--range -x` would otherwise become an option to
+ * `git diff` instead of a revision.
+ */
+export function sanitizeRange(raw: string | undefined): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const value = raw.trim();
+  if (value === '' || value.length > 512) return undefined;
+  // Exactly one `..` or `...` separator, with a non-empty, safe revision on
+  // each side. `git rev-parse`-legal characters only.
+  const m = /^([A-Za-z0-9][A-Za-z0-9._/^~@{}-]*)(\.{2,3})([A-Za-z0-9][A-Za-z0-9._/^~@{}-]*)$/.exec(value);
+  if (!m) return undefined;
+  const left = m[1] ?? '';
+  const right = m[3] ?? '';
+  // A `..` inside either side would mean more than one separator.
+  if (left.includes('..') || right.includes('..')) return undefined;
+  return value;
+}
 
 // SPEC 2.0 §4.7 — grounding + severity discipline shared by the single-pass
 // and multi-pass review steps. The old gate ("quote the exact line or DROP")
@@ -183,8 +210,15 @@ export function renderReviewRecipe(input: {
    * trigger only; renders `git show <sha>` instead of always `HEAD`.
    */
   targetSha?: string;
+  /**
+   * #276 — the range the `pre-push` hook computed for the refs being pushed
+   * (`<base>..<head>`), already sanitized by `sanitizeRange`. `push` trigger
+   * only. Absent means "the hook could not compute one" — the recipe then
+   * falls back to diffing this branch against its base.
+   */
+  pushRange?: string;
 }): string {
-  const { plan, trigger, design, prose, reviewContext, ciChecks, notaryUrl, noVerifyFlagged, targetSha } =
+  const { plan, trigger, design, prose, reviewContext, ciChecks, notaryUrl, noVerifyFlagged, targetSha, pushRange } =
     input;
 
   // H2 — the contextual layer. Three parts, each trusted differently:
@@ -226,19 +260,40 @@ export function renderReviewRecipe(input: {
     plan.perSkill.find((p) => p.count === maxPasses)?.mode ?? 'cross-check';
 
   const commitRef = targetSha ?? 'HEAD';
+
+  // #276 — the `push` trigger reviews the RANGE, once, not each commit in it.
+  // SPEC 2.0 §4.1 gives the reason it prefers push over commit in the first
+  // place: "a commit often catches work half-done and reports defects the next
+  // commit was going to fix anyway". Reviewing commit-by-commit at push time
+  // reintroduces exactly that defect — it reports a bug in commit 3 that commit
+  // 5 already fixed. The cumulative diff is also what actually leaves the
+  // machine, so it is what the gate should be reading.
+  const branchDiffFallback =
+    'If an open PR exists for this branch, review it; otherwise diff the branch against its base:\n\n' +
+    '```bash\n' +
+    'PR=$(gh pr list --head "$(git branch --show-current)" --state open --json number --jq \'.[0].number\')\n' +
+    'if [ -n "$PR" ]; then\n' +
+    '  gh pr diff "$PR"\n' +
+    'else\n' +
+    '  git remote set-head origin --auto >/dev/null 2>&1 || true  # make sure origin/HEAD resolves\n' +
+    '  git diff --no-color origin/HEAD...HEAD\n' +
+    'fi\n' +
+    '```';
+  const pushDiffStep = pushRange
+    ? `Everything this push would publish — **one review of the whole range**, not one per commit ` +
+      `(a per-commit read re-reports defects a later commit in the same push already fixed, which is ` +
+      `why §4.1 prefers push over commit in the first place):\n\n` +
+      '```bash\n' +
+      `git log --no-color --oneline ${pushRange}   # what is being published\n` +
+      `git diff --no-color ${pushRange}            # the cumulative diff to review\n` +
+      '```'
+    : branchDiffFallback;
   const diffStep =
     trigger === 'commit'
       ? `${targetSha ? `The queued commit \`${targetSha}\` (deferred earlier — reviewing it now)` : 'The commit you just made'}:\n\n\`\`\`bash\ngit show --no-color --format=medium ${commitRef}\n\`\`\``
-      : 'If an open PR exists for this branch, review it; otherwise diff the branch against its base:\n\n' +
-        '```bash\n' +
-        'PR=$(gh pr list --head "$(git branch --show-current)" --state open --json number --jq \'.[0].number\')\n' +
-        'if [ -n "$PR" ]; then\n' +
-        '  gh pr diff "$PR"\n' +
-        'else\n' +
-        '  git remote set-head origin --auto >/dev/null 2>&1 || true  # make sure origin/HEAD resolves\n' +
-        '  git diff --no-color origin/HEAD...HEAD\n' +
-        'fi\n' +
-        '```';
+      : trigger === 'push'
+        ? pushDiffStep
+        : branchDiffFallback;
 
   const skillsList =
     slugs.length > 0
@@ -301,12 +356,26 @@ export function renderReviewRecipe(input: {
       `**Grounding rule (every pass):** ${GROUNDING_RULE}\n\n${NO_EXECUTION}\n\n${SEVERITY_RULE}`;
   }
 
+  // #276 — `push` is a LOCAL run, and SPEC 2.0 §4.3 is explicit about what a
+  // local run may do: "A review run locally has no pull request to comment on
+  // (§4.1) — it writes its findings to the terminal, in the same shape and the
+  // same order, and MUST NOT post anything or write a file." Before this, the
+  // `push` trigger fell through to the PR branch below and told the agent to
+  // post or edit the summary comment — a live §4.3 violation for anyone who
+  // typed `--trigger push`.
   const surface =
     trigger === 'commit'
       ? 'Surface the findings back into this session so the agent can fix them immediately. ' +
         'If the commit is clean, report a single line: `clud-bug: commit <short-sha> — clean.`'
-      : 'Surface the findings into the session, and — if an open PR exists — post or edit (in ' +
-        'place, by integer comment id) the clud-bug summary comment on it.';
+      : trigger === 'push'
+        ? 'Surface the findings into this session, in the shape above, so they can be fixed before ' +
+          'the work goes any further. This is a LOCAL run: **post nothing and write no file** — no ' +
+          'PR comment, no review file, nothing persisted (SPEC §4.3; the review that counts happens ' +
+          'on the pull request). The push itself is not blocked and must not be undone on your ' +
+          `own initiative (SPEC §4.1 — the local review is advisory). If the range is clean, report ` +
+          `a single line: \`clud-bug: push ${pushRange ?? '<range>'} — clean.\``
+        : 'Surface the findings into the session, and — if an open PR exists — post or edit (in ' +
+          'place, by integer comment id) the clud-bug summary comment on it.';
 
   // H3 + Phase Z/ZP2 — the merge-gate step (PR only). clud-bug is a NOTARY: a
   // green `clud-bug-review` check is CERTIFIED against the diff, not merely
@@ -508,6 +577,9 @@ interface ReviewPromptArgs {
    * command. Only actually renders the finding if `repoHasMandatedHooks`
    * also confirms this repo declares mandated hooks. */
   flagNoVerify?: boolean;
+  /** #276 — `<base>..<head>` computed by the `pre-push` hook. Validated by
+   * `sanitizeRange`; an unusable value is dropped, never escaped. */
+  range?: string;
   _?: string[];
 }
 
@@ -653,13 +725,31 @@ export async function resolveReviewInputs(
 }
 
 /**
- * `clud-bug review-prompt [--trigger commit|push|pr]` — load the repo's skills +
- * config, plan the review through `core/planReview`, and print the recipe to
- * stdout. Defaults to the `commit` trigger (the primary hook consumer).
+ * `clud-bug review-prompt [--trigger commit|push|pr] [--range <base>..<head>]` —
+ * load the repo's skills + config, plan the review through `core/planReview`,
+ * and print the recipe to stdout.
+ *
+ * #276 — defaults to the `push` trigger. SPEC 2.0 §4.1: "Where it is enabled,
+ * the repository chooses when: after a commit, or before a push. A reviewer
+ * MUST support both, **and push is the default**, because a commit often
+ * catches work half-done and reports defects the next commit was going to fix
+ * anyway." Every automated caller passes `--trigger` explicitly (the commit
+ * hook passes `commit`; `review --pending` resolves `'commit'` directly), so
+ * this default only governs a human typing the verb bare — which is exactly
+ * the case §4.1 is about.
  */
 export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
   const cwd = args.cwd ?? process.cwd();
   const trigger = normalizeTrigger(args.trigger);
+  const pushRange = trigger === 'push' ? sanitizeRange(args.range) : undefined;
+  if (trigger === 'push' && args.range !== undefined && pushRange === undefined) {
+    // §6.5 — never degrade in silence. The recipe still renders (falling back
+    // to the branch-vs-base diff), but the caller is told its range was dropped.
+    process.stderr.write(
+      `clud-bug review-prompt: ignoring an unusable --range (expected <rev>..<rev>); ` +
+        `falling back to the branch-vs-base diff.\n`,
+    );
+  }
 
   const { plan, reviewContext, design, prose, ciChecks, notaryUrl } = await resolveReviewInputs(
     cwd,
@@ -683,15 +773,19 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
       ...(prose ? { prose } : {}),
       ...(ciChecks ? { ciChecks } : {}),
       ...(noVerifyFlagged ? { noVerifyFlagged: true } : {}),
+      ...(pushRange ? { pushRange } : {}),
     }) + '\n',
   );
 }
 
 function normalizeTrigger(raw: string | undefined): ReviewTrigger {
-  if (raw === undefined || raw === 'commit') return 'commit';
-  if (raw === 'push' || raw === 'pr') return raw;
+  // #276 — bare `review-prompt` is a PUSH review (SPEC 2.0 §4.1: "push is the
+  // default"). It used to be `commit`, which was the shipped counterpart of
+  // there being no pre-push surface at all.
+  if (raw === undefined) return 'push';
+  if (raw === 'commit' || raw === 'push' || raw === 'pr') return raw;
   process.stderr.write(
-    `clud-bug review-prompt: unrecognized --trigger "${raw}" (expected commit|push|pr); using commit.\n`,
+    `clud-bug review-prompt: unrecognized --trigger "${raw}" (expected commit|push|pr); using push.\n`,
   );
-  return 'commit';
+  return 'push';
 }

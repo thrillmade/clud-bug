@@ -409,7 +409,11 @@ describe('review-prompt verb (integration)', () => {
     expect(r.stdout).toMatch(/Dispatch 3 reviewer/i);
   });
 
-  it('warns on an unrecognized --trigger and falls back to a commit recipe', async () => {
+  // #276 — the fallback (and the bare default) is now `push`, not `commit`.
+  // SPEC 2.0 §4.1: "A reviewer MUST support both, and push is the default,
+  // because a commit often catches work half-done and reports defects the next
+  // commit was going to fix anyway."
+  it('warns on an unrecognized --trigger and falls back to a PUSH recipe (§4.1)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp3-'));
     const skillsDir = join(dir, '.claude', 'skills');
     await mkdir(skillsDir, { recursive: true });
@@ -422,7 +426,10 @@ describe('review-prompt verb (integration)', () => {
     });
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/unrecognized --trigger/i);
-    expect(r.stdout).toMatch(/git show[^\n]*HEAD/);
+    expect(r.stderr).toMatch(/using push/i);
+    expect(r.stdout).toMatch(/about to push/i);
+    // §4.3 — a local run posts nothing; it must NOT inherit the PR surface.
+    expect(r.stdout).not.toMatch(/post or edit/i);
   });
 
   // ZP2: local max mode certifies via the hosted notary by DEFAULT — no
