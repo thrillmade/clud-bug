@@ -4,6 +4,11 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Changed
+
+- **Bundled `evidence-based-review` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+
+
 ### Fixed
 
 - **🔴 The `clud-bug-review` merge gate was forgeable — `configure-github` shipped it unpinned, and
