@@ -10,7 +10,11 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { planReview } from '../src/core/plan-review.js';
-import { renderReviewRecipe, CLUD_BUG_RECIPE_MARKER } from '../src/cli/review-prompt.js';
+import {
+  renderReviewRecipe,
+  resolveReviewInputs,
+  CLUD_BUG_RECIPE_MARKER,
+} from '../src/cli/review-prompt.js';
 
 const CLI = join(dirname(dirname(fileURLToPath(import.meta.url))), 'bin', 'clud-bug.js');
 
@@ -535,5 +539,138 @@ describe('review-prompt verb (integration)', () => {
     });
     expect(r.status).toBe(0);
     expect(r.stdout).not.toMatch(/Automatic finding/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// clud-bug#263 — `kind` routes a skill to a pass (SPEC 2.0 §2.2).
+//
+// The parser fix (resolveSkillKind) only matters because of what reads it: a
+// `!== 'design'` partition swept every non-design value — including `writing`
+// and every typo — into the code-correctness plan, where a skill can be the
+// sole citation for a finding about code behaviour. §2.2 withholds exactly
+// that from a prose skill, so the routing is where the authority actually
+// changes hands.
+// ---------------------------------------------------------------------------
+
+/** Write a repo with the given skills installed, and resolve its review inputs. */
+async function resolveRepo(prefix, skills, trigger = 'pr') {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  const skillsDir = join(dir, '.claude', 'skills');
+  await mkdir(skillsDir, { recursive: true });
+  await writeFile(
+    join(skillsDir, '.clud-bug.json'),
+    JSON.stringify({
+      version: 1,
+      installed: skills.map((s) => ({
+        slug: s.slug,
+        name: s.slug,
+        source: 'manual',
+        kind: 'baseline',
+        description: 'x',
+      })),
+    }),
+  );
+  for (const s of skills) {
+    await mkdir(join(skillsDir, s.slug), { recursive: true });
+    await writeFile(
+      join(skillsDir, s.slug, 'SKILL.md'),
+      `---\nname: ${s.slug}\ndescription: x\nsource: manual\nreview_mode: shared\n` +
+        (s.kind === undefined ? '' : `kind: ${s.kind}\n`) +
+        '---\n\nrules',
+    );
+  }
+  return { dir, inputs: await resolveReviewInputs(dir, trigger) };
+}
+
+const codeLensSlugs = (inputs) => inputs.plan.perSkill.map((p) => p.slug);
+
+describe('#263 — kind routes a skill to a pass', () => {
+  it('a kind: writing skill goes to the prose lens, NOT the code-correctness plan', async () => {
+    const { inputs } = await resolveRepo('clud-bug-rp263a-', [
+      { slug: 'a-rule-skill', kind: 'rule' },
+      { slug: 'a-writing-skill', kind: 'writing' },
+    ]);
+
+    // Control: the rule skill DID reach the code lens, so the absence below is
+    // a routing decision and not an empty/broken plan.
+    expect(codeLensSlugs(inputs)).toContain('a-rule-skill');
+    expect(codeLensSlugs(inputs)).not.toContain('a-writing-skill');
+    expect(inputs.prose?.skills).toEqual(['a-writing-skill']);
+  });
+
+  it('THE REGRESSION: an unrecognised kind lands in prose, never in the code plan', async () => {
+    const { inputs } = await resolveRepo('clud-bug-rp263b-', [
+      { slug: 'a-rule-skill', kind: 'rule' },
+      { slug: 'typo-skill', kind: 'writng' },
+      { slug: 'invented-skill', kind: 'enterprise' },
+      { slug: 'retired-voice-skill', kind: 'voice' },
+    ]);
+
+    expect(codeLensSlugs(inputs)).toEqual(['a-rule-skill']); // control: exactly one
+    expect(inputs.prose?.skills.sort()).toEqual(
+      ['invented-skill', 'retired-voice-skill', 'typo-skill'].sort(),
+    );
+  });
+
+  it('absent kind still means rule (§2.1) — the default is unchanged', async () => {
+    const { inputs } = await resolveRepo('clud-bug-rp263c-', [
+      { slug: 'no-kind-skill' }, // no `kind:` line at all
+      { slug: 'explicit-rule-skill', kind: 'rule' },
+    ]);
+    expect(codeLensSlugs(inputs).sort()).toEqual(['explicit-rule-skill', 'no-kind-skill']);
+    expect(inputs.prose).toBeUndefined();
+  });
+
+  it('a kind: design skill reaches neither the code plan nor the prose lens', async () => {
+    const { inputs } = await resolveRepo('clud-bug-rp263d-', [
+      { slug: 'a-rule-skill', kind: 'rule' },
+      { slug: 'a-design-skill', kind: 'design' },
+    ]);
+    expect(codeLensSlugs(inputs)).toEqual(['a-rule-skill']);
+    expect(inputs.prose).toBeUndefined();
+  });
+
+  it('renders the prose lens with §2.2’s sole-citation limit, and keeps it out of §3', async () => {
+    const { inputs } = await resolveRepo('clud-bug-rp263e-', [
+      { slug: 'a-rule-skill', kind: 'rule' },
+      { slug: 'a-writing-skill', kind: 'writing' },
+    ]);
+    const recipe = renderReviewRecipe({
+      plan: inputs.plan,
+      trigger: 'pr',
+      notaryUrl: null,
+      ...(inputs.prose ? { prose: inputs.prose } : {}),
+    });
+
+    expect(recipe).toContain('## 3d. Prose lens');
+    expect(recipe).toContain('.claude/skills/a-writing-skill/SKILL.md');
+    expect(recipe).toMatch(/MUST NOT be the sole citation for a finding about code behaviour/);
+    // The writing skill is named ONCE — in the prose block — never in the §3
+    // code-lens skill list a reviewer cites for code-behaviour findings.
+    expect(recipe.match(/a-writing-skill/g)).toHaveLength(1);
+    expect(recipe).toContain('.claude/skills/a-rule-skill/SKILL.md'); // control
+  });
+
+  it('control: a repo with no writing skills renders NO prose block', async () => {
+    const { inputs } = await resolveRepo('clud-bug-rp263f-', [{ slug: 'a-rule-skill', kind: 'rule' }]);
+    const recipe = renderReviewRecipe({ plan: inputs.plan, trigger: 'pr', notaryUrl: null });
+    expect(recipe).not.toContain('## 3d. Prose lens');
+    expect(recipe).toContain('.claude/skills/a-rule-skill/SKILL.md'); // control: recipe rendered
+  });
+
+  it('end-to-end: the CLI verb emits the prose lens for an installed writing skill', async () => {
+    const { dir } = await resolveRepo('clud-bug-rp263g-', [
+      { slug: 'a-rule-skill', kind: 'rule' },
+      { slug: 'a-writing-skill', kind: 'writing' },
+    ]);
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'pr'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('## 3d. Prose lens');
+    expect(r.stdout).toContain('a-writing-skill');
   });
 });
