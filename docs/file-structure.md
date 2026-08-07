@@ -40,7 +40,8 @@ clud-bug
 ├── scripts
 │   ├── check-version.mjs
 │   ├── fixture-check.mjs
-│   └── gen-version.mjs
+│   ├── gen-version.mjs
+│   └── render-ci.mjs
 ├── site
 │   ├── app
 │   ├── lib
@@ -96,6 +97,7 @@ clud-bug
 │   ├── review.test.js
 │   ├── skill-usage-aggregation.test.js
 │   ├── skill-usage.test.js
+│   ├── skills-base-ref.test.js
 │   ├── skills-frontmatter.test.js
 │   ├── skills.test.js
 │   ├── strict-mode-gate-classifier.test.js
