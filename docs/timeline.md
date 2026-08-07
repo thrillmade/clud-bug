@@ -13,6 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-08
+
+- **2026-08-07** — Fix 258: map dependabot secrets explicitly instead of secrets: inherit *(fix/258-secrets-mapping)* — [decisions-branches/fix__258-secrets-mapping.md](decisions-branches/fix__258-secrets-mapping.md)
+
 ## 2026-07 (40 decisions)
 
 - **2026-07-28** — F1a follow-up: pin precedence is per-FIELD, never per-entry *(fix/f1a-integration-id-pin)* — [decisions-branches/fix__f1a-integration-id-pin.md](decisions-branches/fix__f1a-integration-id-pin.md)
