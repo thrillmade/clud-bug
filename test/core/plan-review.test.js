@@ -103,4 +103,15 @@ describe('planReview', () => {
     expect(plan.budget.verdict).toBe('deny');
     expect(plan.summary).toMatch(/budget exceeded/i);
   });
+
+  it('plans with NO cost ceiling when the caller configures none (SPEC §4.9)', () => {
+    // The default path every consumer takes today — neither the CLI's
+    // `resolveReviewInputs` nor the hosted orchestrator passes `perPrCapUsd`.
+    const plan = planReview({ skills: SKILLS, config: CONFIG });
+    expect(plan.budget.estimate.capUsd).toBeNull();
+    expect(plan.budget.verdict).toBe('allow');
+    // The rendered recipe embeds `plan.summary`, so it must not name a cap.
+    expect(plan.summary).not.toMatch(/budget exceeded/i);
+    expect(plan.summary).toMatch(/est \$/);
+  });
 });

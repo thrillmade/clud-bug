@@ -9,13 +9,15 @@ import {
   __setModelCeilingForTests,
   DEFAULT_PER_PR_CAP_USD,
   DEFAULT_VERIFIER_PER_PR_CAP_USD,
+  SUGGESTED_PER_PR_CAP_USD,
   estimateBudget,
   estimateVerifierBudget,
   perCallCeiling,
 } from '../../src/core/budget-plan.js';
 
 // Tests focus on:
-//   - Per-PR cap blocks an obviously expensive plan
+//   - The per-PR ceiling is UNSET by default (SPEC §4.9)
+//   - An explicitly-configured ceiling blocks an over-budget plan
 //   - billingExempt bypasses the cap entirely
 //   - empty resolved (single-pass D.2.0 path) always allows
 //   - unknown models fall back to the conservative ceiling
@@ -83,9 +85,9 @@ describe('estimateBudget', () => {
   });
 
   it('denies when estimated cost exceeds the cap', () => {
-    // 3 passes × $0.50/call opus = $1.50. With a custom $1 cap → deny.
-    // (Default $5 cap with the new max-based math is not reachable via
-    // the count: 3 HARD CAP; this case validates the deny path explicitly.)
+    // 3 passes × $0.50/call opus = $1.50. With a configured $1 cap → deny.
+    // A ceiling only ever applies because the caller passed one (SPEC §4.9);
+    // this case validates that the deny path still works exactly as before.
     const verdict = estimateBudget({
       resolved: Array.from({ length: 20 }, (_, i) => pass(`s${i}`, 3)),
       roleModels: ['anthropic/claude-opus-4.7'],
@@ -121,12 +123,93 @@ describe('estimateBudget', () => {
     }
   });
 
-  it('reports the default cap when none provided', () => {
+  // -------------------------------------------------------------------------
+  // SPEC §4.9 — "configurable per install and defaulting to unset — no ceiling
+  // until someone chooses one, because a default cap silently truncates
+  // reviews nobody asked to truncate."
+  // -------------------------------------------------------------------------
+
+  it('reports NO cap when none is configured (§4.9 unset default)', () => {
     const verdict = estimateBudget({
       resolved: [pass('a', 1)],
       roleModels: ['anthropic/claude-sonnet-4.6'],
     });
-    expect(verdict.estimate.capUsd).toBe(DEFAULT_PER_PR_CAP_USD);
+    expect(verdict.estimate.capUsd).toBeNull();
+    expect(verdict.verdict).toBe('allow');
+  });
+
+  it('never denies with no ceiling configured, however expensive the plan', () => {
+    // 50 passes × $0.50/call opus = $25 — an estimate that would have blown
+    // straight through the old hard-coded $5 default and silently truncated
+    // the review. With the ceiling unset there is nothing to exceed.
+    const verdict = estimateBudget({
+      resolved: [pass('a', 50)],
+      roleModels: ['anthropic/claude-opus-4.7'],
+    });
+    expect(verdict.verdict).toBe('allow');
+    expect(verdict.estimate.estimatedCostUsd).toBeCloseTo(25, 5);
+    expect(verdict.estimate.capUsd).toBeNull();
+    // No deny → no "we paused this review" comment for the customer.
+    expect(verdict.reason).toBeUndefined();
+  });
+
+  it('does NOT apply the suggested $5 value as a default', () => {
+    // Regression pin for the §4.9 violation: `estimateBudget` must not fall
+    // back to SUGGESTED_PER_PR_CAP_USD. $5.50 > $5, so if the old default
+    // were still wired this would deny.
+    const overFive = estimateBudget({
+      resolved: [pass('a', 11)],
+      roleModels: ['anthropic/claude-opus-4.7'], // 11 × $0.50 = $5.50
+    });
+    expect(overFive.estimate.estimatedCostUsd).toBeGreaterThan(
+      SUGGESTED_PER_PR_CAP_USD,
+    );
+    expect(overFive.verdict).toBe('allow');
+
+    // The same plan WITH the suggested value passed explicitly still denies —
+    // an operator/repo that chooses $5 gets exactly the old behavior.
+    const explicit = estimateBudget({
+      resolved: [pass('a', 11)],
+      roleModels: ['anthropic/claude-opus-4.7'],
+      perPrCapUsd: SUGGESTED_PER_PR_CAP_USD,
+    });
+    expect(explicit.verdict).toBe('deny');
+    if (explicit.verdict === 'deny') {
+      expect(explicit.estimate.capUsd).toBe(5);
+      expect(explicit.reason).toMatch(/per-PR cap of `\$5\.00`/);
+    }
+  });
+
+  it('keeps DEFAULT_PER_PR_CAP_USD as a deprecated alias of the suggested value', () => {
+    // Kept only so existing importers (clud-bug-app lib/budget-gate.ts shim)
+    // keep compiling — SPEC §7.5. It is a suggestion now, not a default.
+    expect(DEFAULT_PER_PR_CAP_USD).toBe(SUGGESTED_PER_PR_CAP_USD);
+    expect(SUGGESTED_PER_PR_CAP_USD).toBe(5);
+  });
+
+  it('honours an explicit ceiling of 0 (0 is a choice, not "unset")', () => {
+    // `?? null` and not `|| null`: a repo that sets 0 means "review nothing
+    // that costs anything", and must not be silently read as unset.
+    const verdict = estimateBudget({
+      resolved: [pass('a', 1)],
+      roleModels: ['anthropic/claude-sonnet-4.6'], // $0.08 > $0
+      perPrCapUsd: 0,
+    });
+    expect(verdict.verdict).toBe('deny');
+    if (verdict.verdict === 'deny') {
+      expect(verdict.estimate.capUsd).toBe(0);
+    }
+  });
+
+  it('an explicit ceiling still yields to billingExempt', () => {
+    const verdict = estimateBudget({
+      resolved: [pass('a', 50)],
+      roleModels: ['anthropic/claude-opus-4.7'],
+      perPrCapUsd: 0.01,
+      billingExempt: true,
+    });
+    expect(verdict.verdict).toBe('allow');
+    expect(verdict.estimate.capUsd).toBe(0.01);
   });
 });
 

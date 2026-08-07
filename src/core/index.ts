@@ -264,10 +264,15 @@ export {
   estimateBudget,
   estimateVerifierBudget,
   __setModelCeilingForTests,
+  SUGGESTED_PER_PR_CAP_USD,
+  // Deprecated alias of SUGGESTED_PER_PR_CAP_USD — no longer a default
+  // (SPEC §4.9 requires the repo-facing ceiling to default unset). Kept for
+  // existing importers until a major (SPEC §7.5).
   DEFAULT_PER_PR_CAP_USD,
   DEFAULT_VERIFIER_PER_PR_CAP_USD,
   type BudgetEstimateInput,
   type BudgetEstimate,
+  type CappedBudgetEstimate,
   type BudgetVerdict,
   type VerifierBudgetInput,
   type VerifierBudgetEstimate,
@@ -380,6 +385,7 @@ export {
   isCriticalReviewHeader,
   classifyPerSkillOutcome,
   parseFrontmatter,
+  resolveSkillKind,
   stripFrontmatter,
   type SkillDescriptor,
   type RankableSkill,
@@ -391,5 +397,4 @@ export {
   type SkillSource,
   type SkillReviewMode,
   type SkillKind,
-  type VoiceScope,
 } from './skills.js';

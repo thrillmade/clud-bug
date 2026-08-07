@@ -67,6 +67,19 @@ problems, missing coverage for new code paths. Quote the specific line.
             skills it will be graded against by editing them in the same diff.
           </p>
           <p>
+            This holds on <strong>both</strong> surfaces. The hosted App fetches
+            each file at the base SHA. The self-hosted Action checks out the
+            merge ref (it needs the change in order to review it), so before the
+            reviewer starts, the workflow replaces{' '}
+            <code>.claude/skills/</code> with the base ref&rsquo;s copy — the
+            same base-ref read it already uses for <code>strictMode</code>. A
+            skill the PR adds, edits or deletes is reviewed like any other file
+            in the diff; it just carries no authority over its own review. If
+            the base ref cannot be resolved the Action reviews with{' '}
+            <em>no</em> repo skills and says so in the run log, rather than
+            falling back to the PR&rsquo;s.
+          </p>
+          <p>
             Every finding is attributed to the skill that raised it, and the
             review summary carries a per-skill scan line for each loaded skill:
           </p>
