@@ -1,4 +1,4 @@
-# clud-bug-template-version: v14
+# clud-bug-template-version: v15
 name: Clud Bug 🐛 Crawls Your Code
 
 on:
@@ -181,7 +181,56 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0   # strict-mode gate reads base ref's manifest
+          fetch-depth: 0   # strict-mode gate + base-ref skill pin read origin/<base_ref>
+
+      # ── SECURITY — a PR must not pick the skills that judge it ───────────
+      # (clud-bug#260 item 1; SPEC 2.0 §4.1 + §6.3). The `pull_request`
+      # checkout above resolves to the MERGE ref, which contains the change,
+      # and the reviewer reads `.claude/skills/**` out of that workspace as
+      # TRUSTED authority. Replace it with the BASE ref's copy — the same
+      # `origin/${BASE_REF}` resolution the strict-mode / notary / formal-
+      # review steps already use for `strictMode` + `notary`. Fails CLOSED:
+      # the merge-ref copy is deleted first, so any resolution failure
+      # degrades to a skill-less baseline review, never to the PR's skills.
+      # Full design notes in workflow.yml.tmpl.
+      - name: Pin review skills to the base ref
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+
+          # Delete first — this line is what makes the step fail closed.
+          rm -rf .claude/skills
+
+          # `origin/<base_ref>` is the primary: the exact expression the
+          # strict-mode / notary / formal-review steps already resolve, made
+          # available by `fetch-depth: 0` above. `base.sha` is the fallback —
+          # it comes from the event payload rather than the workspace, and it
+          # is a parent of the merge commit, so it is present locally even if
+          # the remote-tracking ref is not. Neither is writable by the PR.
+          PIN=$(git rev-parse --verify --quiet "origin/${BASE_REF}^{commit}" || true)
+          if [ -z "$PIN" ]; then
+            PIN=$(git rev-parse --verify --quiet "${BASE_SHA}^{commit}" || true)
+          fi
+
+          if [ -z "$PIN" ]; then
+            echo "::warning title=Clud Bug 🐛::Could not resolve the base ref (origin/${BASE_REF} or ${BASE_SHA}); reviewing with NO repo skills. A PR must never supply the skills that judge it — the baseline discipline still applies."
+            exit 0
+          fi
+
+          if ! git cat-file -e "${PIN}:.claude/skills" 2>/dev/null; then
+            echo "::notice title=Clud Bug 🐛::Base ref ${BASE_REF} (${PIN}) declares no .claude/skills — reviewing against the baseline discipline."
+            exit 0
+          fi
+
+          if git archive "$PIN" -- .claude/skills | tar -xf -; then
+            SKILL_COUNT=$(find .claude/skills -name 'SKILL.md' -type f | wc -l | tr -d ' ')
+            echo "::notice title=Clud Bug 🐛::Pinned ${SKILL_COUNT} review skill(s) to base ref ${BASE_REF} (${PIN}). Skills this PR adds or edits are reviewed, never obeyed."
+          else
+            rm -rf .claude/skills
+            echo "::warning title=Clud Bug 🐛::Could not restore .claude/skills from ${PIN}; reviewing with NO repo skills rather than the PR's own."
+          fi
 
       # Three-way guard — see workflow.yml.tmpl for full design notes.
       - name: Guard — require ANTHROPIC_API_KEY

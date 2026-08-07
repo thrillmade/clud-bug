@@ -1,11 +1,11 @@
 {
   "$schema-comment": "Size caps for the rendered prompt. UTF-8 byte counts. The CI gate fails if the actual size exceeds the cap. Caps are intentionally close to current size so 0.0.P trim work has headroom without inviting regression.",
   "max_prompt_bytes": {
-    "value": 20800,
-    "why": "Current rendered prompt is ~20.3 KB post-SPEC-2.0-§4.7 (clud-bug#264/#260): the 'CI checks' fetch bullet + reconciled `reproduction` grounding-form bullet, PLUS a trust-tier split added on review (a CI check's `name`/`description`/output text are author-controlled — a PR touching `.github/workflows/**` decides them — so they must be fenced like the untrusted PR-description marker; only the `conclusion` enum grounds a finding). This is load-bearing, not decorative: without the fetch instruction the Action can't read CI evidence at all, and without the trust split, attacker-authored check text would sit in the trusted tier and could argue a finding away or force its severity — the same class of bug the execution-ban deletion fixed, one step removed. Cap bumped 19700 → 20800 (headroom above the 20.3 KB current). Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3. See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
+    "value": 21400,
+    "why": "Current rendered prompt is ~20.8 KB post-#260 item 1: added a ~490 B 'Skill authority comes from the BASE ref' block. The workflow now re-pins `.claude/skills/` to the PR's base ref before the reviewer runs (SPEC 2.0 §4.1/§6.3), and the model must not go re-fetch authority from the head ref, the diff, or a SKILL.md the PR adds — `Bash(git show:*)` is in --allowedTools for the delta-diff read, so the workflow-side pin alone cannot stop a model the diff talks into `git show <head>:.claude/skills/...`. Cap bumped 20800 → 21400. Earlier: 19700 → 20800 for SPEC 2.0 §4.7 (clud-bug#264/#260) — the 'CI checks' fetch bullet + reconciled `reproduction` grounding-form bullet, PLUS a trust-tier split (a CI check's `name`/output text are author-controlled, so only the `conclusion` enum grounds a finding); before that, the ZP3 Grounding block and v0.6.27 §5.5 Layer 3. See CHANGELOG [Unreleased] #260 base-ref skills + §4.7 CI evidence + [ZP3] + [0.6.27]."
   },
   "max_prompt_lines": {
-    "value": 415,
-    "why": "Current is ~405 lines post-SPEC-2.0-§4.7 (+~13 lines for the CI-checks fetch bullet + the reconciled `reproduction` bullet + the trust-tier fencing paragraph — see max_prompt_bytes.why). Cap bumped 400 → 415. Earlier: ZP3 Grounding block, v0.6.27 §5.5 Layer 3 (+~26 lines). See CHANGELOG [Unreleased] §4.7 CI evidence + [ZP3] + [0.6.27]."
+    "value": 421,
+    "why": "Current is 413 lines post-#260 item 1 (+8 lines for the base-ref skill-authority block — see max_prompt_bytes.why). Cap bumped 415 → 421. Earlier: 400 → 415 for SPEC 2.0 §4.7 (CI-checks fetch bullet + reconciled `reproduction` bullet + trust-tier fencing paragraph); ZP3 Grounding block; v0.6.27 §5.5 Layer 3 (+~26 lines). See CHANGELOG [Unreleased] #260 base-ref skills + §4.7 CI evidence + [ZP3] + [0.6.27]."
   }
 }
