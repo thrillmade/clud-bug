@@ -25,9 +25,29 @@ import type { ResolvedReviewPasses } from './review-plan.js';
  * customer eating a surprise bill. A 20% over-estimate that occasionally
  * causes a "we paused; raise the cap" comment is the right failure mode.
  *
- * Until D.4 wires real per-install budgets, this module always returns
- * `{ verdict: 'allow' }`. The implementation is intentionally complete so
- * D.4 can flip a single switch without changing the orchestrator surface.
+ * SPEC §4.9 — THREE MECHANISMS LIVE NEARBY; DO NOT CONFLATE THEM:
+ *
+ *   1. This module's `perPrCapUsd` — the REPOSITORY's own ceiling, and the
+ *      one §4.9 governs. It defaults to UNSET: "no ceiling until someone
+ *      chooses one, because a default cap silently truncates reviews nobody
+ *      asked to truncate." It used to default to $5, which is the bug this
+ *      docblock now exists to keep fixed.
+ *
+ *   2. clud-bug-app's `lib/runaway-guard.ts` — the OPERATOR's floor on its
+ *      OWN spend ($5/PR/24h + a review-count cap, applied to every install
+ *      including billing-exempt ones). §4.9 explicitly protects it: it "MUST
+ *      NOT be read as forbidden by the rule above." Not this module's
+ *      business, and not ours to unset.
+ *
+ *   3. `estimateVerifierBudget` below — the D.2.6 fix-verifier's own per-PR
+ *      budget. A separate surface with a separate failure mode (denying it
+ *      routes threads through the heuristic fallback rather than truncating
+ *      a review), so it keeps its default; see its own docblock.
+ *
+ * With (1) unset by default, `estimateBudget` returns `{ verdict: 'allow' }`
+ * on every path unless a caller passes a ceiling. The implementation stays
+ * complete so wiring a per-install ceiling is a plumbing change here, not a
+ * redesign of the orchestrator surface.
  */
 
 // ---------------------------------------------------------------------------
@@ -60,13 +80,25 @@ const MODEL_CEILING_USD: Record<string, number> = {
 const DEFAULT_PER_CALL_USD = 0.5;
 
 /**
- * Default per-PR cap. Real number lives in `env.REVIEW_SPEND_CAP_USD` once
- * D.4 wires that env var — for now this is the hard-coded ceiling.
+ * A *suggested* per-PR ceiling for an operator or repository that wants one.
+ * NOT applied by default — see `estimateBudget` and SPEC §4.9.
  *
  * $5 = a 3-pass review across 10 expensive skills (~30 calls × $0.15 avg).
- * Anything above that is almost certainly a misconfigured `reviewPasses`.
+ * Anything above that is almost certainly a misconfigured `reviewPasses`,
+ * which makes it a sane number to *offer*. It is only ever in force when a
+ * caller passes it as `perPrCapUsd`.
  */
-export const DEFAULT_PER_PR_CAP_USD = 5.0;
+export const SUGGESTED_PER_PR_CAP_USD = 5.0;
+
+/**
+ * @deprecated Renamed to {@link SUGGESTED_PER_PR_CAP_USD}. This value is no
+ * longer a default — SPEC §4.9 requires the repository-facing ceiling to
+ * default to unset, so nothing applies it unless a caller passes
+ * `perPrCapUsd`. Kept as an alias so existing importers (notably
+ * clud-bug-app's `lib/budget-gate.ts` re-export shim) keep compiling; it will
+ * go in a major (SPEC §7.5).
+ */
+export const DEFAULT_PER_PR_CAP_USD = SUGGESTED_PER_PR_CAP_USD;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -78,8 +110,18 @@ export interface BudgetEstimateInput {
   /** Model slugs the orchestrator plans to route to, in pass order. */
   roleModels: string[];
   /**
-   * Optional per-PR USD cap override. Defaults to `DEFAULT_PER_PR_CAP_USD`.
-   * D.4 wires per-install caps via `INSTALLS:{id}.spend_cap_usd`.
+   * The repository's per-PR USD ceiling, when it has chosen one.
+   *
+   * **Omitted / `undefined` means UNSET — no ceiling, never a deny.** SPEC
+   * §4.9: the customer-facing ceiling is "configurable per install and
+   * defaulting to unset — no ceiling until someone chooses one, because a
+   * default cap silently truncates reviews nobody asked to truncate."
+   *
+   * This is NOT the operator's own runaway guard. §4.9 keeps those separate:
+   * "Whoever pays for the inference MAY cap what a single pull request can
+   * consume of it, at a default of their choosing." That guard lives in
+   * clud-bug-app (`lib/runaway-guard.ts`, $5/PR/24h, applies to every install
+   * including billing-exempt) and is untouched by this default.
    */
   perPrCapUsd?: number;
   /**
@@ -97,9 +139,15 @@ export interface BudgetEstimate {
   estimatedCostUsd: number;
   /** Per-call ceiling used (max across the role models). */
   perCallCeilingUsd: number;
-  /** The cap the estimate was checked against. */
-  capUsd: number;
+  /**
+   * The cap the estimate was checked against, or `null` when no ceiling is
+   * configured (the SPEC §4.9 default). A `null` cap can never deny.
+   */
+  capUsd: number | null;
 }
+
+/** A `deny` always has a ceiling — you cannot exceed a cap nobody set. */
+export type CappedBudgetEstimate = BudgetEstimate & { capUsd: number };
 
 export type BudgetVerdict =
   | {
@@ -108,7 +156,7 @@ export type BudgetVerdict =
     }
   | {
       verdict: 'deny';
-      estimate: BudgetEstimate;
+      estimate: CappedBudgetEstimate;
       /** Friendly reason for the orchestrator's "we paused this review" comment. */
       reason: string;
     };
@@ -131,19 +179,27 @@ export function perCallCeiling(models: string[]): number {
 }
 
 /**
- * Layer-1 cost gate. Decides whether the planned passes fit under the cap.
+ * Layer-1 cost gate. Decides whether the planned passes fit under the
+ * repository's ceiling — **if it has set one**.
  *
  * Behavior matrix:
+ *   perPrCapUsd omitted (UNSET)      → allow, always (SPEC §4.9 default)
  *   billingExempt = true             → allow (skip cap entirely)
  *   estimatedCostUsd > cap           → deny + friendly reason
  *   estimatedCostUsd <= cap          → allow
  *   resolved.length === 0            → allow (single-pass D.2.0 path)
  *
- * Until D.4 wires real per-install spending, callers see allow on every
- * normal path — the deny branch only fires on truly absurd estimates.
+ * The unset default is the SPEC §4.9 rule, quoted verbatim: a reviewer
+ * exposes a cost ceiling "configurable per install and defaulting to unset —
+ * no ceiling until someone chooses one, because a default cap silently
+ * truncates reviews nobody asked to truncate." An operator's own floor on its
+ * own spend is a different mechanism §4.9 explicitly permits ("MUST NOT be
+ * read as forbidden by the rule above") and lives elsewhere — see
+ * `perPrCapUsd`'s doc comment.
  */
 export function estimateBudget(input: BudgetEstimateInput): BudgetVerdict {
-  const cap = input.perPrCapUsd ?? DEFAULT_PER_PR_CAP_USD;
+  // UNSET by default. `?? null`, never `?? SUGGESTED_PER_PR_CAP_USD`.
+  const cap = input.perPrCapUsd ?? null;
   const ceiling = perCallCeiling(input.roleModels);
   // The orchestrator (runMultiPass) sends all skills in a SINGLE prompt
   // each pass and loops only the max skill's count times. Real call count
@@ -164,10 +220,10 @@ export function estimateBudget(input: BudgetEstimateInput): BudgetVerdict {
   if (input.billingExempt) {
     return { verdict: 'allow', estimate };
   }
-  if (cost > cap) {
+  if (cap !== null && cost > cap) {
     return {
       verdict: 'deny',
-      estimate,
+      estimate: { ...estimate, capUsd: cap },
       reason: friendlyDenyReason({ cost, cap, calls, ceiling }),
     };
   }
@@ -227,6 +283,12 @@ const VERIFIER_PER_CALL_CEILING_USD = 0.01;
  *
  * D.4 will plumb per-install caps; for D.2.6 we use a single repo-wide
  * default. Installs in BILLING_EXEMPT_ORGS bypass this entirely.
+ *
+ * This default is deliberately NOT unset (unlike the review ceiling above).
+ * It is mechanism (3) in the module docblock: denying it does not truncate a
+ * review — it routes the open threads through the heuristic auto-resolve
+ * fallback, so the review still lands complete. Changing it is a separate
+ * decision from the SPEC §4.9 fix; do not fold the two together.
  */
 export const DEFAULT_VERIFIER_PER_PR_CAP_USD = 0.6;
 

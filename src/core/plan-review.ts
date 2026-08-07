@@ -42,7 +42,10 @@ export interface PlanReviewInput {
   trigger?: ReviewTrigger;
   /** Diff size under review, in bytes — enables large-diff auto-tiering. */
   diffSizeBytes?: number;
-  /** Optional per-PR USD cap forwarded to the budget gate. */
+  /**
+   * The repository's per-PR USD ceiling, forwarded to the budget gate.
+   * Omitted = UNSET = no ceiling (SPEC §4.9); see `BudgetEstimateInput`.
+   */
   perPrCapUsd?: number;
   /** Billing-exempt installs bypass the budget cap. */
   billingExempt?: boolean;
