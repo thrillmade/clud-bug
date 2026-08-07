@@ -385,6 +385,7 @@ export {
   isCriticalReviewHeader,
   classifyPerSkillOutcome,
   parseFrontmatter,
+  resolveSkillKind,
   stripFrontmatter,
   type SkillDescriptor,
   type RankableSkill,
@@ -396,5 +397,4 @@ export {
   type SkillSource,
   type SkillReviewMode,
   type SkillKind,
-  type VoiceScope,
 } from './skills.js';
