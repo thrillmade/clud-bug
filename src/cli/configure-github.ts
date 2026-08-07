@@ -60,7 +60,7 @@ export interface RunConfigureGithubOptions {
   stderr?: (msg: string) => void;
 }
 
-const HELP = `clud-bug configure-github — one-stop repo setup (conveniences + SPEC §7 ruleset).
+const HELP = `clud-bug configure-github — one-stop repo setup (conveniences + SPEC §6.1 ruleset).
 
 Usage:
   clud-bug configure-github <owner>/<repo> [options]

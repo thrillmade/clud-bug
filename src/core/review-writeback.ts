@@ -12,7 +12,9 @@
 //   - `renderReviewFile` (this module)    → `# clud-bug review — PR #N` doc file
 //
 // SPEC pins honored here:
-//   - `<!-- protocol-version: 0.1.0 -->`             — SPEC version.
+//   - `<!-- spec-version: 2.0.0 -->`                 — SPEC §4.3: "the version
+//     of this document the producer implements". Sourced from `SPEC_VERSION`
+//     (./spec-version.ts), never a local literal.
 //   - `<!-- written-by: clud-bug[bot] -->`           — App identity, not Action.
 //   - `<!-- review-sha: <40-char-head-sha> -->`      — pinned to review-time HEAD.
 //   - Severity bucket order: red → yellow → purple.
@@ -29,9 +31,20 @@ import {
   type Finding,
   type Review,
 } from './review-schema-zod.js';
+import { SPEC_VERSION } from './spec-version.js';
 
-/** Protocol version this implementation emits. */
-export const PROTOCOL_VERSION = '0.1.0';
+export { SPEC_VERSION };
+
+/**
+ * @deprecated Use `SPEC_VERSION`. Retained as an alias because this name is a
+ * public export of `clud-bug/core` and the App re-exports it; removing it
+ * would break the consumer at the version-skew boundary rather than at a
+ * coordinated bump (SPEC §7.5: a surface on its way out "MUST keep working
+ * until a major version removes it", naming what replaces it).
+ *
+ * It used to read '0.1.0' — a value that matched no version of the document.
+ */
+export const PROTOCOL_VERSION = SPEC_VERSION;
 
 /** "Written by" tag for the App writeback (SPEC §6.1). */
 export const WRITTEN_BY = 'clud-bug[bot]';
@@ -144,7 +157,8 @@ export function renderReviewFile(input: RenderReviewFileInput): string {
   const lines: string[] = [];
 
   lines.push(`# clud-bug review — PR #${prNumber}`);
-  lines.push(`<!-- protocol-version: ${PROTOCOL_VERSION} -->`);
+  // SPEC §4.3 names this marker `spec-version`, not `protocol-version`.
+  lines.push(`<!-- spec-version: ${SPEC_VERSION} -->`);
   lines.push(`<!-- written-by: ${WRITTEN_BY} -->`);
   lines.push(`<!-- review-sha: ${headSha} -->`);
   // SPEC §6.7.3: cache telemetry comment goes immediately below the
@@ -384,7 +398,7 @@ export interface RenderMultiPassMarkdownInput {
  * Output layout (SPEC §1.8.5):
  *
  *   # clud-bug review — PR #N (M passes · mode)
- *   <!-- protocol-version: ... -->
+ *   <!-- spec-version: ... -->
  *   <!-- written-by: clud-bug[bot] -->
  *   <!-- review-sha: ... -->
  *   <!-- passes: M -->
@@ -423,7 +437,8 @@ export function renderMultiPassMarkdown(
       review.passCount === 1 ? 'pass' : 'passes'
     } · ${review.mode})`,
   );
-  lines.push(`<!-- protocol-version: ${PROTOCOL_VERSION} -->`);
+  // SPEC §4.3 names this marker `spec-version`, not `protocol-version`.
+  lines.push(`<!-- spec-version: ${SPEC_VERSION} -->`);
   lines.push(`<!-- written-by: ${WRITTEN_BY} -->`);
   lines.push(`<!-- review-sha: ${headSha} -->`);
   lines.push(`<!-- passes: ${review.passCount} -->`);

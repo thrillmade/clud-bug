@@ -53,12 +53,12 @@ test('renderReviewFile: HTML metadata comments are in spec order', () => {
   const md = renderReviewFile({
     review: EMPTY_REVIEW, prNumber: 158, headSha: HEAD_SHA, prUrl: PR_URL,
   });
-  const protoIdx = md.indexOf('<!-- protocol-version:');
+  const protoIdx = md.indexOf('<!-- spec-version:');
   const writtenIdx = md.indexOf('<!-- written-by:');
   const shaIdx = md.indexOf('<!-- review-sha:');
   assert.ok(protoIdx < writtenIdx);
   assert.ok(writtenIdx < shaIdx);
-  assert.ok(md.includes(`<!-- protocol-version: ${PROTOCOL_VERSION} -->`));
+  assert.ok(md.includes(`<!-- spec-version: ${PROTOCOL_VERSION} -->`));
   assert.ok(md.includes(`<!-- written-by: ${WRITTEN_BY} -->`));
   assert.ok(md.includes(`<!-- review-sha: ${HEAD_SHA} -->`));
 });
