@@ -22,3 +22,14 @@
 
 ---
 
+## 2026-08-07 17:17 - Docs: say the base-ref skill read now holds on the Action too, not just the hosted App
+
+**Reasoning:** site/app/docs/skills/page.tsx already promised 'a pull request cannot weaken the skills it will be graded against by editing them in the same diff'. That was true of the hosted App and false of the self-hosted Action until #260 item 1 — the page's 'the bot' was ambiguous between the two surfaces and read as a claim the Action did not meet.
+
+**Alternatives considered:** Leave the page alone (it is now technically accurate, but silently so — a reader still cannot tell which surface the promise covers or what happens when the base ref is unresolvable).
+
+**Implications:**
+- Names both surfaces, names the fail-closed behaviour, and ties the Action's mechanism to the strictMode base-ref read it already had. Site typechecks (npx tsc --noEmit in site/ → exit 0).
+
+---
+
