@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (6 decisions)
+## 2026-08 (7 decisions)
 
-- **2026-08-07** — SPEC 4.9: unset the default $5 per-PR cost ceiling in core/budget-plan *(spec-4-9-unset-per-pr-cost-cap)* — [decisions-branches/spec-4-9-unset-per-pr-cost-cap.md](decisions-branches/spec-4-9-unset-per-pr-cost-cap.md)
-- *... 4 more decisions ...*
+- **2026-08-07** — Declare SPEC 2.0 once: spec-version marker, notary bundle, and --version (#277, #267, #278) *(fix/spec-version-and-stale-citations)* — [decisions-branches/fix__spec-version-and-stale-citations.md](decisions-branches/fix__spec-version-and-stale-citations.md)
+- *... 5 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
