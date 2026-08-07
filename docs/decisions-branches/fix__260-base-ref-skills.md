@@ -11,3 +11,14 @@
 
 ---
 
+## 2026-08-07 17:15 - Correct the skill-usage step's stale comment: the workspace manifest is now the base ref's, not the PR's
+
+**Reasoning:** The #260 pin replaces .claude/skills with the base ref's copy before any later step reads it, so the Update skill-usage step's comment ("PR's snapshot") now describes the wrong thing. It is also the better snapshot to record usage against — a PR's own manifest edits should not enter the usage record.
+
+**Alternatives considered:** Leave the comment as-is (it would mislead the next reader into thinking usage tracks head-side manifest edits) or move the step before the pin (worse: it would then bake PR-supplied manifest bytes into the uploaded artifact).
+
+**Implications:**
+- Comment-only; no behaviour change. Rendered .ci-rendered/workflow.yml re-generated to match.
+
+---
+

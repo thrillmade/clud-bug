@@ -1149,9 +1149,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .claude/skills
-          # If a .clud-bug.json already exists in the workspace (PR's
-          # snapshot), keep it. Otherwise initialize an empty shell so
-          # update-skill-usage has something to merge into.
+          # If a .clud-bug.json already exists in the workspace, keep it.
+          # Since clud-bug#260 that file is the BASE ref's manifest (the
+          # "Pin review skills to the base ref" step replaced the merge-ref
+          # copy), which is the right snapshot to record usage against —
+          # a PR's own manifest edits should not enter the usage record.
+          # Otherwise initialize an empty shell so update-skill-usage has
+          # something to merge into.
           if [ ! -f .claude/skills/.clud-bug.json ]; then
             echo '{"version": 1}' > .claude/skills/.clud-bug.json
           fi
