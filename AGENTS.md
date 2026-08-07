@@ -53,3 +53,42 @@ For agent invocations of the `clud-bug` CLI, prefer `CLUD_BUG_QUIET=1`
 
 _Installed at clud-bug v0.7.0-rc.20._
 <!-- clud-bug-end -->
+
+## Read the thread, not the issue body
+
+In several open issues the body describes a design that was superseded in
+that issue's own comments. Building from the body ships the wrong thing —
+always read the full comment thread before implementing.
+
+The live answer is the latest **maintainer ruling dated on or after the
+2026-08-01 SPEC 2.0 merge**. Recency alone is not the test: a comment can be
+the newest one on an issue and still predate the merge that invalidated it
+(#256 below is exactly this), and not every comment is a ruling.
+
+Confirmed cases:
+
+- **#260** — body asks to add a trust parameter to the probe surface; its
+  comment says delete the probe surface entirely (the body's version is
+  behaviour SPEC 2.0 §4.7 now bans).
+- **#256** — has exactly one comment, dated 2026-07-31, so it is both the
+  newest and pre-merge. It cites an intermediate ruling that never shipped,
+  so the fix text it recommends is wrong. Neither the body nor the comment
+  is live: **ask before implementing this one.**
+- **#246** — body, first comment, and last comment each disagree with the
+  one before it; only the 2026-08-01 comment is live.
+- **#262 item 7** — duplicates #267.
+- **#264** — its body quotes §4.7 backwards, as opt-in with "absent means the
+  reviewer reads none." The merged SPEC says the opposite: on by default,
+  absent means every check. Filed ~2.5 hours *before* the rewrite landed, so
+  the body was never wrong — it aged out. Bodies do that; comments do not
+  update them.
+- **clud-bug-app#87** — its P0 design is now half-MUST, half-FORBIDDEN. The
+  2026-08-01 comment supersedes the body: rebuild it on CI evidence, not on
+  the probe surface §4.7 bans.
+- **clud-bug-app#14** — milder, but the body's framing was reworked in its own
+  comments. Read them before acting on it.
+
+This list is a snapshot, not a guarantee. It was assembled by reading every
+open issue on 2026-08-01; an issue that acquires a superseding comment
+tomorrow will not appear here. The rule above is what protects you — the
+list only names the cases already known to trip it.
