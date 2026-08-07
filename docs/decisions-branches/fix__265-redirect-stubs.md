@@ -55,3 +55,14 @@
 
 ---
 
+## 2026-08-07 17:42 - Merge dev again (#288 base-ref skills + #292 fork-checks) and refresh timeline
+
+**Reasoning:** dev moved twice more while this PR was open; each merge to dev rewrites docs/timeline.md, and GitHub cannot auto-merge that file without logmind's merge driver, so the PR flips to CONFLICTING every time. Merging locally lets the driver resolve it.
+
+**Alternatives considered:** Force-push a fresh rebase (rejected: standing rule forbids force-push). Wait for dev to settle (rejected: dev is an active integration branch, it will not settle).
+
+**Implications:**
+- Brings in #288 (skills pinned to base ref) and #292 (fork checks neutral), which together add a yaml devDependency — the worktree now has a real npm ci install rather than a symlink to the parent repo's node_modules, so git ignores it properly. IMPORTANT: this merge makes 12 tests in test/skills-base-ref.test.js fail on this branch. They fail on dev too and are NOT caused by this PR — templates/ and that test file are byte-identical between this branch and origin/dev. #288's test pins REVIEW_JOB='clud-bug-review' while #292 renamed that job to 'review' in all three workflow templates. Reported separately; not fixed here.
+
+---
+
