@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (10 decisions)
+## 2026-08 (11 decisions)
 
 - **2026-08-07** — Sync docs/timeline.md after the rebase onto dev *(fix/265-redirect-stubs)* — [decisions-branches/fix__265-redirect-stubs.md](decisions-branches/fix__265-redirect-stubs.md)
-- *... 8 more decisions ...*
+- *... 9 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)

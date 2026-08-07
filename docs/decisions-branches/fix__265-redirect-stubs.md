@@ -44,3 +44,14 @@
 
 ---
 
+## 2026-08-07 17:37 - Merge dev (incl. #263 skill-kind fix) and refresh timeline so GitHub sees no conflict
+
+**Reasoning:** GitHub reported the PR CONFLICTING while local git merge-tree reported clean — because logmind installs a custom merge driver for docs/timeline.md that GitHub's merge machinery does not have. The conflict was real on GitHub's side; merging dev in locally lets logmind's driver resolve it once, so the PR presents a resolved tree. dev had moved to e5a227f after the rebase.
+
+**Alternatives considered:** Rebase again onto the new dev (rejected: would need a force-push, which the standing rules forbid; merge is the sanctioned response). Leave it CONFLICTING for a human (rejected: the resolution is mechanical and logmind already knows how).
+
+**Implications:**
+- Merge brought in #263's skill-kind fix and #287-era source changes to src/core/skills.ts, review-prompt.ts and review.ts — full suite re-run after the merge: 1104 pass (up from 1085), tsc exit 0. docs/file-structure.md's regen was discarded again for the same worktree-tree-root corruption (rendered wf_14b1bd88-5b1-3 as the root); it stays byte-identical to dev.
+
+---
+
