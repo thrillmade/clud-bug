@@ -431,13 +431,15 @@ export function mergeLocalReviewHook(existing: unknown, command: string): Claude
 // forbids the silent version: "A gate that cannot run MUST report that it
 // could not, and MUST NOT exit successfully in silence."
 //
-// NOT BUILT HERE, AND DELIBERATELY: the rest of §6.7's declaration matrix —
-// suite DETECTION, `Setup MUST ask, and MUST NOT complete without an answer`,
-// and the three rows that BLOCK a push when the declaration is missing or
-// contradicted. Shipping "block every push" before the setup flow that
-// collects the declaration exists would wedge every repo that upgrades. The
-// missing-declaration path therefore allows *and reports*, and the gap is
-// tracked rather than silently defaulted.
+// #319 shipped the rest of the declaration matrix this comment used to flag
+// as deliberately missing: suite DETECTION (TEST_FILE_PATTERN /
+// PKG_TEST_SCRIPT_PARSER below), the three rows that BLOCK a push when the
+// declaration is missing or contradicted, and the bootstrap exemption that
+// keeps a repo from being wedged by its own fix (§6.7: "A push whose only
+// change is adding that declaration MUST be allowed"). `resolveTestsDeclaration`
+// below is `init`'s side of the same gap: §6.7 also requires setup itself to
+// ask and not complete without an answer, so a fresh install never reaches
+// its first push with nothing declared in the first place.
 
 /** Parses `tests` out of a `.clud-bug.json` on stdin and prints it. A real
  * parser (§ evidence discipline: never ad-hoc-parse a structured file from
@@ -447,6 +449,55 @@ const TESTS_DECL_PARSER =
   'try{var j=JSON.parse(s);var t=j&&j.tests;' +
   'if(typeof t==="string")process.stdout.write(t.trim());' +
   'else if(t&&typeof t==="object"&&typeof t.command==="string")process.stdout.write(t.command.trim())}' +
+  'catch(e){}})';
+
+// #319 — the other half of §6.7's declaration matrix (#276 deliberately left
+// this out; see the block comment above buildPrePushHookScript). Quoting the
+// table in full:
+//
+//   | Suite detected | Declared | Result |
+//   | yes | a command | run it; a failure blocks |
+//   | yes | `none` | block — the declaration contradicts the repository |
+//   | yes | nothing | block — it has tests and is not running them |
+//   | no | a command | run it; a failure blocks |
+//   | no | `none` | pass |
+//   | no | nothing | block, with the exemption below |
+//
+// Read closely, DETECTION only ever changes a VERDICT (not just a message)
+// on the `none` row: "Detection is what makes `none` honest: it cannot be
+// pasted into a repository the detector can see has tests." Every "nothing"
+// row already blocks regardless of what's detected (the yes/no split there
+// exists to explain the reason, not to gate the result) — and a declared
+// command always runs regardless of detection. TEST_FILE_PATTERN and
+// PKG_TEST_SCRIPT_PARSER below are the two signals that answer "detected":
+// purely local, no-network, read from the SAME base ref as the declaration
+// (§6.3 applied on the machine).
+
+/** §6.7 suite detection, signal 1: filenames on the base ref matching common
+ * test-file conventions across languages — `foo.test.ts`, `foo_test.go`,
+ * `test_foo.py`, a `tests/`/`__tests__/`/`spec/` directory, `foo_spec.rb`.
+ * Matched with `grep -Eiq` against `git ls-tree -r --name-only <baseref>`.
+ * A heuristic, not a proof: false positives cost a one-line `.clud-bug.json`
+ * declaration (itself exempted below); false negatives fall back to signal 2
+ * or to detection reading `no`, which only ever weakens a verdict toward
+ * `pass`/`block-with-generic-message`, never toward a false pass on a real
+ * suite (that direction is signal 2's job for the common JS case, and the
+ * conservative default otherwise). Single-quote-free — embedded in
+ * `grep -Eiq '…'`. */
+const TEST_FILE_PATTERN =
+  '(^|/)(tests?|__tests__|spec)/|\\.(test|spec)\\.[cm]?[jt]sx?$|' +
+  '(^|/)test_[^/]+\\.py$|_test\\.py$|_test\\.go$|_spec\\.rb$';
+
+/** §6.7 suite detection, signal 2: `package.json`'s own `scripts.test`, when
+ * it is a REAL command — not the placeholder every `npm init` writes
+ * (`"echo \"Error: no test specified\" && exit 1"`), which declares nothing
+ * about the repository. Single-quote-free, same reason as TESTS_DECL_PARSER. */
+const PKG_TEST_SCRIPT_PARSER =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
+  'try{var j=JSON.parse(s);var t=j&&j.scripts&&j.scripts.test;' +
+  'if(typeof t==="string"){var v=t.trim();' +
+  'var isPlaceholder=/^echo\\s+"Error:\\s*no\\s*test\\s*specified"\\s*&&\\s*exit\\s*1$/i.test(v);' +
+  'if(v&&!isPlaceholder)process.stdout.write("1")}}' +
   'catch(e){}})';
 
 /**
@@ -567,12 +618,63 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `    testdecl=$(printf '%s' "$cfg" | node -e '${TESTS_DECL_PARSER}' 2>/dev/null) || testdecl=`,
     `  fi`,
     `fi`,
+    ``,
+    `# --- 3a. #319 — suite detection (§6.7's declaration matrix). Read from the`,
+    `#         SAME base ref as the declaration above, never the working tree.`,
+    `#         Two local, no-network signals; either is enough (see the table`,
+    `#         quoted above buildPrePushHookScript's TEST_FILE_PATTERN).`,
+    `suitedetected=0`,
+    `if [ -n "$baseref" ]; then`,
+    `  if git ls-tree -r --name-only "$baseref" 2>/dev/null </dev/null | grep -Eiq '${TEST_FILE_PATTERN}'; then`,
+    `    suitedetected=1`,
+    `  fi`,
+    `  if [ "$suitedetected" = 0 ]; then`,
+    `    pkgjson=$(git show "$baseref:package.json" 2>/dev/null </dev/null) || pkgjson=`,
+    `    if [ -n "$pkgjson" ]; then`,
+    `      pkgtest=$(printf '%s' "$pkgjson" | node -e '${PKG_TEST_SCRIPT_PARSER}' 2>/dev/null) || pkgtest=`,
+    `      [ "$pkgtest" = "1" ] && suitedetected=1`,
+    `    fi`,
+    `  fi`,
+    `fi`,
+    ``,
+    `# --- 3b. #319 — the bootstrap exemption. §6.7: "A push whose only change`,
+    `#         is adding that declaration MUST be allowed, or the config that`,
+    `#         unblocks pushing can never itself be pushed." testdecl above was`,
+    `#         read from the OLD base ref, so the one push that ADDS a missing`,
+    `#         declaration (or replaces a dishonest "none") would otherwise be`,
+    `#         judged by the very state it corrects. Recognized narrowly: the`,
+    `#         pushed range's entire diff touches nothing but the declaration`,
+    `#         file. Multi-ref pushes share $range's existing first-ref-only`,
+    `#         limitation (see "N refs were pushed" below) — not widened here.`,
+    `declonlychange=0`,
+    `if [ -n "$range" ]; then`,
+    `  changedpaths=$(git diff --name-only "$range" 2>/dev/null </dev/null) || changedpaths=`,
+    `  [ "$changedpaths" = ".claude/skills/.clud-bug.json" ] && declonlychange=1`,
+    `fi`,
+    `allowexempt=0`,
+    `if [ "$declonlychange" = 1 ] && { [ -z "$testdecl" ] || [ "$testdecl" = "none" ]; }; then`,
+    `  allowexempt=1`,
+    `fi`,
+    ``,
+    `# --- 3c. the verdict. "The two failure kinds stay apart... A declaration`,
+    `#         missing or contradicted blocks — that is the feature."`,
     `if [ -z "$baseref" ]; then`,
     // 6.5: a gate that could not run must say so rather than exit 0 in silence.
     `  printf 'clud-bug: no default-branch ref for remote %s — mechanical check skipped (6.7: a gate that cannot resolve its configuration allows).\\n' "$remote" >&2`,
+    `elif [ "$allowexempt" = 1 ]; then`,
+    `  printf 'clud-bug: this push only changes the "tests" declaration in .claude/skills/.clud-bug.json — allowed regardless of the state it replaces (SPEC 6.7: the config that unblocks pushing must itself be pushable).\\n' >&2`,
     `elif [ -z "$testdecl" ]; then`,
-    `  printf 'clud-bug: no "tests" declaration on %s — mechanical check skipped. SPEC 6.7 wants one: add "tests": "<command>" (or "none") to .claude/skills/.clud-bug.json on the default branch.\\n' "$baseref" >&2`,
+    `  if [ "$suitedetected" = 1 ]; then`,
+    `    printf 'clud-bug: PUSH BLOCKED — %s has test files but no "tests" declaration. SPEC 6.7: a repository with a detected suite that is not run blocks. Add "tests": "<command>" to .claude/skills/.clud-bug.json on the default branch, then push again.\\n' "$baseref" >&2`,
+    `  else`,
+    `    printf 'clud-bug: PUSH BLOCKED — %s has no "tests" declaration. SPEC 6.7 requires one: add "tests": "<command>" (or "tests": "none" if there truly is no suite) to .claude/skills/.clud-bug.json on the default branch, then push again.\\n' "$baseref" >&2`,
+    `  fi`,
+    `  exit 1`,
     `elif [ "$testdecl" = "none" ]; then`,
+    `  if [ "$suitedetected" = 1 ]; then`,
+    `    printf 'clud-bug: PUSH BLOCKED — %s declares "tests": "none" but has test files. SPEC 6.7: a "none" declaration that contradicts the repository blocks. Declare the real command in .claude/skills/.clud-bug.json on the default branch, then push again.\\n' "$baseref" >&2`,
+    `    exit 1`,
+    `  fi`,
     `  printf 'clud-bug: %s declares "tests": "none" — no mechanical check to run.\\n' "$baseref" >&2`,
     `else`,
     `  printf 'clud-bug: pre-push mechanical check (6.7 — tests before review): %s\\n' "$testdecl" >&2`,
@@ -666,4 +768,64 @@ export function planPrePushInstall(input: {
       `preserved your existing pre-push hook as ${PREPUSH_CHAINED_FILE} and chained to it ` +
       `(SPEC 6.7: the owner MUST invoke the other)`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// #319 — the setup-time half of §6.7: "A repository states whether it has a
+// test suite and how to run it. Setup MUST ask, and MUST NOT complete
+// without an answer." Now that a missing declaration BLOCKS a push (above),
+// leaving `init` silent about it would wedge the very first push a fresh
+// install makes — the exact wedge #276's own trailing comment flagged.
+
+export interface TestsDeclarationResult {
+  /** The value to persist as `manifest.tests` — a command, or the literal
+   * `"none"`. `null` ONLY under `acceptAll` with nothing detected — see the
+   * `accept-all-undeclared` source: writing a guessed `"none"` with no human
+   * having looked at it is exactly the dishonesty §6.7's detection exists to
+   * prevent, so the caller must warn and leave the manifest untouched rather
+   * than invent an answer here. */
+  value: string | null;
+  source: 'accept-all-detected' | 'accept-all-undeclared' | 'user-entered' | 'user-accepted-default';
+}
+
+/**
+ * Resolves the `tests` declaration at `init` time. ALWAYS returns — this is
+ * what "MUST NOT complete without an answer" means operationally: the caller
+ * gets a value (or the explicit `null` that means "ask again later", never a
+ * silently-skipped question).
+ *
+ * `ask` is INJECTED, never imported here — this function does no terminal
+ * I/O itself, so it is a plain async function callers (and tests) can invoke
+ * directly with a canned responder, no real stdin required. `detected` is
+ * the caller's own best-effort suggestion (`detectPackageTestScript` in
+ * `../core/detect.js`, run against the WORKING TREE at init time — never
+ * used to gate a push; only the base-ref read inside the hook script does
+ * that, per §6.3).
+ */
+export async function resolveTestsDeclaration(input: {
+  acceptAll: boolean;
+  detected: string | null;
+  ask: (question: string) => Promise<string>;
+}): Promise<TestsDeclarationResult> {
+  const { acceptAll, detected, ask } = input;
+  // --accept-all never prompts (matches the existing branch-protection
+  // pattern) — but it also must never GUESS "none" with no one looking; that
+  // would be the dishonest declaration §6.7 names by name. A real detected
+  // command is safe to accept automatically (it is evidence, not a guess);
+  // the absence of one is not evidence of the absence of tests.
+  if (acceptAll) {
+    return detected
+      ? { value: detected, source: 'accept-all-detected' }
+      : { value: null, source: 'accept-all-undeclared' };
+  }
+  const suggestion = detected ? `"${detected}"` : '"none"';
+  const answer = (
+    await ask(
+      `  Test command to run before every push? [${suggestion}] (type "none" if there truly is no suite): `,
+    )
+  ).trim();
+  if (answer) return { value: answer, source: 'user-entered' };
+  // Blank answer accepts the bracketed default — the same convention this
+  // file's own [Y/n] prompt (runInitBranchProtection, main.ts) already uses.
+  return { value: detected ?? 'none', source: 'user-accepted-default' };
 }

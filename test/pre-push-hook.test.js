@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import {
   buildPrePushHookScript,
   planPrePushInstall,
+  resolveTestsDeclaration,
   CLUD_BUG_PREPUSH_MARKER,
   PREPUSH_CHAINED_FILE,
 } from '../src/cli/hooks.js';
@@ -161,7 +162,10 @@ describe('planPrePushInstall', () => {
 
 describe('pre-push hook — integration (real git state)', () => {
   it('a NEW branch (all-zero remote oid) still computes a range, not the whole history', async () => {
-    const { clone } = await makeClonePair();
+    // #319: a passing declaration keeps this test focused on range
+    // computation — an undeclared repo now BLOCKS (see the declaration-matrix
+    // block below), which is a different concern from this test's.
+    const { clone } = await makeClonePair({ version: 1, installed: [], tests: 'true' });
     git(clone, ['checkout', '-q', '-b', 'feature']);
     await writeFile(join(clone, 'a.txt'), 'a');
     git(clone, ['add', 'a.txt']);
@@ -175,7 +179,8 @@ describe('pre-push hook — integration (real git state)', () => {
   });
 
   it('a fast-forward push reviews exactly remote..local — ONE range, not one review per commit', async () => {
-    const { clone } = await makeClonePair();
+    // #319: declared + passing, for the same reason as the test above.
+    const { clone } = await makeClonePair({ version: 1, installed: [], tests: 'true' });
     const remoteOid = git(clone, ['rev-parse', 'HEAD']);
     for (const n of ['1', '2', '3']) {
       await writeFile(join(clone, `f${n}.txt`), n);
@@ -263,16 +268,196 @@ describe('pre-push hook — integration (real git state)', () => {
     expect(r.stderr).toMatch(/review-prompt --trigger push/);
   });
 
-  it('§6.5: no declaration → allows, but REPORTS that the gate could not run (never a silent green)', async () => {
+  // #319: this used to allow-and-warn (the OLD screenshot of a deliberately
+  // incomplete §6.7). The table's "nothing declared" row BLOCKS regardless of
+  // suite detection — the yes/no split only changes which reason is printed.
+  // This fixture has no test files, so it exercises the "no" side.
+  it('§6.7 (#319): NO declaration and NO detected suite still BLOCKS the push — "nothing" always blocks', async () => {
     const { clone } = await makeClonePair({ version: 1, installed: [] });
     const remoteOid = git(clone, ['rev-parse', 'HEAD']);
     git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: q']);
     const head = git(clone, ['rev-parse', 'HEAD']);
 
     const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
-    expect(r.status).toBe(0);
+    expect(r.status).toBe(1); // a revert to the old allow-and-warn behavior must fail this
+    expect(r.stderr).toMatch(/PUSH BLOCKED/);
     expect(r.stderr).toMatch(/no "tests" declaration/);
+    expect(r.stderr).not.toMatch(/review-prompt --trigger push/); // model never runs
+  });
+
+  it('§6.7 (#319): a repo WITH test files and NO declaration BLOCKS with the "has tests" reason', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [] })).origin;
+    await mkdir(join(origin, 'src', '__tests__'), { recursive: true });
+    await writeFile(join(origin, 'src', '__tests__', 'foo.test.js'), 'test();');
+    git(origin, ['add', 'src']);
+    git(origin, ['commit', '-q', '-m', 'add a test file']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: r']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/PUSH BLOCKED/);
+    expect(r.stderr).toMatch(/has test files but no "tests" declaration/);
+  });
+
+  it('§6.7 (#319): a package.json test script alone (no matching filenames) is ALSO detected as a suite', async () => {
+    // Signal 2 (PKG_TEST_SCRIPT_PARSER), independent of signal 1 (filenames):
+    // a repo whose only test file is named something the pattern would never
+    // match, but whose package.json declares a REAL (non-placeholder) test
+    // script, must still be treated as having a suite.
+    const origin = (await makeClonePair({ version: 1, installed: [] })).origin;
+    await writeFile(join(origin, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'jest --ci' } }));
+    git(origin, ['add', 'package.json']);
+    git(origin, ['commit', '-q', '-m', 'add package.json']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: s']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/has test files but no "tests" declaration/);
+  });
+
+  it('§6.7 (#319): the npm-init PLACEHOLDER test script does not count as a suite', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [] })).origin;
+    await writeFile(
+      join(origin, 'package.json'),
+      JSON.stringify({ name: 'x', scripts: { test: 'echo "Error: no test specified" && exit 1' } }),
+    );
+    git(origin, ['add', 'package.json']);
+    git(origin, ['commit', '-q', '-m', 'npm init default']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: t']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD^']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(1); // still blocks (nothing declared) …
+    // … but with the GENERIC reason, not the "has tests" one — the
+    // placeholder must not register as a detected suite.
+    expect(r.stderr).not.toMatch(/has test files but no "tests" declaration/);
+    expect(r.stderr).toMatch(/PUSH BLOCKED — .*has no "tests" declaration/);
+  });
+
+  it('§6.7 (#319): "tests": "none" declared against a repo WITH test files BLOCKS — the declaration contradicts the repo', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [], tests: 'none' })).origin;
+    await mkdir(join(origin, 'tests'), { recursive: true });
+    await writeFile(join(origin, 'tests', 'foo_test.py'), 'def test_x(): pass');
+    git(origin, ['add', 'tests', '.claude']);
+    git(origin, ['commit', '-q', '-m', 'add a test file after declaring none']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: u']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/PUSH BLOCKED/);
+    expect(r.stderr).toMatch(/declares "tests": "none" but has test files/);
+    expect(r.stderr).not.toMatch(/review-prompt --trigger push/);
+  });
+
+  it('§6.7 (#319): a DECLARED command still runs regardless of suite detection (detection never overrides a real declaration)', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [], tests: 'true' })).origin;
+    await mkdir(join(origin, 'tests'), { recursive: true });
+    await writeFile(join(origin, 'tests', 'foo_test.py'), 'def test_x(): pass');
+    git(origin, ['add', 'tests']);
+    git(origin, ['commit', '-q', '-m', 'add a test file']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: v']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/mechanical check \(6\.7 — tests before review\): true/);
     expect(r.stderr).toMatch(/review-prompt --trigger push/);
+  });
+
+  it('§6.7 (#319): a filename merely CONTAINING "test" (e.g. "latest.txt") is not a false-positive suite match', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [], tests: 'none' })).origin;
+    await writeFile(join(origin, 'latest.txt'), 'not a test');
+    await mkdir(join(origin, 'contest'), { recursive: true });
+    await writeFile(join(origin, 'contest', 'results.txt'), 'not a test dir either');
+    git(origin, ['add', 'latest.txt', 'contest']);
+    git(origin, ['commit', '-q', '-m', 'files that merely contain "test" as a substring']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: w']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD^']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0); // "none" against a falsely-detected suite would have blocked
+    expect(r.stderr).toMatch(/declares "tests": "none" — no mechanical check to run/);
+  });
+
+  it('§6.7 (#319) bootstrap exemption: a push whose ONLY change adds the missing declaration is allowed', async () => {
+    // "A push whose only change is adding that declaration MUST be allowed,
+    // or the config that unblocks pushing can never itself be pushed." The
+    // base ref still declares NOTHING — that is the whole point: this exact
+    // push is what would fix it, and must not be judged by the state it
+    // corrects.
+    const { clone } = await makeClonePair({ version: 1, installed: [] });
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    await writeFile(
+      join(clone, '.claude', 'skills', '.clud-bug.json'),
+      JSON.stringify({ version: 1, installed: [], tests: 'true' }),
+    );
+    git(clone, ['add', '.claude']);
+    git(clone, ['commit', '-q', '-m', 'declare tests (the fix-push)']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/this push only changes the "tests" declaration/);
+  });
+
+  it('§6.7 (#319) bootstrap exemption: a push that ALSO changes other files does not qualify — the old block still applies', async () => {
+    const { clone } = await makeClonePair({ version: 1, installed: [] });
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    await writeFile(
+      join(clone, '.claude', 'skills', '.clud-bug.json'),
+      JSON.stringify({ version: 1, installed: [], tests: 'true' }),
+    );
+    await writeFile(join(clone, 'feature.txt'), 'unrelated change');
+    git(clone, ['add', '.claude', 'feature.txt']);
+    git(clone, ['commit', '-q', '-m', 'declare tests AND ship a feature in the same push']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    // Judged by the OLD base-ref state (nothing declared) — exemption does
+    // not apply because the diff is not JUST the declaration file. This is
+    // read from the base ref (§6.3), so the new "true" the working tree
+    // added has no effect on THIS push's own verdict.
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/PUSH BLOCKED/);
   });
 
   it('§6.7: an unresolvable default branch ALLOWS the push and says so (a broken gate never wedges it)', async () => {
@@ -291,7 +476,9 @@ describe('pre-push hook — integration (real git state)', () => {
   });
 
   it('§6.7 ownership: a chained foreign hook runs FIRST, with git ref lines replayed on its stdin', async () => {
-    const { clone } = await makeClonePair();
+    // #319: declared + passing — this test is about chaining order, not the
+    // declaration matrix.
+    const { clone } = await makeClonePair({ version: 1, installed: [], tests: 'true' });
     const remoteOid = git(clone, ['rev-parse', 'HEAD']);
     git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: chained']);
     const head = git(clone, ['rev-parse', 'HEAD']);
@@ -332,7 +519,9 @@ describe('pre-push hook — integration (real git state)', () => {
   });
 
   it('multiple refs in one push are reported, not silently reduced to one', async () => {
-    const { clone } = await makeClonePair();
+    // #319: declared + passing — this test is about multi-ref reporting, not
+    // the declaration matrix.
+    const { clone } = await makeClonePair({ version: 1, installed: [], tests: 'true' });
     const mainRemote = git(clone, ['rev-parse', 'HEAD']);
     git(clone, ['commit', '-q', '--allow-empty', '-m', 'main moves']);
     const mainHead = git(clone, ['rev-parse', 'HEAD']);
@@ -363,5 +552,43 @@ describe('pre-push hook — integration (real git state)', () => {
     // The declared command fails, so the real push is really refused.
     expect(push.status).not.toBe(0);
     expect(push.stderr).toMatch(/PUSH BLOCKED/);
+  });
+});
+
+describe('resolveTestsDeclaration (#319 — §6.7 "Setup MUST ask, and MUST NOT complete without an answer")', () => {
+  // `ask` is a plain injected function — no real stdin anywhere in this
+  // block, matching this file's own `runInitBranchProtection`-style seam.
+  const askReturning = (answer) => async () => answer;
+
+  it('ALWAYS returns a value in the interactive path — a blank answer accepts the shown default, it never skips', async () => {
+    const withDetection = await resolveTestsDeclaration({ acceptAll: false, detected: 'npm test', ask: askReturning('') });
+    expect(withDetection).toEqual({ value: 'npm test', source: 'user-accepted-default' });
+
+    const withoutDetection = await resolveTestsDeclaration({ acceptAll: false, detected: null, ask: askReturning('') });
+    expect(withoutDetection).toEqual({ value: 'none', source: 'user-accepted-default' });
+  });
+
+  it('a typed answer wins over the detected suggestion', async () => {
+    const r = await resolveTestsDeclaration({ acceptAll: false, detected: 'npm test', ask: askReturning('  make test  ') });
+    // Trimmed, and the user's own words — the suggestion is a default, not a floor.
+    expect(r).toEqual({ value: 'make test', source: 'user-entered' });
+  });
+
+  it('a typed "none" is honoured verbatim (not specially re-labeled)', async () => {
+    const r = await resolveTestsDeclaration({ acceptAll: false, detected: 'npm test', ask: askReturning('none') });
+    expect(r).toEqual({ value: 'none', source: 'user-entered' });
+  });
+
+  it('--accept-all with a detected command accepts it automatically, without asking', async () => {
+    let asked = false;
+    const ask = async () => { asked = true; return ''; };
+    const r = await resolveTestsDeclaration({ acceptAll: true, detected: 'npm test', ask });
+    expect(r).toEqual({ value: 'npm test', source: 'accept-all-detected' });
+    expect(asked).toBe(false); // --accept-all never prompts
+  });
+
+  it('--accept-all with NOTHING detected returns null, not a guessed "none" — the caller must warn, never invent an unreviewed answer', async () => {
+    const r = await resolveTestsDeclaration({ acceptAll: true, detected: null, ask: askReturning('') });
+    expect(r).toEqual({ value: null, source: 'accept-all-undeclared' });
   });
 });

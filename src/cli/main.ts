@@ -20,7 +20,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
-import { detect, buildDescriptionLine } from '../core/detect.js';
+import { detect, buildDescriptionLine, detectPackageTestScript } from '../core/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { reviewPrompt } from '../core/prompts.js';
 import { SPEC_VERSION, renderVersionDeclaration } from '../core/spec-version.js';
@@ -1620,6 +1620,36 @@ async function runInit(args) {
   if (isFreshInstall && manifest.strictMode === undefined) {
     manifest.strictMode = true;
   }
+
+  // #319 — SPEC 2.0 §6.7: "Setup MUST ask, and MUST NOT complete without an
+  // answer." Only relevant once the pre-push mechanical gate actually exists
+  // (wantsPrePushHook) — a repo with no local hook has no gate to declare
+  // for, and asking would be noise. Runs once: a manifest that already has
+  // `tests` (set by a prior init, or by hand) is never re-asked.
+  if (wantsPrePushHook && manifest.tests === undefined) {
+    const { resolveTestsDeclaration } = await import('./hooks.js');
+    const detected = await detectPackageTestScript(cwd);
+    const ask = async (q: string) => {
+      const rl = createInterface({ input, output });
+      try {
+        return await rl.question(q);
+      } finally {
+        rl.close();
+      }
+    };
+    const decision = await resolveTestsDeclaration({ acceptAll: Boolean(args.acceptAll), detected, ask });
+    if (decision.value === null) {
+      warn(
+        'No "tests" declared and none could be auto-detected (--accept-all skipped the prompt). ' +
+        'SPEC 6.7: the pre-push hook now BLOCKS a push with no declaration. Set "tests" (a command, ' +
+        'or "none" if there truly is no suite) in .claude/skills/.clud-bug.json, commit it, then push.',
+      );
+    } else {
+      manifest.tests = decision.value;
+      log(`  tests declaration: "${decision.value}" (${decision.source})`);
+    }
+  }
+
   await writeManifest(skillsDirPath, manifest);
 
   // Tell other agents what's installed and how to coexist with the bot.
@@ -1684,6 +1714,8 @@ async function runInit(args) {
     if (wantsPrePushHook) {
       log('  The pre-push hook lives in .git/hooks — it is NOT committed, so every');
       log('  fresh clone needs `clud-bug init` (or `clud-bug update`) again.');
+      log('  SPEC 6.7: a push now BLOCKS if "tests" in .clud-bug.json is missing or');
+      log('  contradicts a detected suite — merge your declaration before your next push.');
     }
     if (!args.commit) {
       log('  → git add .claude && git commit && git push');
@@ -1696,6 +1728,10 @@ async function runInit(args) {
       log('  Claude Code session) AND the GitHub Action enforcer (gates the merge on');
       log('  CI). Pass --no-hooks to install only the Action, or --hook-trigger to');
       log('  choose push (default) / commit / both.');
+      if (wantsPrePushHook) {
+        log('  SPEC 6.7: a push now BLOCKS if "tests" in .clud-bug.json is missing or');
+        log('  contradicts a detected suite — merge your declaration before your next push.');
+      }
     } else {
       log('  GitHub Action enforcer installed (--no-hooks: no local review hook).');
     }
@@ -2192,6 +2228,10 @@ async function runUpdateCmd(_args) {
     log(`  ! Skipped ${skipped.length} markerless file${skipped.length === 1 ? '' : 's'} (treated as user-customized):`);
     for (const s of skipped) log(`     • ${rel(cwd, s.path)}  — ${s.reason}`);
   }
+  // #319 — repo-config states `update` cannot fix unattended (it runs in the
+  // self-update Action as often as by hand); always shown, never gated on
+  // --quiet, same as every other warn().
+  for (const a of result.advisories ?? []) warn(a);
   log('');
   log('Commit + push to apply the refreshed kit on the next PR.');
   ok(`updated: @v${ourVersion}, ${result.changed.length} changed, ${result.unchanged.length} unchanged${skipped.length ? `, ${skipped.length} skipped` : ''}`);

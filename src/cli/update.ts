@@ -52,6 +52,14 @@ export interface RunUpdateResult {
   changed: UpdateChangeRecord[];
   unchanged: UpdateChangeRecord[];
   skipped?: UpdateSkippedRecord[];
+  // #319 — one-line warnings that are neither a file change nor a skip
+  // (nothing was written or left alone; a repo-config STATE was noticed).
+  // `runUpdate` never prompts for these — it runs unattended in the
+  // self-update Action as often as it runs by hand — so a gap it cannot fix
+  // itself is reported here for the caller to print, never silently dropped
+  // (§6.5) and never blocked on (only `init`'s ask-step, run by a human,
+  // resolves it).
+  advisories?: string[];
   ourVersion?: string;
   missing?: 'init';
 }
@@ -71,6 +79,7 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
   const changed: UpdateChangeRecord[] = [];
   const unchanged: UpdateChangeRecord[] = [];
   const skipped: UpdateSkippedRecord[] = [];
+  const advisories: string[] = [];
 
   // 1. Re-render the review workflow with the latest template — ONLY if it is
   //    already installed. A `--local-only` (max-mode) repo has no review
@@ -239,6 +248,17 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
           reason: 'could not restore the executable bit; git will skip the hook until you chmod +x it',
         });
       }
+      // #319 — the mechanical gate this hook now runs BLOCKS a push with no
+      // "tests" declaration (SPEC 6.7). `update` never prompts (it runs
+      // unattended in the self-update Action), so it can only warn — the
+      // fix is `clud-bug init`'s interactive ask-step, or a hand-edit.
+      if (manifest['tests'] === undefined) {
+        advisories.push(
+          'no "tests" declared in .claude/skills/.clud-bug.json — SPEC 6.7: the installed pre-push ' +
+          'hook now BLOCKS a push with no declaration. Run `clud-bug init` to be asked for one, or ' +
+          'set "tests" (a command, or "none") by hand.',
+        );
+      }
     }
   }
 
@@ -247,7 +267,7 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
   manifest['lastUpdateVersion'] = ourVersion;
   await writeManifest(skillsDir, manifest);
 
-  return { changed, unchanged, skipped, ourVersion };
+  return { changed, unchanged, skipped, advisories, ourVersion };
 }
 
 async function maybeWrite(

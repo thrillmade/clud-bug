@@ -60,10 +60,26 @@ commit already exists, so refusing costs the publish and nothing else.
    `npx clud-bug review-prompt --trigger push --range <base>..<head>`. One review of the
    whole range, never one per commit.
 
-Only a failing declared test command blocks. The review itself is **advisory** — it never
-blocks the push, and there is no bypass flag to learn, because nothing needs bypassing. If
-the hook can't resolve its configuration (no remote, no default branch, no `node`), it says
-so on stderr and lets the push through. A broken gate must never wedge a push.
+The review itself is **advisory** — it never blocks the push, and there is no bypass flag to
+learn, because nothing needs bypassing. But the mechanical check is not advisory: a failing
+declared command blocks, and so does a **missing or dishonest declaration**. `init` detects
+whether your repo has a test suite (test-file conventions, or a real `package.json`
+`scripts.test`) and asks for the command up front — it won't finish setup without an answer.
+That is what makes the two failure kinds safe to treat differently:
+
+| Suite detected | Declared | Result |
+|---|---|---|
+| yes | a command | run it — a failure blocks |
+| yes | `"none"` | **blocks** — the declaration contradicts the repo |
+| yes | nothing | **blocks** — you have tests and aren't running them |
+| no | a command | run it — a failure blocks |
+| no | `"none"` | passes |
+| no | nothing | **blocks** (with the exemption below) |
+
+Only a **repo-config state** blocks. Anything that looks like the *tool* being broken —
+no remote, no default branch, no `node` — fails open, says so on stderr, and lets the push
+through. A broken gate must never wedge a push; a repo that hasn't said what its tests are is
+a different problem, and §6.7 treats it as one.
 
 Declare your test command on your **default branch** (it is read from there, not from your
 working tree — so editing it locally changes nothing until it's merged and reviewed):
@@ -73,7 +89,8 @@ working tree — so editing it locally changes nothing until it's merged and rev
 { "tests": "npm test", ... }   // or "none" if the repo genuinely has no suite
 ```
 
-With no declaration the hook skips the mechanical check and says why. Choosing a surface:
+A push whose only change is adding or fixing that declaration is always allowed, regardless
+of the state it replaces — otherwise the fix could never be pushed. Choosing a surface:
 
 | Flag | Installs |
 |---|---|
