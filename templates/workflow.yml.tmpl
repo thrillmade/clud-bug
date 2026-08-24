@@ -485,6 +485,7 @@ jobs:
               --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length' \
               2>/dev/null || echo 0)
             if [ "${EXISTING:-0}" = "0" ]; then
+              # shellcheck disable=SC2016  # backticks are literal Markdown code-spans in the comment body, not command substitution — single quotes are correct
               BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis PR is from a %s, so clud-bug did not review it — **nothing here was checked**. GitHub deliberately does not pass repository secrets to such workflows, so Clud Bug could not authenticate against Anthropic.\n\nThe `clud-bug-review` check is set to `neutral`, not `success`: it does not block this PR, and it does not claim the change was reviewed. Review the diff manually.' "$REASON")
               gh pr comment "$PR_NUMBER" --body "$BODY" || true
             fi
