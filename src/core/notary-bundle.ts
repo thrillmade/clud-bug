@@ -1,7 +1,8 @@
 // Phase Z3 — the notary ATTESTATION BUNDLE.
 //
 // clud-bug is a NOTARY: it VALIDATES + CERTIFIES that a review actually ran
-// before a green `clud-bug-review` check gates a merge (protocol SPEC §10.3.3).
+// before a green `clud-bug-review` check gates a merge (protocol SPEC §4.5,
+// "Certifying a review" — the five checks a notary must establish).
 // The bundle is the wire artifact the local CLI assembles from a completed
 // review and submits to the notary (`POST /notarize`, built in Z4). The server
 // re-validates it against GitHub's ground-truth diff, then — as the SOLE issuer
@@ -17,16 +18,25 @@
 // hosted Zod pipeline. See docs/decisions-branches/feat-notary-z3.md.
 
 import type { ReviewVerdict } from './check-verdict.js';
+import { SPEC_VERSION } from './spec-version.js';
 
 /** Bundle wire-format version. Bump on a breaking shape change. */
 export const NOTARY_BUNDLE_VERSION = 1;
 
 /**
- * The protocol contract the bundle attests to — tracks SPEC §10.3.3
- * ("Attestation integrity"). Bump in lockstep with a §10.3.3 contract change
- * (coordinate the SPEC edit with logmind — the SPEC is the shared SkDD contract).
+ * The SPEC version the bundle attests under.
+ *
+ * This used to read '1.2.0' and track a pre-rewrite "SPEC §10.3.3
+ * (Attestation integrity)" that SPEC 2.0 does not have — the notary contract
+ * now lives in §4.5 ("Certifying a review"). It disagreed with the review
+ * comment's own version marker, so the two producers claimed different
+ * versions of the same document (clud-bug#277).
+ *
+ * It is now the one `SPEC_VERSION`, which is what §7.1 means by "Every place
+ * the version appears MUST agree". `bundle_version` above remains the wire
+ * shape's own number and is bumped independently.
  */
-export const NOTARY_PROTOCOL_VERSION = '1.2.0';
+export const NOTARY_PROTOCOL_VERSION = SPEC_VERSION;
 
 export type NotarySeverity = 'critical' | 'minor' | 'preexisting';
 
@@ -81,7 +91,13 @@ export interface NotaryBundle {
   coverage: string[];
   /** The review recipe / CLI version that produced this bundle (provenance). */
   recipe_version: string;
-  /** The SPEC §10.3.3 contract version this bundle conforms to. */
+  /**
+   * The SPEC version this bundle conforms to (SPEC §4.5, "Certifying a
+   * review"). The JSON key keeps its `protocol_version` spelling: it is the
+   * on-the-wire contract with a deployed notary, and renaming it is a wire
+   * break that buys nothing — §4.3's `spec-version` rule governs the review
+   * COMMENT, not this bundle. Its VALUE is now the one `SPEC_VERSION`.
+   */
   protocol_version: string;
   /**
    * Single-use nonce bound to (repo, PR, head_sha), minted by the server

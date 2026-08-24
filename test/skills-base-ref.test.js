@@ -41,7 +41,15 @@ const TEMPLATES = join(PKG_ROOT, 'templates');
 const WORKFLOW_TEMPLATES = ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl'];
 
 const PIN_STEP_NAME = 'Pin review skills to the base ref';
-const REVIEW_JOB = 'clud-bug-review';
+// #292 (2026-08-07) renamed the reviewer job from 'clud-bug-review' to
+// 'review' deliberately: the job's own conclusion used to double as the
+// clud-bug-review check-run, which went green on fork PRs where every step
+// is skipped. Renaming frees 'clud-bug-review' for the API-posted check-run
+// only; a new downstream 'gate' job (needs: [paths-check, review]) now
+// guarantees that check-run exists on every outcome. See
+// docs/decisions-branches/fix__fork-checks-neutral.md. The template is the
+// source of truth — this constant follows it, not the other way around.
+const REVIEW_JOB = 'review';
 
 /** Render a workflow template exactly the way `clud-bug init` and CI do. */
 async function render(tmpl) {
@@ -54,7 +62,7 @@ async function render(tmpl) {
 }
 
 /**
- * Parse the rendered workflow and return the clud-bug-review job's step list.
+ * Parse the rendered workflow and return the reviewer job's step list.
  * Uses a YAML parser rather than line-matching so a step that only LOOKS
  * present (commented out, wrong job, wrong nesting) cannot pass.
  */

@@ -1,5 +1,13 @@
 # clud-bug review-hardening benchmark (clud-bug-app #87)
 
+> **Methodology superseded (see [`RESULTS.md`](RESULTS.md) for the full caveat).**
+> This corpus was scored under the execution-grounded **Phase R** recipe —
+> reviewers ran each scenario's withheld `reproduce.mjs` themselves. SPEC 2.0 §4.7
+> now bans reviewer execution; clud-bug#281 deleted the probe surface Phase R
+> depended on and replaced it with the CI-evidence model. The 100%/100% figures
+> below are a real historical measurement, **not a reproducible claim under the
+> current recipe** — a fresh run against the CI-evidence recipe is pending.
+
 The **launch gate** for retiring the manual adversarial panel. It measures whether
 clud-bug's hardened review catches bugs that live on **no single changed line** —
 the class the old *"quote the exact diff line or drop"* gate silenced.
@@ -30,8 +38,9 @@ combinatorial / cross-cutting) + 6 clean decoys (precision controls). A `clean`
 scenario is correct code with a bug-prone *shape*; flagging it is a false positive.
 The `s*` scenarios are the regression cases from the real misses (logmind
 #169/#165/#171); `b*` are diverse true-positives; `c*` are decoys. **See
-`RESULTS.md` for the full per-scenario scoreboard** (currently 100% recall + 100%
-precision across 60 reviews).
+`RESULTS.md` for the full per-scenario scoreboard** (100% recall + 100% precision
+across 60 reviews, **under the now-superseded Phase R methodology** — see the
+caveat above).
 
 ## Running
 
@@ -58,3 +67,10 @@ The manual panel comes off — and only then do we launch — when ALL hold:
 
 **Re-arm:** any recipe/skill bump that regresses this benchmark re-opens the gate.
 This dir starts at 3 scenarios; expand toward ≥20 before the gate can close.
+
+> **Criteria 1 and 5 are stale under SPEC 2.0 §4.7.** Criterion 1's "reproduction
+> transcript" and criterion 5's "probe" both describe the reviewer-execution
+> capability clud-bug#281 deleted (see the caveat at the top of this file);
+> criterion 5's underlying mechanism, R6-action's sandboxed CI probe job, is
+> cancelled outright — §4.7 bans it. Both need rewording against the CI-evidence
+> model before this gate can be evaluated as written.

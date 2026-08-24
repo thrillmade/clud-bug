@@ -1,20 +1,33 @@
 # Benchmark results
 
+> **Methodology superseded — figures below are a historical record, not a
+> reproducible claim.** This run measured the execution-grounded **Phase R**
+> recipe: reviewers were handed each scenario's withheld `reproduce.mjs` and
+> ran it themselves to ground a finding. SPEC 2.0 §4.7 now bans reviewer
+> execution outright (clud-bug#281 deleted the probe surface this recipe
+> depended on — `src/core/invariants.ts`, `shouldRunProbes`, every
+> RUN/EXECUTE instruction), replacing it with the CI-evidence model
+> (`ciChecks` / SPEC 2.0 §4.7). The numbers below are real — this is what
+> that corpus scored under Phase R — but they are **not reproducible under
+> the current recipe**, and no fresh run against the CI-evidence recipe has
+> been scored yet.
+
 Corpus: **20 scenarios** — 14 true-positive (across 3 bug classes) + 6 clean decoys
 (precision controls). Each scored by **3 independent reviewers**, each given only the
 PR module (answer key + provided `reproduce.mjs` withheld), following the rendered
 hardened recipe; a separate judge scored each review against the answer key.
 
-## Headline (60 reviews)
+## Headline (60 reviews, Phase R methodology — superseded, see above)
 
 | metric | result |
 |---|---|
 | **Recall** (buggy caught) | **42/42 reviews (100%)** across 14 bugs / 3 classes |
 | **Precision** (clean not false-flagged) | **18/18 reviews (100%)**, zero false positives |
-| **Grounding** | every catch grounded by a **reproduction the reviewer wrote + ran** |
+| **Grounding** | every catch grounded by a **reproduction the reviewer wrote + ran** — the capability SPEC 2.0 §4.7 now bans |
 
-This satisfies the seeded-benchmark launch criterion (≥20 scenarios → 100% of MAJOR,
-≥90% of MED-HIGH): **100% on every scenario**, MAJOR and MED-HIGH alike.
+This satisfied the seeded-benchmark launch criterion (≥20 scenarios → 100% of MAJOR,
+≥90% of MED-HIGH) **under Phase R**: 100% on every scenario, MAJOR and MED-HIGH
+alike. See "Gate status" below for what that does and doesn't mean today.
 
 ## True-positives (14) — all 3/3 caught, reproduction-grounded
 
@@ -54,8 +67,13 @@ module the diff only *exposed*.
 
 ## Gate status
 
-**Seeded-benchmark criterion: MET** (20 scenarios, 100% recall + 100% precision).
-Remaining to close the panel-drop gate: the **10-PR shadow streak** on live PRs
-(panel runs alongside; accrues over time), **zero silent downgrades** confirmed in
-production, and the **probe-coverage floor** once R6-action lands. Auto-re-arms on
-any recipe/skill regression.
+**Seeded-benchmark criterion: MET under Phase R** (20 scenarios, 100% recall + 100%
+precision) — **not current.** Phase R's execution-grounded methodology is
+superseded by SPEC 2.0 §4.7's CI-evidence model (see the caveat at the top of this
+file); this criterion needs to be re-measured against the CI-evidence recipe before
+it can be claimed as met today. The rest of the launch-gate criteria this measured
+against are also stale: the **probe-coverage floor** it names no longer applies —
+R6-action, the sandboxed CI probe job it referred to, is cancelled (§4.7 bans
+executable probes). Remaining, methodology-independent: the **10-PR shadow streak**
+on live PRs (panel runs alongside; accrues over time) and **zero silent
+downgrades** confirmed in production. Auto-re-arms on any recipe/skill regression.

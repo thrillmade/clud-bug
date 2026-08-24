@@ -113,6 +113,7 @@ export {
   reviewFilePath,
   reviewCommitMessage,
   PROTOCOL_VERSION,
+  SPEC_VERSION,
   WRITTEN_BY,
   SEVERITY_EMOJI as REVIEW_FILE_SEVERITY_EMOJI,
   type RenderReviewFileInput,
@@ -341,7 +342,7 @@ export {
 // Phase Z3 — the NOTARY. `notary-bundle` owns the attestation-bundle shape (the
 // contract Z4's `/notarize` consumes) + a tolerant parser; `notary-validate` owns
 // the pure deterministic ③④⑤ checks (coverage / grounding / consistency) both the
-// local CLI and the server re-run. SPEC §10.3.3.
+// local CLI and the server re-run. SPEC §4.5, "Certifying a review".
 export {
   buildBundle,
   parseBundle,
@@ -353,6 +354,14 @@ export {
   type NotarySeverity,
   type GroundingKind,
 } from './notary-bundle.js';
+// SPEC §7.3 — the version + areas this tool declares, and the renderer for
+// the two-line declaration `--version` prints.
+export {
+  SPEC_AREAS,
+  SPEC_AREA_VOCABULARY,
+  renderVersionDeclaration,
+  type SpecArea,
+} from './spec-version.js';
 export {
   validateBundle,
   validateCoverage,

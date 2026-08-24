@@ -36,11 +36,45 @@ test('--help prints usage including all subcommands', () => {
   }
 });
 
-test('--version prints package version', () => {
+// SPEC §7.3 (#267). Was: a bare npm semver, which §5.3's routing cannot use.
+test('--version emits the SPEC §7.3 two-line declaration', () => {
   const r = run(process.cwd(), ['--version']);
   assert.equal(r.status, 0);
-  // Accept semver with optional pre-release suffix (e.g. 0.7.0-rc.1).
-  assert.match(r.stdout.trim(), /^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$/);
+  // "The first line's format is exactly `<tool-name> <tool-semver>
+  // (spec <spec-semver>)`." Tool semver accepts a pre-release (0.7.0-rc.1).
+  const lines = r.stdout.split('\n');
+  assert.match(
+    lines[0],
+    /^clud-bug \d+\.\d+\.\d+(-[A-Za-z0-9.-]+)? \(spec \d+\.\d+\.\d+\)$/,
+  );
+  // "The second line names areas" — from the fixed seven-word vocabulary.
+  assert.match(lines[1], /^areas: [a-z]+(, [a-z]+)*$/);
+  const VOCAB = ['orient', 'work', 'record', 'review', 'propagate', 'gates', 'versioning'];
+  for (const area of lines[1].slice('areas: '.length).split(', ')) {
+    assert.ok(VOCAB.includes(area), `"${area}" is outside the §7.3 vocabulary`);
+  }
+  // "A single trailing newline is REQUIRED."
+  assert.ok(r.stdout.endsWith('\n'));
+  assert.equal(r.stdout.endsWith('\n\n'), false);
+  assert.equal(lines.length, 3);
+});
+
+test('-v is the same declaration as --version', () => {
+  const long = run(process.cwd(), ['--version']);
+  const short = run(process.cwd(), ['-v']);
+  assert.equal(short.status, 0);
+  assert.equal(short.stdout, long.stdout);
+});
+
+// SPEC §7.3: "A tool MAY also accept `--spec-version`, printing
+// `<spec-semver>` alone on one line."
+test('--spec-version prints the spec semver alone', () => {
+  const r = run(process.cwd(), ['--spec-version']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /^\d+\.\d+\.\d+\n$/);
+  // And it agrees with the spec version inside the --version declaration.
+  const decl = run(process.cwd(), ['--version']).stdout;
+  assert.ok(decl.includes(`(spec ${r.stdout.trim()})`));
 });
 
 test('unknown command exits 2 with help', () => {
