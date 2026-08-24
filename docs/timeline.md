@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (23 decisions)
+## 2026-08 (24 decisions)
 
-- **2026-08-24** — Fix #296 critical: bare `clud-bug init` re-run preserves the already-installed hook-trigger surface *(fix/276-pre-push-surface)* — [decisions-branches/fix__276-pre-push-surface.md](decisions-branches/fix__276-pre-push-surface.md)
-- *... 21 more decisions ...*
+- **2026-08-24** — Fix #316 actionlint SC2016 + #318 stale tracked .ci-rendered goldens *(fix/316-318-actionlint-stale-ci-rendered)* — [decisions-branches/fix__316-318-actionlint-stale-ci-rendered.md](decisions-branches/fix__316-318-actionlint-stale-ci-rendered.md)
+- *... 22 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
