@@ -156,7 +156,15 @@ export async function runReview(args: ReviewArgs): Promise<void> {
     return;
   }
 
-  const { plan, reviewContext, notaryUrl } = await resolveReviewInputs(cwd, 'commit', args.diffSizeBytes);
+  // `design` + `probes` are deliberately not forwarded: both are pr-gated and
+  // this drain is always a `commit` trigger, so `resolveReviewInputs` returns
+  // them undefined anyway. `prose` IS forwarded — SPEC 2.0 §2.2's prose pass
+  // "Runs: always", so it is not trigger-gated (clud-bug#263).
+  const { plan, reviewContext, prose, notaryUrl } = await resolveReviewInputs(
+    cwd,
+    'commit',
+    args.diffSizeBytes,
+  );
 
   const recipes = shas.map((sha, i) => {
     const recipe = renderReviewRecipe({
@@ -165,6 +173,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
       notaryUrl,
       targetSha: sha,
       ...(reviewContext ? { reviewContext } : {}),
+      ...(prose ? { prose } : {}),
     });
     return `# Pending review ${i + 1}/${shas.length}\n\n${recipe}`;
   });

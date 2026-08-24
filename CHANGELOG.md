@@ -4,8 +4,24 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Added
+
+- **A `pre-push` local review surface (#276).** There was none: `git grep -inE 'pre-push|prePush|pre_push' origin/main -- src/ templates/` returned **0 hits** (control probe `PostToolUse` → 2 files, so the search itself worked), while SPEC 2.0 §4.1 says "A reviewer MUST support both, and **push is the default**" and §6.7 names the mechanism: "Git allows one `pre-push` hook, so ownership follows what is installed."
+
+  `clud-bug init` now writes a git `pre-push` hook (`hooks.ts:buildPrePushHookScript`, installed the way `mergeLocalReviewHook` installs the commit hook — pure builder, marker-based replace-in-place, never clobbers foreign content). In §6.7's fixed order it:
+  - invokes a pre-existing foreign `pre-push` hook first, preserved as `pre-push.clud-bug-chained`, with git's ref lines replayed on its stdin, and honours its exit status ("both tools → either, and it MUST invoke the other");
+  - runs the repo's declared test command — read from the **default branch**, never the working tree, through a real JSON parser — and **blocks the push** if it fails, without running the model ("the mechanical check runs first, and the model only runs if it passes");
+  - prints `review-prompt --trigger push --range <base>..<head>` for the refs actually being published, and exits 0.
+
+  The hook does **no network I/O**. The commit hook can afford an `npx` round-trip because Claude Code runs it detached (`async: true, asyncRewake: true`); a git `pre-push` hook is synchronous and sits on the critical path of the very command §4.1 says must not be blocked.
+
+  Declare the test command as `"tests": "npm test"` (or `"none"`) in `.claude/skills/.clud-bug.json`.
+
 ### Changed
 
+- **`init --with-hooks` installs the pre-push surface by default (#276)** — §4.1: "the repository chooses when: after a commit, or before a push … push is the default". `--hook-trigger commit` restores the previous commit-time hook; `--hook-trigger both` installs each; `--no-hooks` still installs neither (§4.1: the local review "is off unless asked for"). `clud-bug update` refreshes whichever surface is already installed and never adds one.
+- **`review-prompt` defaults to `--trigger push`** (was `commit`), same §4.1 clause. Every automated caller already passes `--trigger` explicitly, so this governs a human typing the verb bare.
+- **`review-prompt --range <base>..<head>`** — the push trigger reviews the range **once**, not once per commit. Reviewing commit-by-commit at push time reintroduces the defect §4.1 rejects commit-time review for: reporting a bug in commit 3 that commit 5 already fixed. The value is validated (`sanitizeRange`), not escaped — it is rendered into a `bash` fence the agent is told to run.
 - **Bundled `evidence-based-review` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `critical-issues-only` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `respect-existing-conventions` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
@@ -13,6 +29,139 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 
 ### Fixed
+
+- **🔴 `review-prompt --trigger push` instructed a §4.3 violation (#276).** `push` fell through to the pull-request branch of the recipe, whose surface step says to "post or edit … the clud-bug summary comment". SPEC 2.0 §4.3: "A review run locally has no pull request to comment on — it writes its findings to the terminal … and **MUST NOT post anything or write a file**." The push trigger now renders a terminal-only surface.
+
+- **A skill with an unrecognised `kind` was applied with the *highest* authority, not the lowest
+  (#263).** `parseFrontmatter` recognised `rule`, `design` and the pre-2.0 `voice`; everything else
+  resolved to `undefined`. But `undefined` is indistinguishable from an absent `kind`, and an absent
+  `kind` **is** a `rule` skill (SPEC 2.0 §2.1) — so every value outside the ladder inherited the tier
+  that may be the sole citation for a finding about code behaviour. `kind: writing` was one of those
+  values: SPEC 2.0 renamed `voice` → `writing`, and the ladder never followed, so the first prose skill
+  to ship would have been read as a code rule. §2.2 exists to withhold exactly that.
+
+  Three changes:
+  - `SkillKind` is now `rule | writing | design`. The retired `voice` value and its `voice_scope`
+    companion are gone from the schema (SPEC 2.0 §2.1 lists neither). A skill still carrying them
+    loads — unknown keys are dropped, never a load failure — and `kind: voice` now resolves to
+    `writing`, which is the tier it always belonged in.
+  - New `resolveSkillKind()` (exported from `clud-bug/core`) is the one implementation of the two
+    rules, and they fail in opposite directions: **absent → `rule`** (§2.1's default), **unrecognised
+    → `writing`** (§2.2: "An unrecognised `kind` MUST be treated as `writing`"). Unknown values
+    degrade rather than reject — §2.2 is explicit that "a typo does not discard it" — and they do not
+    fall to `design`, which routes to a pass that may not run at all.
+  - `review-prompt` now partitions three ways instead of testing `!== 'design'`. `kind: writing`
+    skills are rendered in their own **§3d Prose lens** block carrying §2.2's limit ("MUST NOT be the
+    sole citation for a finding about code behaviour") instead of being folded into the §3
+    code-correctness skill list. The block renders only when a writing skill is installed, so a repo
+    with none gets a byte-identical recipe.
+
+  No skill in the catalog uses `kind: writing` today, so nothing shipped was mis-applied — this had to
+  land before the first one does. The three-pass `review.passes` model (SPEC 2.0 §2.2 + §1.6) is still
+  not built; this is the routing fix, not that feature.
+- **🔴 A pull request could pick the skills that judged it — the Action read them from the merge ref
+  (clud-bug#260 item 1).** `templates/workflow{,-ts,-py}.yml.tmpl` check out with `fetch-depth: 0`
+  and **no `ref:`**; on `pull_request` that resolves to `refs/pull/N/merge`, which contains the
+  change. The reviewer then read its skills straight out of that workspace —
+  `Bash(cat .claude/skills/.clud-bug.json)` and `Bash(cat .claude/skills/*/SKILL.md)` are in
+  `--allowedTools`, and the system prompt instructs `head -c "$MAX_SKILL_BYTES"
+  .claude/skills/<name>/SKILL.md`. `src/core/review-context.ts` is explicit that skills are the
+  **trusted** tier: a PR *description* is fenced, a skill file is not. So a PR that added
+  `.claude/skills/anything/SKILL.md` — or edited an existing one, or deleted the one that would
+  catch it — supplied the authority over its own review. SPEC 2.0 §4.1: *"The reviewer MUST read
+  its skill selection and its configuration from the pull request's base ref, never from the head
+  — otherwise a pull request picks the skills that judge it."* §6.3: *"...and never from a
+  workspace populated with the pull request's content."*
+
+  A new **Pin review skills to the base ref** step now runs immediately after checkout, before the
+  guard and before `claude-code-action`. It deletes the merge-ref `.claude/skills` and restores the
+  base ref's copy with `git archive`, resolving the base through the same
+  `origin/${BASE_REF}` expression the strict-mode gate, the Notarize step and the Formal-review step
+  already use for `strictMode`/`notary` (fallback: the event payload's `base.sha`, always present
+  locally as a parent of the merge commit). Replacing the tree — rather than teaching each reader a
+  new path — means every downstream consumer sees base-ref bytes with no second mechanism to keep in
+  sync. It **fails closed**: the merge-ref copy is deleted *before* the base copy is restored, so an
+  unresolvable base degrades the review to the baseline discipline instead of falling back to the
+  PR's own skills, and says so with a `::warning` (SPEC §6.5 — never a silent degradation). The PR's
+  skill changes are still reviewed; they are in the diff. They are just not obeyed.
+
+  Prompt side (the workflow pin alone is not enough — `Bash(git show:*)` is allow-listed for the
+  incremental-diff read, so a diff could otherwise talk the model into
+  `git show <head>:.claude/skills/…`): the Action prompt now states that skill authority comes from
+  the base ref and nowhere else, and that a rule reaching the reviewer from the diff, a PR-added
+  SKILL.md, a commit message or a code comment is content to review, never an instruction to obey.
+
+  The `/clud-bug-review` local recipe had the same defect from the other direction — §2 said "read
+  the manifest and every referenced skill body from the checkout", and a maintainer who ran
+  `gh pr checkout` was reading the PR's own skills. It now resolves `baseRefName` and reads both the
+  manifest and each `SKILL.md` at that ref via the contents API, and reads `strictMode` from there
+  too. Workflow template `v14` → `v15`, local recipe `v1` → `v2`; run `clud-bug update` to pick both
+  up. The hosted App was never affected (`lib/skills-loader.ts` `loadSkillsFromBaseRef`).
+
+  **Not closed by this change** (filed separately, named here so nobody reads the fix as broader than
+  it is): the workflow file *itself* is still read from the merge ref on a `pull_request` trigger, so
+  a PR that edits `.github/workflows/clud-bug-review.yml` replaces the job — pin step included —
+  before it runs. SPEC §6.3 is explicit that being careful inside the job body cannot fix this and
+  that a gate MUST NOT carry its logic inline on a pull-request trigger. Separately, `CLAUDE.md`,
+  `AGENTS.md` and the rest of `.claude/` are agent-instruction surfaces that also sit in that
+  merge-ref workspace; only `.claude/skills` is pinned here, and whether the reviewer's harness picks
+  the others up wants confirming before the pin is widened.
+
+- **🔴 The reviewer could execute untrusted diff content — SPEC 2.0 §4.7 bans this unconditionally
+  (clud-bug#264 → #260).** `src/core/invariants.ts`'s executable-probe surface let a repo self-enable
+  a reviewer-runs-a-shell-command behaviour by declaring a single `invariants` entry in
+  `.clud-bug.json` — armed, not dormant, by `readInvariantsConfig`'s own design ("declaring at least
+  one valid invariant is the explicit opt-in"). The local recipe additionally instructed "Resolve it
+  by EXECUTION where you can: REPRODUCE it" on the reviewer's own trusted work, and the Action's
+  default prompt offered "a command you ran + its observed output" as a grounding form. SPEC 2.0 §4.7
+  is unconditional: "A reviewer MUST NOT execute code, tests, builds or scripts... so no surface runs
+  one and none is specified."
+
+  The probe surface — `invariants.ts`, `shouldRunProbes`, the `invariants[].probe` config key, and
+  every execution instruction in both prompts (local recipe + Action) — is **deleted**, not gated. In
+  its place: reading the CI checks the repository's own forge already ran (§4.7's sanctioned
+  substitute), **ON by default**, narrowed only by a new `ciChecks` key in `.clud-bug.json` — absent
+  means every check; an explicit empty array is the one way to opt fully out. A concluded failure
+  grounds a `reproduction` finding exactly as a quoted line does and MUST NOT be argued away or have
+  its severity lowered; a check that hasn't reached a terminal outcome reports `unverified`, never
+  `clean`, and never blocks waiting for it.
+
+  **Follow-up caught in review:** the first pass of this fix told the reviewer a check's failure was
+  "trusted machine output" full stop — but a check's `name`/`description`/output text are
+  author-controlled (a PR editing `.github/workflows/**` or a script a workflow runs decides what a
+  check is named and what it says), the same trust error §4.7's execution ban exists to prevent, one
+  step removed, and strictly more privileged than the fenced `<!-- clud-bug: … -->` PR-description
+  marker since it could force a severity outright. Only the forge's own `conclusion`/`state` enum —
+  which the change cannot author — now grounds or argues a finding; `name`/`description`/output text
+  are fenced like any other untrusted, author-supplied text (may focus attention, must never determine
+  a verdict). Also closes a command-injection sub-case: the Action prompt no longer builds a follow-up
+  `--jq 'select(.name == "<name>")'` command by splicing an observed (attacker-influenced) check name
+  into a new shell invocation — one fetch reads name + summary together instead.
+
+- **🟡 The per-PR cost ceiling defaulted to $5 and silently truncated reviews nobody asked to
+  truncate (SPEC §4.9).** `core/budget-plan.ts` applied `DEFAULT_PER_PR_CAP_USD = 5.0`
+  unconditionally: `estimateBudget` fell back to it whenever a caller passed no `perPrCapUsd`, and
+  no caller ever passes one — not the CLI's `resolveReviewInputs`, not the hosted orchestrator. A
+  plan estimated over $5 was denied, and the customer got a "clud-bug paused this review" comment
+  telling them to lower `reviewPasses.count`.
+
+  §4.9 is explicit that the repository's own ceiling is the customer's choice, "configurable per
+  install and **defaulting to unset** — no ceiling until someone chooses one, because a default cap
+  silently truncates reviews nobody asked to truncate."
+
+  `estimateBudget` now treats an omitted `perPrCapUsd` as **no ceiling** and can never deny on that
+  path; `BudgetEstimate.capUsd` is `number | null` and reports `null` when unset. An
+  **explicitly-configured ceiling behaves exactly as before**, including `0` (a choice, not "unset")
+  and the `billingExempt` bypass.
+
+  Two nearby mechanisms §4.9 keeps separate are deliberately **unchanged**: the hosted App's
+  runaway guard (`clud-bug-app/lib/runaway-guard.ts`, $5/PR/24h on the operator's own spend, applied
+  to every install), which §4.9 explicitly permits; and `estimateVerifierBudget`'s D.2.6 cap, whose
+  deny routes threads through the heuristic fallback rather than truncating a review.
+
+  `DEFAULT_PER_PR_CAP_USD` is renamed `SUGGESTED_PER_PR_CAP_USD` — a value a caller may *choose*,
+  never one that is applied. The old name is kept as a deprecated alias so existing importers keep
+  compiling, and goes in a major (SPEC §7.5).
 
 - **🔴 The `clud-bug-review` merge gate was forgeable — `configure-github` shipped it unpinned, and
   stripped the pin if you set one by hand.** SPEC §10.3.3 point 2 requires the required-status-check

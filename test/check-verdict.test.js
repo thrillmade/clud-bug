@@ -45,8 +45,8 @@ describe('deriveCheck', () => {
   it('failed → neutral (never block on our own inability to run)', () => {
     expect(deriveCheck({ verdict: 'failed', strictMode: true }).conclusion).toBe('neutral');
   });
-  it('unverified → neutral (invariant-touching change we could not verify; never a false-green, never a hard block)', () => {
-    // R3 (#87): no "clean" without a green probe on an invariant-touching PR — emit unverified instead
+  it('unverified → neutral (a finding we could not verify; never a false-green, never a hard block)', () => {
+    // SPEC 2.0 §4.7: no "clean" without CI evidence that finished — emit unverified instead
     expect(deriveCheck({ verdict: 'unverified', strictMode: true }).conclusion).toBe('neutral');
     expect(deriveCheck({ verdict: 'unverified', strictMode: false }).conclusion).toBe('neutral');
     const d = deriveCheck({ verdict: 'unverified' });
@@ -66,8 +66,67 @@ describe('normalizeVerdict', () => {
     expect(normalizeVerdict('critical')).toBe('critical');
     expect(normalizeVerdict('failed')).toBe('failed');
     expect(normalizeVerdict('unverified')).toBe('unverified'); // R3 (#87)
+    expect(normalizeVerdict('skipped')).toBe('skipped'); // SPEC §6.5
     expect(normalizeVerdict('garbage')).toBe('failed');
     expect(normalizeVerdict(undefined)).toBe('failed');
+  });
+});
+
+describe("deriveCheck — 'skipped' (SPEC §6.5, the fork false-green)", () => {
+  // "Where a gate's credential cannot reach the change at all — a pull request
+  //  from a fork — the gate MUST NOT block it. The check is set to neutral,
+  //  never passing […] passing would claim exactly that, on the one class of
+  //  change nothing verified."
+  it('is neutral, and is neutral in strict mode too', () => {
+    expect(deriveCheck({ verdict: 'skipped' }).conclusion).toBe('neutral');
+    expect(deriveCheck({ verdict: 'skipped', strictMode: true }).conclusion).toBe('neutral');
+  });
+
+  it('is never success — that is the whole defect it exists to stop', () => {
+    for (const strictMode of [true, false]) {
+      expect(deriveCheck({ verdict: 'skipped', strictMode }).conclusion).not.toBe('success');
+    }
+  });
+
+  it('is never failure — a gate that could not run must not block the contributor', () => {
+    for (const strictMode of [true, false]) {
+      expect(deriveCheck({ verdict: 'skipped', strictMode }).conclusion).not.toBe('failure');
+    }
+  });
+
+  it('carries the caller-supplied reason verbatim (§6.5: say WHY)', () => {
+    const d = deriveCheck({
+      verdict: 'skipped',
+      skipReason: 'This pull request was opened from a fork (someone/their-fork).',
+    });
+    expect(d.summary).toContain('someone/their-fork');
+    expect(d.summary).toMatch(/nothing was reviewed/i);
+    expect(d.title).toMatch(/skipped/i);
+  });
+
+  it('falls back to a generic reason rather than emitting an empty one', () => {
+    for (const skipReason of [undefined, '', '   ']) {
+      const d = deriveCheck({
+        verdict: 'skipped',
+        ...(skipReason === undefined ? {} : { skipReason }),
+      });
+      expect(d.summary).toMatch(/No review was attempted/i);
+    }
+    // Control for the assertion above: a supplied reason really is interpolated,
+    // so matching the fallback text is evidence the fallback fired — not just
+    // boilerplate that would be present either way.
+    expect(deriveCheck({ verdict: 'skipped', skipReason: 'ZZQ-marker.' }).summary).toContain('ZZQ-marker.');
+    expect(deriveCheck({ verdict: 'skipped', skipReason: 'ZZQ-marker.' }).summary).not.toMatch(
+      /No review was attempted/i,
+    );
+  });
+
+  it("is distinct from 'failed' — one says re-run, the other says re-running will not help", () => {
+    const skipped = deriveCheck({ verdict: 'skipped' });
+    const failed = deriveCheck({ verdict: 'failed' });
+    expect(skipped.title).not.toBe(failed.title);
+    expect(failed.summary).toMatch(/re-run/i);
+    expect(skipped.summary).not.toMatch(/re-run to retry/i);
   });
 });
 
@@ -104,6 +163,20 @@ describe('post-check-run --dry-run', () => {
   });
   it('critical + --no-strict → neutral (advisory)', () => {
     expect(dryRun(['--verdict', 'critical', '--no-strict']).stdout).toMatch(/conclusion=neutral/);
+  });
+
+  // SPEC §6.5 through the full CLI wiring. This is the exact invocation the
+  // fork-notice workflow and the `gate` job make.
+  it('--verdict skipped → neutral, even with --strict', () => {
+    expect(dryRun(['--verdict', 'skipped']).stdout).toMatch(/conclusion=neutral/);
+    const strict = dryRun(['--verdict', 'skipped', '--strict']).stdout;
+    expect(strict).toMatch(/conclusion=neutral/);
+    expect(strict).not.toMatch(/conclusion=success/);
+  });
+  it('--skip-reason is parsed and reaches the derived check', () => {
+    const r = dryRun(['--verdict', 'skipped', '--skip-reason', 'opened from a fork (x/y)']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/verdict=skipped/);
   });
 
   // Phase ZP3 — the CI-originated notarize step passes `--source ci`. The source

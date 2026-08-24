@@ -5,7 +5,7 @@ const REPO_URL = 'https://github.com/thrillmade/clud-bug';
 export const metadata: Metadata = {
   title: 'Configuration — Clud Bug docs',
   description:
-    'Every .clud-bug.json option, with a small example each: strictMode, reviewContext, reviewPasses, design, autoResolve, and the executable invariants — grounded in the modules that read them.',
+    'Every .clud-bug.json option, with a small example each: strictMode, reviewContext, reviewPasses, design, autoResolve, and ciChecks — grounded in the modules that read them.',
   alternates: { canonical: '/docs/config' },
 };
 
@@ -91,10 +91,10 @@ export default function DocsConfig() {
               </tr>
               <tr>
                 <td>
-                  <code>invariants</code>
+                  <code>ciChecks</code>
                 </td>
-                <td>off</td>
-                <td>Executable probes that ground a finding by running RED.</td>
+                <td>every check</td>
+                <td>Narrows which CI checks a review reads as evidence.</td>
               </tr>
             </tbody>
           </table>
@@ -272,55 +272,40 @@ export default function DocsConfig() {
             <a href="/docs/auto-fix">the auto-fix entry</a>.
           </p>
 
-          <h2>invariants</h2>
+          <h2>ciChecks</h2>
           <p>
-            The executable-probe field. An invariant is a behavioral property
-            paired with a shell <code>probe</code> that exits non-zero when the
-            property is violated. Where <code>reviewContext</code> is checked{' '}
-            <em>statically</em> against the diff, a probe is <em>run</em> — so it
-            can ground a bug that lives on no single changed line. A finding fires
-            only when a probe comes back RED, and that RED output stands equal to
-            a quoted diff line.
+            The reviewer never executes anything of its own — no probe, no
+            build, no test run against the diff. Where{' '}
+            <code>reviewContext</code> is checked <em>statically</em> and a
+            skill quotes a line, the strongest evidence available beyond that
+            is a CI check the repository&rsquo;s own forge already ran. This is on
+            by default: every check that ran against the commit is fair game,
+            and a concluded failure grounds a finding exactly as a quoted diff
+            line does.
           </p>
           <pre>
             <code>{`{
-  "invariants": [
-    {
-      "name": "the CLI prints usage without a network call",
-      "appliesTo": ["src/cli/**"],
-      "probe": "node dist/cli.js --help",
-      "expect": "usage: clud-bug"
-    }
-  ]
+  "ciChecks": ["build", "typecheck"]
 }`}</code>
           </pre>
           <p>
-            Each invariant carries a <code>name</code> (shown in the probe-results
-            block and any finding), one or more <code>appliesTo</code> globs over
-            the changed paths (the probe runs only when the diff hits one), the{' '}
-            <code>probe</code> command itself, and an optional <code>expect</code>{' '}
-            golden reference. Declaring at least one valid invariant is the opt-in;
-            the block is off until then. An explicit <code>enabled: false</code>{' '}
-            on the wrapper form is a kill-switch that retains the set while turning
-            probes off:
+            An array narrows the reviewer to those named checks — useful for a
+            repo with a flaky job, or a deploy preview that fails by design.
+            Leave the key out and every check is read. Set it to an explicit
+            empty array and the reviewer reads none of them; that is the only
+            way to switch this off, and a repo that does is choosing to have
+            its reviews reason about code without knowing whether it runs.
           </p>
-          <pre>
-            <code>{`{
-  "invariants": {
-    "enabled": false,
-    "list": [ { "name": "…", "appliesTo": ["…"], "probe": "…" } ]
-  }
-}`}</code>
-          </pre>
           <p>
-            Probes run only on a pull request, and only on trusted work — the
-            reviewer never executes a probe exercised by an untrusted diff. The
-            config and its gate live in{' '}
-            <a href={`${REPO_URL}/blob/main/src/core/invariants.ts`} rel="noopener">
-              src/core/invariants.ts
+            A check that has not finished is not a check that passed — the
+            reviewer reports what it covers as <code>unverified</code> rather
+            than clean, and never blocks waiting for it. The config and its
+            gate live in{' '}
+            <a href={`${REPO_URL}/blob/main/src/core/ci-checks.ts`} rel="noopener">
+              src/core/ci-checks.ts
             </a>
-            ; why RED output grounds a finding as firmly as a quoted line is the
-            subject of <a href="/docs/multi-pass">the multi-pass entry</a>.
+            ; why a failed check grounds a finding as firmly as a quoted line
+            is the subject of <a href="/docs/multi-pass">the multi-pass entry</a>.
           </p>
         </div>
 

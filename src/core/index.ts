@@ -113,6 +113,7 @@ export {
   reviewFilePath,
   reviewCommitMessage,
   PROTOCOL_VERSION,
+  SPEC_VERSION,
   WRITTEN_BY,
   SEVERITY_EMOJI as REVIEW_FILE_SEVERITY_EMOJI,
   type RenderReviewFileInput,
@@ -264,10 +265,15 @@ export {
   estimateBudget,
   estimateVerifierBudget,
   __setModelCeilingForTests,
+  SUGGESTED_PER_PR_CAP_USD,
+  // Deprecated alias of SUGGESTED_PER_PR_CAP_USD — no longer a default
+  // (SPEC §4.9 requires the repo-facing ceiling to default unset). Kept for
+  // existing importers until a major (SPEC §7.5).
   DEFAULT_PER_PR_CAP_USD,
   DEFAULT_VERIFIER_PER_PR_CAP_USD,
   type BudgetEstimateInput,
   type BudgetEstimate,
+  type CappedBudgetEstimate,
   type BudgetVerdict,
   type VerifierBudgetInput,
   type VerifierBudgetEstimate,
@@ -302,17 +308,18 @@ export {
 // `post-check-run` (submit path) and `review-prompt` (§5 recipe rendering)
 // so both resolve the same notary origin (or opt-out) the same way.
 export { readNotaryConfig, DEFAULT_NOTARY_URL } from './notary-config.js';
-// Phase R (clud-bug-app #87) — executable-probe invariants: config + in-scope gate.
-// A probe is a repo-declared command that goes RED when a behavioral property is
-// violated; RED output grounds a finding equal to a quoted diff line, catching the
-// emergent / combinatorial / cross-cutting bugs the "quote-the-line" gate misses.
+// SPEC 2.0 §4.7 — CI evidence: config + in-scope gate. Replaces the deleted
+// executable-probe surface (Phase R / clud-bug-app #87, `invariants.ts`) —
+// §4.7 bans reviewer execution unconditionally, so the reproduction form is no
+// longer a command the reviewer runs; it is a CI check the repository's own
+// forge already ran, read rather than executed. ON by default; `ciChecks`
+// only narrows which checks are read (clud-bug#264).
 export {
-  readInvariantsConfig,
-  shouldRunProbes,
-  BUILTIN_INVARIANTS_CONFIG,
-  type Invariant,
-  type InvariantsConfig,
-} from './invariants.js';
+  readCiChecksConfig,
+  shouldReadCiChecks,
+  BUILTIN_CI_CHECKS_CONFIG,
+  type CiChecksConfig,
+} from './ci-checks.js';
 export {
   readReviewContext,
   extractPrContext,
@@ -335,7 +342,7 @@ export {
 // Phase Z3 — the NOTARY. `notary-bundle` owns the attestation-bundle shape (the
 // contract Z4's `/notarize` consumes) + a tolerant parser; `notary-validate` owns
 // the pure deterministic ③④⑤ checks (coverage / grounding / consistency) both the
-// local CLI and the server re-run. SPEC §10.3.3.
+// local CLI and the server re-run. SPEC §4.5, "Certifying a review".
 export {
   buildBundle,
   parseBundle,
@@ -347,6 +354,14 @@ export {
   type NotarySeverity,
   type GroundingKind,
 } from './notary-bundle.js';
+// SPEC §7.3 — the version + areas this tool declares, and the renderer for
+// the two-line declaration `--version` prints.
+export {
+  SPEC_AREAS,
+  SPEC_AREA_VOCABULARY,
+  renderVersionDeclaration,
+  type SpecArea,
+} from './spec-version.js';
 export {
   validateBundle,
   validateCoverage,
@@ -379,6 +394,7 @@ export {
   isCriticalReviewHeader,
   classifyPerSkillOutcome,
   parseFrontmatter,
+  resolveSkillKind,
   stripFrontmatter,
   type SkillDescriptor,
   type RankableSkill,
@@ -390,5 +406,4 @@ export {
   type SkillSource,
   type SkillReviewMode,
   type SkillKind,
-  type VoiceScope,
 } from './skills.js';

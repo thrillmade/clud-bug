@@ -3,9 +3,14 @@
 // merge on those surfaces too (the hosted bot already posts it).
 //
 // Usage:
-//   clud-bug post-check-run --sha <sha> --verdict clean|critical|failed|unverified \
-//     [--critical-count N] [--source local|ci] [--strict|--no-strict] \
-//     [--notary|--no-notary] [--owner O --repo R] [--details-url URL] [--dry-run]
+//   clud-bug post-check-run --sha <sha> --verdict clean|critical|failed|unverified|skipped \
+//     [--skip-reason "..."] [--critical-count N] [--source local|ci] \
+//     [--strict|--no-strict] [--notary|--no-notary] [--owner O --repo R] \
+//     [--details-url URL] [--dry-run]
+//
+// `--verdict skipped --skip-reason "..."` is the SPEC §6.5 surface: a gate that
+// could not run posts NEUTRAL and names the cause. It is what the fork-notice
+// workflow and the propagation-skip path call.
 //
 // --notary / --no-notary OVERRIDE the repo manifest's notary setting (mirrors
 // --strict/--no-strict). CI derives this from the BASE ref so a PR cannot
@@ -38,6 +43,8 @@ import { readManifest } from './skills.js';
 interface PostCheckRunArgs {
   sha?: string;
   verdict?: string;
+  /** SPEC §6.5 — why no review ran. Only meaningful with `--verdict skipped`. */
+  skipReason?: string;
   criticalCount?: number;
   source?: string;
   strict?: boolean;
@@ -314,7 +321,17 @@ export async function runPostCheckRun(args: PostCheckRunArgs): Promise<void> {
     : args.source === 'local'
       ? 'local'
       : 'ci';
-  const { conclusion, title, summary } = deriveCheck({ verdict, strictMode, criticalCount, source });
+  // SPEC §6.5 skip reason. Only read for `--verdict skipped`; a bundle can
+  // never carry one (a bundle attests to a review that RAN), so the flag is the
+  // sole source.
+  const skipReason = typeof args.skipReason === 'string' ? args.skipReason : undefined;
+  const { conclusion, title, summary } = deriveCheck({
+    verdict,
+    strictMode,
+    criticalCount,
+    source,
+    ...(skipReason !== undefined ? { skipReason } : {}),
+  });
 
   // --- resolve owner/repo (flags, else gh) ------------------------------
   let owner = typeof args.owner === 'string' ? args.owner : '';

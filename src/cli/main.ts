@@ -23,6 +23,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { detect, buildDescriptionLine } from '../core/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { reviewPrompt } from '../core/prompts.js';
+import { SPEC_VERSION, renderVersionDeclaration } from '../core/spec-version.js';
 import { SkillsClient, rankAndCap } from '../core/skills.js';
 import {
   writeSkills, writeSkill, loadBaseline, loadDesignKit,
@@ -77,6 +78,12 @@ function parseArgs(argv) {
     // time; the Action gates the merge on CI). Opt out of the hook with
     // `--no-hooks`. `--local-only` (max mode, no Action) still forces it on.
     withHooks: true,
+    // #276 (SPEC 2.0 §4.1): "Where it is enabled, the repository chooses when:
+    // after a commit, or before a push. A reviewer MUST support both, and push
+    // is the default." `null` here means "unset" and resolves to 'push' at
+    // install time; `commit` restores the pre-#276 surface; `both` installs
+    // each.
+    hookTrigger: null,
     // rc.16: `clud-bug init --with-design` installs the design-critic kit
     // (4 `kind: design` skills) and flips the off-by-default `design` block to
     // enabled so the visual review lens runs (local recipe + hosted bot).
@@ -93,6 +100,9 @@ function parseArgs(argv) {
     dryRun: false,
     branch: null,
     preset: null,
+    // SPEC §7.3 (#267): the optional `--spec-version`, which prints the spec
+    // semver alone so a routing tool can read it without parsing a sentence.
+    specVersion: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -101,6 +111,9 @@ function parseArgs(argv) {
     else if (a === '--commit') args.commit = true;
     else if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--version' || a === '-v') args.version = true;
+    // SPEC §7.3: "A tool MAY also accept `--spec-version`, printing
+    // `<spec-semver>` alone on one line."
+    else if (a === '--spec-version') args.specVersion = true;
     else if (a === '--quiet' || a === '-q') args.quiet = true;
     else if (a === '--since') args.since = argv[++i];
     else if (a === '--changed-in') args.changedIn = argv[++i];
@@ -126,6 +139,12 @@ function parseArgs(argv) {
     else if (a === '--branch') args.branch = argv[++i];
     else if (a === '--preset') args.preset = argv[++i];
     else if (a === '--trigger') args.trigger = argv[++i];
+    // #276: the `pre-push` hook forwards the range it computed for the refs
+    // being pushed. Validated by `sanitizeRange` before it reaches the recipe.
+    else if (a === '--range') args.range = argv[++i];
+    // #276: which local-review surface `init --with-hooks` installs.
+    // Defaults to `push` (SPEC 2.0 §4.1: "push is the default").
+    else if (a === '--hook-trigger') args.hookTrigger = argv[++i];
     else if (a === '--diff-size') args.diffSizeBytes = Number(argv[++i]);
     // #240 vector 2: the commit-review hook forwards this when the
     // triggering command carried `--no-verify`; `review-prompt` only renders
@@ -136,6 +155,9 @@ function parseArgs(argv) {
     // H3: `clud-bug post-check-run` flags.
     else if (a === '--sha') args.sha = argv[++i];
     else if (a === '--verdict') args.verdict = argv[++i];
+    // SPEC §6.5: `--verdict skipped` MUST say why. Free text, rendered into the
+    // neutral check's summary.
+    else if (a === '--skip-reason') args.skipReason = argv[++i];
     else if (a === '--critical-count') args.criticalCount = Number(argv[++i]);
     else if (a === '--source') args.source = argv[++i];
     else if (a === '--strict') args.strict = true;
@@ -172,7 +194,7 @@ Commands:
   configure-github <owner>/<repo>
                         One-stop repo setup: repo conveniences (squash-only merges,
                         auto-merge, delete-branch-on-merge, PR title/body squash
-                        message — ALL presets) + the SPEC §7 canonical branch
+                        message — ALL presets) + the SPEC §6.1 canonical branch
                         ruleset. \`--preset baseline|clud-bug|skdd|public-guard\`
                         picks the variant (default: skdd). Auth: GITHUB_TOKEN env
                         first, then \`gh auth token\`. Use --dry-run to print the
@@ -211,7 +233,7 @@ Commands:
                         GitHub-markdown summary comment shape. Invoked by the
                         workflow post-step; output is what \`gh pr comment\`
                         receives. Empty stdin or non-object payload exits 2.
-  select-review-event   Compute the SPEC §7.2.1 formal-review event (APPROVE /
+  select-review-event   Compute the formal-review event (APPROVE /
    --stdin               REQUEST_CHANGES / COMMENT / skip) from a structured-output
                         JSON payload + a few env-passed PR-author fields. Used by
                         the v0.7.0-rc.3 workflow post-step to post a formal
@@ -264,10 +286,14 @@ Commands:
                         HEAD when no sha is given.
   post-check-run        Post the \`clud-bug-review\` GitHub check so branch
                         protection can gate the merge (H3). --verdict
-                        clean|critical|failed --sha <sha> [--critical-count N]
+                        clean|critical|failed|unverified|skipped --sha <sha>
+                        [--critical-count N] [--skip-reason "..."]
                         [--source local|ci] [--strict|--no-strict]
                         [--notary|--no-notary] [--dry-run].
                         clean→success, critical+strict→failure, else neutral.
+                        \`skipped\` is SPEC §6.5 — no review ran (fork PR, or a
+                        propagation diff with no review surface). It posts
+                        neutral and names the cause; never a green.
                         With CLUD_BUG_NOTARY_URL set + --bundle <file>, submits a
                         notary attestation bundle instead (Phase Z); the notary
                         issues the check. Falls back to the self-attested post if
@@ -290,16 +316,26 @@ Options:
                         \`/clud-bug-review\` works in a Claude Code session —
                         reviews the current branch's PR using that session's
                         own tokens (no hosted App, no extra auth).
-  --with-hooks          (init) Scaffold a native Claude Code \`type: command\`
-                        commit-review hook into .claude/settings.json — on every
-                        \`git commit\` / \`logmind log\`, it fetches a review recipe and
-                        surfaces it to the agent (on this session's subscription)
-                        via asyncRewake. Implies --with-local-review. ON by
-                        default (ZP3) — \`init\` installs both the hook and the
-                        GitHub Action enforcer. Flag kept for explicitness.
-  --no-hooks            (init) Skip the commit-review hook — install only the
-                        GitHub Action enforcer (+ skills). --local-only overrides
-                        (max mode IS the hook, so it stays installed).
+  --with-hooks          (init) Install the local review surface. Implies
+                        --with-local-review. ON by default (ZP3) — \`init\`
+                        installs both the hook and the GitHub Action enforcer.
+                        Which surface it installs is --hook-trigger.
+  --hook-trigger <when> (init) push (default) | commit | both. SPEC 2.0 §4.1:
+                        "the repository chooses when: after a commit, or before
+                        a push … push is the default".
+                          push   — a git \`pre-push\` hook (§6.7). Runs the repo's
+                                   declared test command first, then prints the
+                                   \`review-prompt --trigger push\` command for the
+                                   range being pushed. Only a failing declared
+                                   test blocks; the review is advisory (§4.1).
+                          commit — the Claude Code \`type: command\` PostToolUse
+                                   hook in .claude/settings.json: on every
+                                   \`git commit\` / \`logmind log\` it fetches a
+                                   recipe and surfaces it via asyncRewake.
+                          both   — install each.
+  --no-hooks            (init) Skip the local review surface entirely — install
+                        only the GitHub Action enforcer (+ skills). --local-only
+                        overrides (max mode IS the hook, so it stays installed).
   --with-design         (init) Install the design-critic kit (4 \`kind: design\`
                         skills) and enable the off-by-default visual review
                         lens — renders changed UI and critiques it. Off by default.
@@ -321,7 +357,12 @@ Options:
   --branch <name>       Target branch for configure-github (default: main).
   --preset <name>       configure-github ruleset preset: baseline | clud-bug |
                         skdd | public-guard (default: skdd).
-  --trigger <ctx>       review-prompt context: commit (default) | push | pr.
+  --trigger <ctx>       review-prompt context: push (default) | commit | pr.
+                        (§4.1 makes push the default; it was commit before #276.)
+  --range <a>..<b>      review-prompt: the exact range to review on a \`push\`
+                        trigger. The pre-push hook fills this in from the refs
+                        git is about to publish; one review of the range, never
+                        one per commit.
   --repo <owner/name>   Restrict \`usage\` to a single repo. Default: all repos
                         with clud-bug-review.yml in the gh user's auth scope.
   --pr <N>              Restrict \`usage\` to a single PR.
@@ -333,7 +374,9 @@ Options:
   --scope <glob>        Limit audit to files matching <glob>; repeatable. (audit only)
   --out <path>          Where to write the audit stub. Default: audits/YYYY-MM-DD.md
   --help,-h             Show this help.
-  --version,-v          Show version.
+  --version,-v          Declare the version and areas implemented (SPEC §7.3):
+                        \`clud-bug <ver> (spec <spec-ver>)\` then an \`areas:\` line.
+  --spec-version        Print the SPEC version alone, one line.
 `;
 
 async function readPkgVersion() {
@@ -344,7 +387,18 @@ async function readPkgVersion() {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(HELP); return; }
-  if (args.version) { process.stdout.write((await readPkgVersion()) + '\n'); return; }
+  // SPEC §7.3 "What a tool declares" — two lines, the first formatted exactly
+  // `<tool-name> <tool-semver> (spec <spec-semver>)` with a REQUIRED single
+  // trailing newline, the second naming areas from the fixed vocabulary.
+  // §5.3 routes a contract change from this declaration, so a bare npm semver
+  // (what this printed before #267) leaves clud-bug unroutable.
+  if (args.specVersion) { process.stdout.write(SPEC_VERSION + '\n'); return; }
+  if (args.version) {
+    process.stdout.write(
+      renderVersionDeclaration({ toolName: 'clud-bug', toolVersion: await readPkgVersion() }),
+    );
+    return;
+  }
   if (args.quiet) setQuiet(true);
 
   const cmd = args._[0];
@@ -647,7 +701,7 @@ async function runSelectReviewEvent(args) {
     // weakest external tier and the safest default — selectReviewEvent
     // routes it to COMMENT (never APPROVE, never REQUEST_CHANGES).
     process.stderr.write(
-      `clud-bug select-review-event: unrecognized PR_AUTHOR_ASSOCIATION="${rawAssoc}" — treating as external (fail-closed per SPEC §7.2.1).\n`,
+      `clud-bug select-review-event: unrecognized PR_AUTHOR_ASSOCIATION="${rawAssoc}" — treating as external (fail-closed).\n`,
     );
     authorAssociation = 'NONE';
   }
@@ -1385,6 +1439,18 @@ async function runInit(args) {
     const selfUpdatePath = join(cwd, '.github', 'workflows', 'clud-bug-self-update.yml');
     await writeFile(selfUpdatePath, selfUpdateTmpl);
     log(`    wrote ${rel(cwd, selfUpdatePath)}`);
+
+    // Install the fork-notice workflow. SPEC §6.5: a fork pull request gets a
+    // NEUTRAL `clud-bug-review` check plus a comment saying nothing was
+    // reviewed. The review workflow physically cannot do either — GitHub gives
+    // it a read-only token on fork PRs, and a job conclusion has no `neutral`.
+    // `pull_request_target` is the one trigger that runs with the base repo's
+    // writable token, so this tiny workflow (no checkout, no secrets, no head
+    // code) owns the fork case. See templates/fork-notice.yml.tmpl's header.
+    const forkNoticeTmpl = await renderFile(join(TEMPLATES, 'fork-notice.yml.tmpl'), {});
+    const forkNoticePath = join(cwd, '.github', 'workflows', 'clud-bug-fork-notice.yml');
+    await writeFile(forkNoticePath, forkNoticeTmpl);
+    log(`    wrote ${rel(cwd, forkNoticePath)}`);
   }
 
   // v0.7.0 (Wave 6b): optional local-review slash command. Scaffolds
@@ -1417,7 +1483,44 @@ async function runInit(args) {
   // agent reviews the commit on the session's subscription, in the background.
   // (`type: command`, not `type: agent` — agent hooks get no Bash, so they could
   // never run the CLI; see hooks.ts.)
-  if (args.withHooks) {
+  // #276 — resolve WHICH local-review surface to install. SPEC 2.0 §4.1:
+  // "Where it is enabled, the repository chooses when: after a commit, or
+  // before a push. A reviewer MUST support both, and push is the default,
+  // because a commit often catches work half-done and reports defects the next
+  // commit was going to fix anyway."
+  //
+  // OPT-IN vs DEFAULT-ON, which are different questions and the SPEC answers
+  // them differently. The local review as a whole is OPT-IN — §4.1: "A review
+  // MAY also run locally, before a pull request exists, and a repository opts
+  // into that. It is off unless asked for". So `--no-hooks` still installs
+  // nothing. The TRIGGER, once opted in, defaults to push.
+  //
+  // #276 (bugfix, panel-reproduced): that push default must not apply to a
+  // repo that already opted into a DIFFERENT surface — a bare re-run of
+  // `init` (the README documents re-running init as normal: "Re-runs replace
+  // the prior block in place") was silently adding the blocking pre-push
+  // hook to a repo that had only ever asked for the commit hook. `update.ts`
+  // already guards this for its own refresh path (~line 218: "switching is
+  // an explicit `clud-bug init --hook-trigger push`") — `init` must honour
+  // that same promise. So: no explicit flag + something already installed →
+  // preserve it. An explicit --hook-trigger always overrides, and a repo
+  // with nothing installed yet still gets the push default below.
+  const explicitHookTrigger = args.hookTrigger !== null && args.hookTrigger !== undefined;
+  const existingHookTrigger = explicitHookTrigger ? null : await detectExistingHookTrigger(cwd);
+  const hookTrigger = (() => {
+    if (existingHookTrigger) {
+      warn(`No --hook-trigger passed — preserving the existing local-review surface (${existingHookTrigger}).`);
+      return existingHookTrigger;
+    }
+    const raw = args.hookTrigger === null || args.hookTrigger === undefined ? 'push' : String(args.hookTrigger);
+    if (raw === 'push' || raw === 'commit' || raw === 'both') return raw;
+    warn(`Unrecognized --hook-trigger "${raw}" (expected push|commit|both); using push.`);
+    return 'push';
+  })();
+  const wantsCommitHook = args.withHooks && (hookTrigger === 'commit' || hookTrigger === 'both');
+  const wantsPrePushHook = args.withHooks && (hookTrigger === 'push' || hookTrigger === 'both');
+
+  if (wantsCommitHook) {
     const { mergeLocalReviewHook, buildCommitReviewCommand } = await import('./hooks.js');
     // Floating @next pin (default) — the hook auto-fetches the latest recipe.
     const hookCommand = buildCommitReviewCommand();
@@ -1467,6 +1570,19 @@ async function runInit(args) {
       // best-effort — a missing/non-git cwd just means the cold-start
       // window stays open for one extra commit; never fails init.
     }
+  }
+
+  // #276 — the pre-push surface (SPEC 2.0 §6.7: "Git allows one `pre-push`
+  // hook, so ownership follows what is installed"). Writes the script into
+  // `git rev-parse --git-path hooks` (which honours core.hooksPath, and in a
+  // linked worktree resolves to the shared common dir, so one install covers
+  // every worktree of the repo).
+  //
+  // NOTE this is NOT committed and cannot be: git hooks live outside the work
+  // tree, so every clone runs `clud-bug init` (or `clud-bug update`) to get it.
+  // That is inherent to `pre-push`, not a choice made here.
+  if (wantsPrePushHook) {
+    await installPrePushHook(cwd);
   }
 
   // rc.16: --with-design installs the bundled design-critic kit (4 `kind:
@@ -1534,6 +1650,7 @@ async function runInit(args) {
             '.github/workflows/clud-bug-review.yml',
             '.github/workflows/clud-bug-audit.yml',
             '.github/workflows/clud-bug-self-update.yml',
+            '.github/workflows/clud-bug-fork-notice.yml',
           ]),
       ...agentDocs.created,
       ...agentDocs.touched,
@@ -1551,10 +1668,23 @@ async function runInit(args) {
 
   log('');
   log('Field kit assembled. Next:');
+  // #276 — describe the surface that was ACTUALLY installed. Saying "on every
+  // commit" when a pre-push hook was written is the kind of claim this project
+  // treats as a defect, not a wording nit.
+  const localSurfaceLine =
+    wantsCommitHook && wantsPrePushHook
+      ? 'both the pre-push hook and the commit-review hook'
+      : wantsPrePushHook
+        ? 'a git pre-push hook (SPEC §4.1 makes push the default trigger)'
+        : 'the commit-review hook';
   if (args.localOnly) {
     log('  Max mode — reviews run inside your Claude Code session on your own');
-    log('  subscription. No API key, no GitHub Action, no per-review bill. On every');
-    log('  commit the hook surfaces a review recipe; or run /clud-bug-review on demand.');
+    log('  subscription. No API key, no GitHub Action, no per-review bill.');
+    log(`  Installed: ${localSurfaceLine}; or run /clud-bug-review on demand.`);
+    if (wantsPrePushHook) {
+      log('  The pre-push hook lives in .git/hooks — it is NOT committed, so every');
+      log('  fresh clone needs `clud-bug init` (or `clud-bug update`) again.');
+    }
     if (!args.commit) {
       log('  → git add .claude && git commit && git push');
     } else {
@@ -1562,11 +1692,12 @@ async function runInit(args) {
     }
   } else {
     if (args.withHooks) {
-      log('  Both review surfaces installed: the commit-review hook (reviews on your');
-      log('  Claude Code session at commit time) AND the GitHub Action enforcer (gates');
-      log('  the merge on CI). Pass --no-hooks to install only the Action.');
+      log(`  Both review surfaces installed: the local one (${localSurfaceLine}, on your`);
+      log('  Claude Code session) AND the GitHub Action enforcer (gates the merge on');
+      log('  CI). Pass --no-hooks to install only the Action, or --hook-trigger to');
+      log('  choose push (default) / commit / both.');
     } else {
-      log('  GitHub Action enforcer installed (--no-hooks: no commit-review hook).');
+      log('  GitHub Action enforcer installed (--no-hooks: no local review hook).');
     }
     log('  1. Set ANTHROPIC_API_KEY in your repo secrets:');
     log('     Settings → Secrets and variables → Actions → New repository secret');
@@ -2468,6 +2599,108 @@ function setQuiet(flag) { QUIET = !!flag; }
 function log(msg) { if (!QUIET) process.stdout.write(msg + '\n'); }
 function ok(msg) { process.stdout.write('ok ' + msg + '\n'); }
 function warn(msg) { process.stderr.write(`  ! ${msg}\n`); }
+
+/**
+ * #276 (bugfix) — detect which local-review surface(s) are ALREADY
+ * installed, so a bare re-run of `init` (no explicit --hook-trigger) can
+ * preserve them instead of falling through to the 'push' default. Mirrors
+ * the detection `update.ts`'s refresh guard uses (step 5c/5d, ~line
+ * 202-243): a commit hook is `.claude/settings.json` containing
+ * CLUD_BUG_HOOK_MARKER; a pre-push hook is the git pre-push file containing
+ * CLUD_BUG_PREPUSH_MARKER. Returns 'commit' | 'push' | 'both', or null when
+ * neither is present — a fresh repo, where the caller keeps the documented
+ * push default.
+ */
+async function detectExistingHookTrigger(cwd) {
+  const { CLUD_BUG_HOOK_MARKER, CLUD_BUG_PREPUSH_MARKER, PREPUSH_HOOK_FILE } = await import('./hooks.js');
+
+  let hasCommitHook = false;
+  try {
+    const settings = await readFile(join(cwd, '.claude', 'settings.json'), 'utf8');
+    hasCommitHook = settings.includes(CLUD_BUG_HOOK_MARKER);
+  } catch {
+    hasCommitHook = false; // no settings.json yet
+  }
+
+  let hasPrePushHook = false;
+  const hooksDirResult = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd, encoding: 'utf8' });
+  if (hooksDirResult.status === 0) {
+    try {
+      const prePush = await readFile(join(cwd, hooksDirResult.stdout.trim(), PREPUSH_HOOK_FILE), 'utf8');
+      hasPrePushHook = prePush.includes(CLUD_BUG_PREPUSH_MARKER);
+    } catch {
+      hasPrePushHook = false; // no pre-push hook file yet
+    }
+  }
+
+  if (hasCommitHook && hasPrePushHook) return 'both';
+  if (hasCommitHook) return 'commit';
+  if (hasPrePushHook) return 'push';
+  return null;
+}
+
+/**
+ * #276 — write the git `pre-push` hook (SPEC 2.0 §6.7).
+ *
+ * The fs counterpart of `hooks.ts:planPrePushInstall`, which owns every
+ * decision; this only performs the one it returns. Mirrors the commit hook's
+ * install contract (`main.ts` → `mergeLocalReviewHook`): idempotent, never
+ * clobbers content clud-bug did not write, and never fails `init`.
+ *
+ * `git rev-parse --git-path hooks` — not a hardcoded `.git/hooks` — because it
+ * honours `core.hooksPath` and, inside a linked worktree, resolves to the
+ * SHARED common dir (git runs one pre-push per repo, not per worktree). Same
+ * reasoning as #240 vector 1 for the commit hook's bookkeeping.
+ */
+async function installPrePushHook(cwd) {
+  const { buildPrePushHookScript, planPrePushInstall, PREPUSH_HOOK_FILE } = await import('./hooks.js');
+  const { chmod, rename, stat } = await import('node:fs/promises');
+
+  const hooksDirResult = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd, encoding: 'utf8' });
+  if (hooksDirResult.status !== 0) {
+    warn('Not a git repository (or git unavailable) — skipped the pre-push review hook.');
+    return;
+  }
+  // `--git-path` yields a path relative to the repo root; resolve against cwd.
+  const hooksDir = join(cwd, hooksDirResult.stdout.trim());
+  const hookPath = join(hooksDir, PREPUSH_HOOK_FILE);
+
+  let existing;
+  try {
+    existing = await readFile(hookPath, 'utf8');
+  } catch {
+    existing = undefined; // no pre-push hook yet
+  }
+  let chainedExists = false;
+  try {
+    const { PREPUSH_CHAINED_FILE } = await import('./hooks.js');
+    await stat(join(hooksDir, PREPUSH_CHAINED_FILE));
+    chainedExists = true;
+  } catch {
+    chainedExists = false;
+  }
+
+  const plan = planPrePushInstall({ existing, chainedExists, script: buildPrePushHookScript() });
+  if (plan.action === 'skip') {
+    warn(`Skipped the pre-push review hook — ${plan.reason}`);
+    return;
+  }
+  try {
+    await mkdir(hooksDir, { recursive: true });
+    if (plan.action === 'chain') {
+      // Move, never delete: a hook we cannot read is still somebody's gate.
+      await rename(hookPath, join(hooksDir, plan.moveExistingTo));
+    }
+    await writeFile(hookPath, plan.content);
+    await chmod(hookPath, 0o755);
+    log(`    wrote ${rel(cwd, hookPath)} (pre-push review hook — ${plan.reason})`);
+  } catch (err) {
+    // Never fail `init` over a hook: an unwritable hooks dir (a read-only
+    // .git, a hooksPath pointing somewhere managed) leaves the repo exactly as
+    // it was, and the GitHub Action path is unaffected.
+    warn(`Could not write the pre-push review hook (${err && err.message}) — left the repo untouched.`);
+  }
+}
 
 // Export `main()` so the entry-point shim at bin/clud-bug.js can drive
 // the dispatch. The shim wraps the catch + process.exit error path.
