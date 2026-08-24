@@ -22,3 +22,16 @@
 
 ---
 
+## 2026-08-24 12:07 - Fix #296 critical: bare `clud-bug init` re-run preserves the already-installed hook-trigger surface
+
+**Reasoning:** runInit resolved hookTrigger from CLI args alone with a hardcoded 'push' default, ignoring what was already installed; a bare re-run (README documents re-running init as normal: 'Re-runs replace the prior block in place') on a repo that had opted into --hook-trigger commit therefore silently grew an unrequested BLOCKING pre-push hook. update.ts's refresh guard (~line 218) already promised the opposite ('switching is an explicit clud-bug init --hook-trigger push') but init never enforced that promise
+
+**Alternatives considered:** Drop the 'push' default entirely, requiring an explicit --hook-trigger on every init, Persist the chosen trigger as a new manifest field instead of re-detecting it
+
+**Implications:**
+- An explicit --hook-trigger still always overrides the detected surface, so --hook-trigger push after a commit-only install intentionally adds the pre-push hook
+- A fresh repo with no prior install is unaffected and keeps the SPEC 2.0 section 4.1 push default
+- Detection mirrors update.ts's guard exactly: CLUD_BUG_HOOK_MARKER in .claude/settings.json for the commit hook, CLUD_BUG_PREPUSH_MARKER in the git pre-push hook file for the push hook
+
+---
+

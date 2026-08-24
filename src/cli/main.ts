@@ -1494,7 +1494,24 @@ async function runInit(args) {
   // MAY also run locally, before a pull request exists, and a repository opts
   // into that. It is off unless asked for". So `--no-hooks` still installs
   // nothing. The TRIGGER, once opted in, defaults to push.
+  //
+  // #276 (bugfix, panel-reproduced): that push default must not apply to a
+  // repo that already opted into a DIFFERENT surface — a bare re-run of
+  // `init` (the README documents re-running init as normal: "Re-runs replace
+  // the prior block in place") was silently adding the blocking pre-push
+  // hook to a repo that had only ever asked for the commit hook. `update.ts`
+  // already guards this for its own refresh path (~line 218: "switching is
+  // an explicit `clud-bug init --hook-trigger push`") — `init` must honour
+  // that same promise. So: no explicit flag + something already installed →
+  // preserve it. An explicit --hook-trigger always overrides, and a repo
+  // with nothing installed yet still gets the push default below.
+  const explicitHookTrigger = args.hookTrigger !== null && args.hookTrigger !== undefined;
+  const existingHookTrigger = explicitHookTrigger ? null : await detectExistingHookTrigger(cwd);
   const hookTrigger = (() => {
+    if (existingHookTrigger) {
+      warn(`No --hook-trigger passed — preserving the existing local-review surface (${existingHookTrigger}).`);
+      return existingHookTrigger;
+    }
     const raw = args.hookTrigger === null || args.hookTrigger === undefined ? 'push' : String(args.hookTrigger);
     if (raw === 'push' || raw === 'commit' || raw === 'both') return raw;
     warn(`Unrecognized --hook-trigger "${raw}" (expected push|commit|both); using push.`);
@@ -2582,6 +2599,45 @@ function setQuiet(flag) { QUIET = !!flag; }
 function log(msg) { if (!QUIET) process.stdout.write(msg + '\n'); }
 function ok(msg) { process.stdout.write('ok ' + msg + '\n'); }
 function warn(msg) { process.stderr.write(`  ! ${msg}\n`); }
+
+/**
+ * #276 (bugfix) — detect which local-review surface(s) are ALREADY
+ * installed, so a bare re-run of `init` (no explicit --hook-trigger) can
+ * preserve them instead of falling through to the 'push' default. Mirrors
+ * the detection `update.ts`'s refresh guard uses (step 5c/5d, ~line
+ * 202-243): a commit hook is `.claude/settings.json` containing
+ * CLUD_BUG_HOOK_MARKER; a pre-push hook is the git pre-push file containing
+ * CLUD_BUG_PREPUSH_MARKER. Returns 'commit' | 'push' | 'both', or null when
+ * neither is present — a fresh repo, where the caller keeps the documented
+ * push default.
+ */
+async function detectExistingHookTrigger(cwd) {
+  const { CLUD_BUG_HOOK_MARKER, CLUD_BUG_PREPUSH_MARKER, PREPUSH_HOOK_FILE } = await import('./hooks.js');
+
+  let hasCommitHook = false;
+  try {
+    const settings = await readFile(join(cwd, '.claude', 'settings.json'), 'utf8');
+    hasCommitHook = settings.includes(CLUD_BUG_HOOK_MARKER);
+  } catch {
+    hasCommitHook = false; // no settings.json yet
+  }
+
+  let hasPrePushHook = false;
+  const hooksDirResult = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd, encoding: 'utf8' });
+  if (hooksDirResult.status === 0) {
+    try {
+      const prePush = await readFile(join(cwd, hooksDirResult.stdout.trim(), PREPUSH_HOOK_FILE), 'utf8');
+      hasPrePushHook = prePush.includes(CLUD_BUG_PREPUSH_MARKER);
+    } catch {
+      hasPrePushHook = false; // no pre-push hook file yet
+    }
+  }
+
+  if (hasCommitHook && hasPrePushHook) return 'both';
+  if (hasCommitHook) return 'commit';
+  if (hasPrePushHook) return 'push';
+  return null;
+}
 
 /**
  * #276 — write the git `pre-push` hook (SPEC 2.0 §6.7).

@@ -121,6 +121,46 @@ test('#276: an unrecognized --hook-trigger warns and falls back to push, never s
   assert.match(await readFile(prePushPath(dir), 'utf8'), /clud-bug-pre-push-review/);
 });
 
+// #276 bugfix (panel-reproduced, this repo's own PR #296): `runInit` resolved
+// `hookTrigger` from CLI args alone, defaulting to 'push' with no regard for
+// what was already installed. A bare re-run of `init` — which the README
+// documents as normal ("Re-runs replace the prior block in place") — on a
+// repo that had opted into ONLY the commit hook therefore silently grew an
+// unrequested BLOCKING pre-push surface. `update.ts`'s refresh guard (~line
+// 218) already promises the opposite ("switching is an explicit `clud-bug
+// init --hook-trigger push`"); these two tests pin `init` to that promise.
+test('#276 (bugfix): a bare re-init on a commit-only repo must NOT silently add the pre-push surface', async () => {
+  const dir = await makeRepoDir('clud-bug-preserve-commit-');
+  // Opt into commit-only review, explicitly.
+  assert.equal(runInit(dir, ['--with-hooks', '--hook-trigger', 'commit']).status, 0);
+  assert.equal(await exists(join(dir, '.claude', 'settings.json')), true);
+  assert.equal(await exists(prePushPath(dir)), false);
+
+  // Bare re-run, no flags at all — must PRESERVE the commit-only surface.
+  const r = runInit(dir, []);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(
+    await exists(prePushPath(dir)),
+    false,
+    'a bare re-run must not add the blocking pre-push surface to a commit-only repo',
+  );
+  const settings = JSON.parse(await readFile(join(dir, '.claude', 'settings.json'), 'utf8'));
+  assert.equal(settings.hooks.PostToolUse[0].hooks[0].type, 'command'); // commit hook still there
+  // The preserved choice is reported, not silent — and warn() survives the
+  // --quiet the test harness runs under (CLUD_BUG_QUIET=1 in `runInit` above).
+  assert.match(r.stderr, /preserving the existing local-review surface \(commit\)/);
+});
+
+test('#276: an explicit --hook-trigger push on a commit-only repo DOES add the pre-push surface (override wins)', async () => {
+  const dir = await makeRepoDir('clud-bug-override-push-');
+  assert.equal(runInit(dir, ['--with-hooks', '--hook-trigger', 'commit']).status, 0);
+  assert.equal(await exists(prePushPath(dir)), false);
+
+  const r = runInit(dir, ['--hook-trigger', 'push']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(await readFile(prePushPath(dir), 'utf8'), /clud-bug-pre-push-review/);
+});
+
 test('#276: init preserves a foreign pre-push hook by chaining to it (SPEC §6.7)', async () => {
   const dir = await makeRepoDir('clud-bug-chain-');
   const foreign = '#!/bin/sh\n# somebody else was here\nmake lint\n';
