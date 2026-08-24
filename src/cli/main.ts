@@ -1688,8 +1688,43 @@ async function runInit(args) {
       ...agentDocs.created,
       ...agentDocs.touched,
     ];
-    spawnSync('git', ['add', ...toAdd], { cwd, stdio: 'inherit' });
-    spawnSync('git', ['commit', '-m', 'Add clud-bug 🐛 — a field guide to specimens crawling your code'], { cwd, stdio: 'inherit' });
+    // CI root-cause fix (#321 follow-up) — these exit statuses used to go
+    // unchecked, so a failed `git commit` (most commonly: no git identity
+    // configured anywhere reachable — no repo/global/system user.email or
+    // user.name, and the OS-level auto-detect fallback some platforms have
+    // either isn't available or is refused) was silently swallowed: `init
+    // --commit` reported success while nothing was actually committed. Warn
+    // rather than abort the whole init — the scaffolding above this point is
+    // already written and useful even if this optional convenience step
+    // can't finish; §6.5's "a gate that cannot run MUST report that it could
+    // not" is the same discipline applied to a non-gate step.
+    // CI root-cause fix (#321 follow-up) — these exit statuses used to go
+    // unchecked, so a failed `git commit` (most commonly: no git identity
+    // configured anywhere reachable — no repo/global/system user.email or
+    // user.name, and the OS-level auto-detect fallback some platforms have
+    // either isn't available or is refused) was silently swallowed: `init
+    // --commit` reported success while nothing was actually committed. Warn
+    // rather than abort the whole init — the scaffolding above this point is
+    // already written and useful even if this optional convenience step
+    // can't finish; §6.5's "a gate that cannot run MUST report that it could
+    // not" is the same discipline applied to a non-gate step.
+    const addResult = spawnSync('git', ['add', ...toAdd], { cwd, stdio: 'inherit' });
+    if (addResult.status !== 0) {
+      warn(`git add failed (exit ${addResult.status}) — nothing staged; run git add/commit yourself.`);
+    } else {
+      const commitResult = spawnSync(
+        'git',
+        ['commit', '-m', 'Add clud-bug 🐛 — a field guide to specimens crawling your code'],
+        { cwd, stdio: 'inherit' },
+      );
+      if (commitResult.status !== 0) {
+        warn(
+          `git commit failed (exit ${commitResult.status}) — nothing was committed. Often a missing git ` +
+          'identity: run "git config user.email <you>" and "git config user.name <you>", then commit ' +
+          '.claude (and the workflow files, if installed) yourself.',
+        );
+      }
+    }
   }
 
   // Offer to enable required_conversation_resolution on the default

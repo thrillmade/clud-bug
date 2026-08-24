@@ -33,6 +33,27 @@ async function makeRepoDir(prefix) {
   const dir = await mkdtemp(join(tmpdir(), prefix));
   const r = spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
+  // CI root-cause fix (#321 follow-up): repo-LOCAL identity, matching the
+  // makeRepo() helper in hooks.test.js / pre-push-hook.test.js. runInit()
+  // below spawns `clud-bug init` with HOME redirected to `dir` (isolating it
+  // from this machine's real ~/.gitconfig), so `git commit` inside init's
+  // --commit step had no configured identity to fall back on anywhere except
+  // git's own OS-level auto-detect from username+hostname — which silently
+  // SUCCEEDS on macOS (a printed advisory, commit still made) but FAILS HARD
+  // on a fresh Ubuntu Actions runner ("unable to auto-detect email address").
+  // main.ts's --commit step never checked git commit's exit status (fixed
+  // separately in main.ts), so the CLI reported success while `dir` was left
+  // with ZERO commits — an unborn `main`. The two e2e tests below then clone
+  // that empty repo and expect a resolvable default branch; git itself can't
+  // give them one ("warning: You appear to have cloned an empty repository"),
+  // so the pre-push hook's own honest "no default-branch ref" fail-open
+  // fired instead of the declared-tests output they assert on — CI-only,
+  // because only CI's git lacks the auto-detect fallback macOS has. Repo-
+  // local config is read regardless of $HOME, so this removes the dependency
+  // on host git's identity auto-detection entirely, on every platform.
+  spawnSync('git', ['config', 'user.email', 'test@test'], { cwd: dir });
+  spawnSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+  spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: dir });
   return dir;
 }
 
@@ -104,6 +125,40 @@ test('init --hook-trigger commit (no pre-push surface) never asks either — sam
   const manifest = await readManifest(dir);
   assert.equal(manifest.tests, undefined);
   assert.doesNotMatch(r.stderr, /BLOCKS a push with no declaration/);
+});
+
+// CI root-cause fix (#321 follow-up) — main.ts's --commit step used to run
+// `git add`/`git commit` via spawnSync without ever checking their exit
+// status, so a failed commit (the CI failure investigated above: no git
+// identity reachable) was silently swallowed — init reported success while
+// nothing was committed. A pre-commit hook that always refuses is a
+// deterministic, platform-independent way to force `git commit` to fail —
+// orthogonal to the identity/auto-detect variance that made the ORIGINAL
+// failure mode CI-only and hard to reproduce locally.
+test('init --commit warns (never silently succeeds) when git commit itself fails', async () => {
+  const dir = await makeRepoDir('clud-bug-tests-commitfail-');
+  const hooksDir = join(dir, '.git', 'hooks');
+  await mkdir(hooksDir, { recursive: true });
+  await writeFile(join(hooksDir, 'pre-commit'), '#!/bin/sh\nexit 1\n');
+  await chmod(join(hooksDir, 'pre-commit'), 0o755);
+
+  const r = runInit(dir, ['--commit']);
+  // The optional --commit step failing must not abort init itself — the
+  // scaffolding above it is already written and useful on its own.
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /git commit failed/);
+  assert.match(r.stderr, /nothing was committed/);
+
+  // The manifest was still written even though the commit step failed...
+  const manifest = await readManifest(dir);
+  assert.equal(manifest.tests, 'none');
+  // ...but nothing was actually committed — init did NOT silently claim
+  // success. A revert of the exit-status check makes this assertion fail:
+  // the old code left the same warn()-less silence this whole test exists
+  // to catch, so `git log` here would need to explicitly re-detect the
+  // absence some other way — this is the direct, positive check instead.
+  const log = spawnSync('git', ['log', '--oneline'], { cwd: dir, encoding: 'utf8' });
+  assert.notEqual(log.status, 0, 'expected an unborn (commit-less) repo — the failed commit must not be silently treated as done');
 });
 
 test('a SECOND init never re-asks once "tests" is already declared — idempotent, not nagging', async () => {
