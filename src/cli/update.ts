@@ -1,11 +1,15 @@
-import { readFile, writeFile, mkdir, stat, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat, rm, chmod } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { reviewPrompt } from '../core/prompts.js';
 import { detect, buildDescriptionLine } from '../core/detect.js';
 import { loadBaseline, readManifest, writeManifest, type LoadBaselineOptions } from './skills.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
-import { mergeLocalReviewHook, buildCommitReviewCommand, CLUD_BUG_HOOK_MARKER } from './hooks.js';
+import {
+  mergeLocalReviewHook, buildCommitReviewCommand, CLUD_BUG_HOOK_MARKER,
+  buildPrePushHookScript, CLUD_BUG_PREPUSH_MARKER, PREPUSH_HOOK_FILE,
+} from './hooks.js';
 
 // Re-render the user's workflow + refresh baseline skills using the
 // templates / baseline shipped with the currently-installed clud-bug.
@@ -206,6 +210,33 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
           path: settingsPath,
           label: 'commit-review hook',
           reason: 'settings.json is not valid JSON; left untouched',
+        });
+      }
+    }
+  }
+
+  // 5d (#276). Refresh the git `pre-push` review hook in place — ONLY when our
+  //     marker is already there. `update` refreshes what is installed; it never
+  //     adds a surface the repo did not opt into (SPEC 2.0 §4.1: the local
+  //     review "is off unless asked for"). A repo on the pre-#276 commit-only
+  //     surface therefore keeps it and gains nothing here — switching is an
+  //     explicit `clud-bug init --hook-trigger push`.
+  const hooksDirResult = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd, encoding: 'utf8' });
+  if (hooksDirResult.status === 0) {
+    const prePushPath = join(cwd, hooksDirResult.stdout.trim(), PREPUSH_HOOK_FILE);
+    const priorPrePush = await readSafe(prePushPath);
+    if (priorPrePush && priorPrePush.includes(CLUD_BUG_PREPUSH_MARKER)) {
+      await maybeWrite(prePushPath, buildPrePushHookScript(), changed, unchanged, 'pre-push review hook');
+      // A refresh must not silently drop the executable bit — git skips a
+      // non-executable hook without a word, which is the silent-degradation
+      // failure §6.5 exists to forbid.
+      try {
+        await chmod(prePushPath, 0o755);
+      } catch {
+        skipped.push({
+          path: prePushPath,
+          label: 'pre-push review hook',
+          reason: 'could not restore the executable bit; git will skip the hook until you chmod +x it',
         });
       }
     }

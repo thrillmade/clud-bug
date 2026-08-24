@@ -1,0 +1,37 @@
+← back to [docs/timeline.md](../timeline.md)
+
+## 2026-08-07 17:45 - Fix #276: build the pre-push local review surface SPEC 2.0 makes the default trigger
+
+**Reasoning:** git grep -inE 'pre-push|prePush|pre_push' origin/main -- src/ templates/ returned 0 hits (control probe PostToolUse -> 2 files, so the search worked) while SPEC 2.0 §4.1 says 'A reviewer MUST support both, and push is the default' and §6.7 names the mechanism ('Git allows one pre-push hook, so ownership follows what is installed'). init now writes a git pre-push hook in §6.7's fixed order: chained foreign hook first (stdin replayed, verdict honoured), then the declared test command read from the DEFAULT BRANCH through a real JSON parser (a failure blocks and the model does not run), then the review directive naming the exact range. Also fixes a live §4.3 violation: --trigger push fell through to the PR recipe, which tells the agent to post a comment
+
+**Alternatives considered:** A Claude Code PreToolUse hook on Bash(git push *) — rejected: §6.7 names 'pre-push' by name, a settings.json hook never fires for a terminal push, and a git hook already reaches the agent because git push is a Bash tool call whose stderr lands in the tool result. Fetching the recipe inside the hook like the commit hook does — rejected: Claude Code runs the commit hook detached (async: true, asyncRewake: true), git offers no equivalent, so a hung registry call would stall the very command §4.1 says must not be blocked; the hook prints the command instead and does zero network I/O
+
+**Implications:**
+- init --with-hooks now defaults to the pre-push surface instead of the commit hook (--hook-trigger commit|both restores/adds it), and bare review-prompt defaults to --trigger push. NOT BUILT, deliberately: the rest of §6.7's declaration matrix — suite detection, 'Setup MUST ask and MUST NOT complete without an answer', and the three rows that BLOCK on a missing/contradicted declaration. Shipping block-on-missing before the setup flow that collects the declaration would wedge every repo that upgrades, so a missing declaration allows and REPORTS (§6.5) instead
+
+---
+
+## 2026-08-07 17:46 - Regen derived docs for the #276 pre-push surface
+
+**Reasoning:** check-derived-docs regenerates and compares, so timeline.md and file-structure.md must match what the generator produces on this branch
+
+**Alternatives considered:** let the regen bot push it — it lands ~1:1 with commits and would just add a round trip
+
+**Implications:**
+- the file-structure tree root was regenerated as the WORKTREE directory name (wf_14b1bd88-5b1-2) and had to be corrected back to clud-bug by hand; CI generates it from a dir actually named clud-bug
+
+---
+
+## 2026-08-24 12:07 - Fix #296 critical: bare `clud-bug init` re-run preserves the already-installed hook-trigger surface
+
+**Reasoning:** runInit resolved hookTrigger from CLI args alone with a hardcoded 'push' default, ignoring what was already installed; a bare re-run (README documents re-running init as normal: 'Re-runs replace the prior block in place') on a repo that had opted into --hook-trigger commit therefore silently grew an unrequested BLOCKING pre-push hook. update.ts's refresh guard (~line 218) already promised the opposite ('switching is an explicit clud-bug init --hook-trigger push') but init never enforced that promise
+
+**Alternatives considered:** Drop the 'push' default entirely, requiring an explicit --hook-trigger on every init, Persist the chosen trigger as a new manifest field instead of re-detecting it
+
+**Implications:**
+- An explicit --hook-trigger still always overrides the detected surface, so --hook-trigger push after a commit-only install intentionally adds the pre-push hook
+- A fresh repo with no prior install is unaffected and keeps the SPEC 2.0 section 4.1 push default
+- Detection mirrors update.ts's guard exactly: CLUD_BUG_HOOK_MARKER in .claude/settings.json for the commit hook, CLUD_BUG_PREPUSH_MARKER in the git pre-push hook file for the push hook
+
+---
+

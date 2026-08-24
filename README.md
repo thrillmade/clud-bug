@@ -43,6 +43,52 @@ The naturalist arrives at your repo, surveys the habitat, and assembles a field 
 6. **Briefs other agents** by adding a `<!-- clud-bug-start -->` block to `AGENTS.md` — and only to `AGENTS.md` (creating it if missing; it's the cross-tool canonical). Per-tool files that already exist — `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `.cursor/rules/*.md` — get a one-line redirect stub pointing back at `AGENTS.md`, never a copy of the instructions. One source, seven pointers, one drift rate. If a file already redirects (a `@AGENTS.md` import, logmind's stub, or any link to `AGENTS.md`) it's left untouched, and anything you hand-wrote around our block is preserved. Re-runs replace the block in `AGENTS.md` in place. Files you didn't already have are left uncreated — no proliferating stubs.
 7. **Offers to enable `required_conversation_resolution`** on your default branch. Clud Bug auto-resolves its own review threads when fixes land — but that only gates merges when conversation-resolution is required. Init detects the current state via `gh`, prompts to enable (auto-yes with `--accept-all`), and degrades to an advisory message if you lack admin perms / `gh` isn't installed / the branch has no base protection rule. Pass `--no-set-protection` to skip the prompt entirely — for repos that manage branch protection via ruleset or org policy.
 
+## The local review, before you push
+
+Alongside the GitHub Action, `clud-bug init` installs a **local** review surface that runs
+inside your Claude Code session on your own subscription — no API key, no per-review bill.
+
+It runs **before a push, not before a commit**. Work in progress is red on purpose, and a
+signal that always fires is one nobody reads. A push is also where a block is cheap: the
+commit already exists, so refusing costs the publish and nothing else.
+
+`init` writes a git `pre-push` hook that, in this fixed order:
+
+1. **Runs your declared test command** — the mechanical check first. A failure blocks the
+   push, and the review does not run: a change with failing tests has its answer already.
+2. **Prints the review command** for the exact range you are pushing:
+   `npx clud-bug review-prompt --trigger push --range <base>..<head>`. One review of the
+   whole range, never one per commit.
+
+Only a failing declared test command blocks. The review itself is **advisory** — it never
+blocks the push, and there is no bypass flag to learn, because nothing needs bypassing. If
+the hook can't resolve its configuration (no remote, no default branch, no `node`), it says
+so on stderr and lets the push through. A broken gate must never wedge a push.
+
+Declare your test command on your **default branch** (it is read from there, not from your
+working tree — so editing it locally changes nothing until it's merged and reviewed):
+
+```jsonc
+// .claude/skills/.clud-bug.json
+{ "tests": "npm test", ... }   // or "none" if the repo genuinely has no suite
+```
+
+With no declaration the hook skips the mechanical check and says why. Choosing a surface:
+
+| Flag | Installs |
+|---|---|
+| `--hook-trigger push` (default) | the git `pre-push` hook above |
+| `--hook-trigger commit` | a Claude Code `PostToolUse` hook that reviews each `git commit` / `logmind log` |
+| `--hook-trigger both` | both |
+| `--no-hooks` | neither — the GitHub Action only |
+
+Git allows one `pre-push` hook. If you already have one, clud-bug preserves it as
+`pre-push.clud-bug-chained` and **invokes it first**, honouring its verdict. It is never
+overwritten, and if that would be ambiguous, clud-bug declines to install rather than guess.
+
+The hook lives in `.git/hooks`, which is not committed — every fresh clone needs
+`clud-bug init` (or `clud-bug update`) again. That's inherent to git hooks, not a choice.
+
 ## CLI options
 
 ```
@@ -51,6 +97,9 @@ npx clud-bug init [options]
   --offline             Skip skills.sh; install only the bundled baseline skills.
   --accept-all,-y       Accept the recommended skill set (and the
                         branch-protection prompt) without prompting.
+  --hook-trigger <when> Which local review surface to install:
+                        push (default) | commit | both.
+  --no-hooks            Install no local review surface (Action only).
   --no-set-protection   Skip the prompt that offers to enable
                         required_conversation_resolution on the default
                         branch. For repos that manage branch protection
