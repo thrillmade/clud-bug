@@ -7,6 +7,7 @@ import {
   detect,
   buildDescriptionLine,
   fileHistogram,
+  detectPackageTestScript,
 } from '../src/core/detect.js';
 
 async function makeRepo(files) {
@@ -161,4 +162,60 @@ test('buildDescriptionLine adds trailing period iff missing (preserved across #8
     name: null, description: 'Needs one', primaryLanguage: null, searchTerms: [],
   });
   assert.match(noPeriod, /Needs one\.$/);
+});
+
+// #319 — §6.7 setup-time suite detection: the `init`-time suggestion helper.
+// Mirrors PKG_TEST_SCRIPT_PARSER in src/cli/hooks.ts (the base-ref, push-time
+// twin) — same placeholder rule, different read source.
+
+test('detectPackageTestScript: returns a real test script, trimmed', async () => {
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'x', scripts: { test: '  vitest run  ' } }),
+  });
+  try {
+    assert.equal(await detectPackageTestScript(dir), 'vitest run');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('detectPackageTestScript: treats the npm-init placeholder as no script at all', async () => {
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({
+      name: 'x',
+      scripts: { test: 'echo "Error: no test specified" && exit 1' },
+    }),
+  });
+  try {
+    assert.equal(await detectPackageTestScript(dir), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('detectPackageTestScript: returns null when there is no package.json', async () => {
+  const dir = await makeRepo({});
+  try {
+    assert.equal(await detectPackageTestScript(dir), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('detectPackageTestScript: returns null when package.json has no scripts.test', async () => {
+  const dir = await makeRepo({ 'package.json': JSON.stringify({ name: 'x', scripts: { build: 'tsc' } }) });
+  try {
+    assert.equal(await detectPackageTestScript(dir), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('detectPackageTestScript: returns null on unparseable package.json rather than throwing', async () => {
+  const dir = await makeRepo({ 'package.json': '{ not json' });
+  try {
+    assert.equal(await detectPackageTestScript(dir), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

@@ -69,6 +69,34 @@ interface PackageJson {
   description?: string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
+}
+
+// #319 (§6.7 setup-time suite detection) — the placeholder every `npm init`
+// writes. It declares nothing about the repository; a repo that never
+// touched it has no test suite in any sense §6.7 cares about. Mirrors
+// PKG_TEST_SCRIPT_PARSER in src/cli/hooks.ts, which applies the identical
+// rule from the base ref at PUSH time — this copy is the working-tree-time
+// twin, used only to SUGGEST a value during `clud-bug init`/`update`.
+const NPM_INIT_TEST_PLACEHOLDER = /^echo\s+"Error:\s*no\s*test\s*specified"\s*&&\s*exit\s*1$/i;
+
+/**
+ * A real `package.json` `scripts.test`, or `null` if there is none (missing,
+ * non-string, blank, or the `npm init` placeholder).
+ *
+ * READS THE WORKING TREE — correct for suggesting a value during `init`, but
+ * this must NEVER be used to gate a push: §6.3 requires a gate's declared
+ * state to come from the base ref, never the working tree, which is exactly
+ * what the pre-push hook itself does (see `buildPrePushHookScript` in
+ * src/cli/hooks.ts) instead of calling this function.
+ */
+export async function detectPackageTestScript(root: string): Promise<string | null> {
+  const pkg = await readJsonSafe<PackageJson>(join(root, 'package.json'));
+  const t = pkg?.scripts?.test;
+  if (typeof t !== 'string') return null;
+  const trimmed = t.trim();
+  if (!trimmed || NPM_INIT_TEST_PLACEHOLDER.test(trimmed)) return null;
+  return trimmed;
 }
 
 async function fileExists(path: string): Promise<boolean> {

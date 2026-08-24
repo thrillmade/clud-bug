@@ -33,5 +33,6 @@
   "lastUpdate": "2026-06-29T22:06:59.203Z",
   "lastUpdateVersion": "0.7.0-rc.20",
   "strictMode": true,
-  "strictSkills": []
+  "strictSkills": [],
+  "tests": "npm test"
 }

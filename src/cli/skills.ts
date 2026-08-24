@@ -250,6 +250,13 @@ export interface Manifest {
   // `readNotaryConfig`'s env-var-then-default resolution. Declared here (not
   // just read ad hoc) so the manifest shape documents the field.
   notary?: boolean;
+  // #319 — SPEC 2.0 §6.7's declaration: the command the pre-push hook's
+  // mechanical check runs, or the literal "none". Written by `clud-bug init`
+  // (which asks — §6.7: "Setup MUST ask, and MUST NOT complete without an
+  // answer") and read by `buildPrePushHookScript` FROM THE DEFAULT BRANCH,
+  // never from this file in the working tree (§6.3). Declared here so the
+  // manifest shape documents the field the way `notary` above does.
+  tests?: string;
   // Caller-set fields (pinVersion, lastUpdate, lastUpdateVersion) survive
   // merges via spread; type as an open record to keep extensibility.
   [key: string]: unknown;

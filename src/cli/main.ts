@@ -20,7 +20,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
-import { detect, buildDescriptionLine } from '../core/detect.js';
+import { detect, buildDescriptionLine, detectPackageTestScript } from '../core/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { reviewPrompt } from '../core/prompts.js';
 import { SPEC_VERSION, renderVersionDeclaration } from '../core/spec-version.js';
@@ -1620,6 +1620,39 @@ async function runInit(args) {
   if (isFreshInstall && manifest.strictMode === undefined) {
     manifest.strictMode = true;
   }
+
+  // #319 — SPEC 2.0 §6.7: "Setup MUST ask, and MUST NOT complete without an
+  // answer." Only relevant once the pre-push mechanical gate actually exists
+  // (wantsPrePushHook) — a repo with no local hook has no gate to declare
+  // for, and asking would be noise. Runs once: a manifest that already has
+  // `tests` (set by a prior init, or by hand) is never re-asked.
+  if (wantsPrePushHook && manifest.tests === undefined) {
+    const { resolveTestsDeclaration } = await import('./hooks.js');
+    const detected = await detectPackageTestScript(cwd);
+    const ask = async (q: string) => {
+      const rl = createInterface({ input, output });
+      try {
+        return await rl.question(q);
+      } finally {
+        rl.close();
+      }
+    };
+    const decision = await resolveTestsDeclaration({ acceptAll: Boolean(args.acceptAll), detected, ask });
+    // #319 CRITICAL fix: `resolveTestsDeclaration` always returns a real
+    // value now (never `null`) — the manifest is never left undeclared, so
+    // there is no longer a branch here that skips the write.
+    manifest.tests = decision.value;
+    log(`  tests declaration: "${decision.value}" (${decision.source})`);
+    if (decision.source === 'accept-all-undeclared') {
+      warn(
+        'No test suite auto-detected (--accept-all skipped the prompt) — declared "tests": "none". ' +
+        'SPEC 6.7: "no suite detected" + "none" declared is a pass, so this does not block your next ' +
+        'push. If that is wrong (the repo does have a suite), edit "tests" in ' +
+        '.claude/skills/.clud-bug.json before you push, or the hook will block on the contradiction.',
+      );
+    }
+  }
+
   await writeManifest(skillsDirPath, manifest);
 
   // Tell other agents what's installed and how to coexist with the bot.
@@ -1655,8 +1688,43 @@ async function runInit(args) {
       ...agentDocs.created,
       ...agentDocs.touched,
     ];
-    spawnSync('git', ['add', ...toAdd], { cwd, stdio: 'inherit' });
-    spawnSync('git', ['commit', '-m', 'Add clud-bug 🐛 — a field guide to specimens crawling your code'], { cwd, stdio: 'inherit' });
+    // CI root-cause fix (#321 follow-up) — these exit statuses used to go
+    // unchecked, so a failed `git commit` (most commonly: no git identity
+    // configured anywhere reachable — no repo/global/system user.email or
+    // user.name, and the OS-level auto-detect fallback some platforms have
+    // either isn't available or is refused) was silently swallowed: `init
+    // --commit` reported success while nothing was actually committed. Warn
+    // rather than abort the whole init — the scaffolding above this point is
+    // already written and useful even if this optional convenience step
+    // can't finish; §6.5's "a gate that cannot run MUST report that it could
+    // not" is the same discipline applied to a non-gate step.
+    // CI root-cause fix (#321 follow-up) — these exit statuses used to go
+    // unchecked, so a failed `git commit` (most commonly: no git identity
+    // configured anywhere reachable — no repo/global/system user.email or
+    // user.name, and the OS-level auto-detect fallback some platforms have
+    // either isn't available or is refused) was silently swallowed: `init
+    // --commit` reported success while nothing was actually committed. Warn
+    // rather than abort the whole init — the scaffolding above this point is
+    // already written and useful even if this optional convenience step
+    // can't finish; §6.5's "a gate that cannot run MUST report that it could
+    // not" is the same discipline applied to a non-gate step.
+    const addResult = spawnSync('git', ['add', ...toAdd], { cwd, stdio: 'inherit' });
+    if (addResult.status !== 0) {
+      warn(`git add failed (exit ${addResult.status}) — nothing staged; run git add/commit yourself.`);
+    } else {
+      const commitResult = spawnSync(
+        'git',
+        ['commit', '-m', 'Add clud-bug 🐛 — a field guide to specimens crawling your code'],
+        { cwd, stdio: 'inherit' },
+      );
+      if (commitResult.status !== 0) {
+        warn(
+          `git commit failed (exit ${commitResult.status}) — nothing was committed. Often a missing git ` +
+          'identity: run "git config user.email <you>" and "git config user.name <you>", then commit ' +
+          '.claude (and the workflow files, if installed) yourself.',
+        );
+      }
+    }
   }
 
   // Offer to enable required_conversation_resolution on the default
@@ -1684,6 +1752,8 @@ async function runInit(args) {
     if (wantsPrePushHook) {
       log('  The pre-push hook lives in .git/hooks — it is NOT committed, so every');
       log('  fresh clone needs `clud-bug init` (or `clud-bug update`) again.');
+      log('  SPEC 6.7: a push now BLOCKS if "tests" in .clud-bug.json is missing or');
+      log('  contradicts a detected suite — merge your declaration before your next push.');
     }
     if (!args.commit) {
       log('  → git add .claude && git commit && git push');
@@ -1696,6 +1766,10 @@ async function runInit(args) {
       log('  Claude Code session) AND the GitHub Action enforcer (gates the merge on');
       log('  CI). Pass --no-hooks to install only the Action, or --hook-trigger to');
       log('  choose push (default) / commit / both.');
+      if (wantsPrePushHook) {
+        log('  SPEC 6.7: a push now BLOCKS if "tests" in .clud-bug.json is missing or');
+        log('  contradicts a detected suite — merge your declaration before your next push.');
+      }
     } else {
       log('  GitHub Action enforcer installed (--no-hooks: no local review hook).');
     }
@@ -2192,6 +2266,10 @@ async function runUpdateCmd(_args) {
     log(`  ! Skipped ${skipped.length} markerless file${skipped.length === 1 ? '' : 's'} (treated as user-customized):`);
     for (const s of skipped) log(`     • ${rel(cwd, s.path)}  — ${s.reason}`);
   }
+  // #319 — repo-config states `update` cannot fix unattended (it runs in the
+  // self-update Action as often as by hand); always shown, never gated on
+  // --quiet, same as every other warn().
+  for (const a of result.advisories ?? []) warn(a);
   log('');
   log('Commit + push to apply the refreshed kit on the next PR.');
   ok(`updated: @v${ourVersion}, ${result.changed.length} changed, ${result.unchanged.length} unchanged${skipped.length ? `, ${skipped.length} skipped` : ''}`);
