@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (18 decisions)
+## 2026-08 (19 decisions)
 
-- **2026-08-07** — Merge dev again (#288 base-ref skills + #292 fork-checks) and refresh timeline *(fix/265-redirect-stubs)* — [decisions-branches/fix__265-redirect-stubs.md](decisions-branches/fix__265-redirect-stubs.md)
-- *... 16 more decisions ...*
+- **2026-08-24** — Caption benchmark/RESULTS.md and README.md: Phase R methodology is superseded by SPEC 2.0 §4.7 *(chore/d-launch-chores)* — [decisions-branches/chore__d-launch-chores.md](decisions-branches/chore__d-launch-chores.md)
+- *... 17 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
