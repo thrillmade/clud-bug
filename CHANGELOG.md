@@ -27,6 +27,7 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 - **Bundled `respect-existing-conventions` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@2dc8360`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 
+
 ### Fixed
 
 - **🔴 `review-prompt --trigger push` instructed a §4.3 violation (#276).** `push` fell through to the pull-request branch of the recipe, whose surface step says to "post or edit … the clud-bug summary comment". SPEC 2.0 §4.3: "A review run locally has no pull request to comment on — it writes its findings to the terminal … and **MUST NOT post anything or write a file**." The push trigger now renders a terminal-only surface.
