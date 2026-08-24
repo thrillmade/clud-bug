@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-08 (26 decisions)
+## 2026-08 (27 decisions)
 
-- **2026-08-24** — PR #321 panel fixes: node-infra fail-open in the §6.7 gate, and an honest accept-all "none" *(319-declaration-matrix)* — [decisions-branches/319-declaration-matrix.md](decisions-branches/319-declaration-matrix.md)
-- *... 24 more decisions ...*
+- **2026-08-24** — CI-only failure root cause: init --commit never checked git commit exit status, and the e2e test fixture had no repo-local git identity *(319-declaration-matrix)* — [decisions-branches/319-declaration-matrix.md](decisions-branches/319-declaration-matrix.md)
+- *... 25 more decisions ...*
 - **2026-08-01** — File three Wave 0 admin findings (pre-push gap, spec-version drift, stale SPEC citations) and warn agents to read issue threads not bodies *(wave0-admin-issues)* — [decisions-branches/wave0-admin-issues.md](decisions-branches/wave0-admin-issues.md)
 
 ## 2026-07 (40 decisions)
