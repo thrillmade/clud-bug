@@ -1638,15 +1638,18 @@ async function runInit(args) {
       }
     };
     const decision = await resolveTestsDeclaration({ acceptAll: Boolean(args.acceptAll), detected, ask });
-    if (decision.value === null) {
+    // #319 CRITICAL fix: `resolveTestsDeclaration` always returns a real
+    // value now (never `null`) — the manifest is never left undeclared, so
+    // there is no longer a branch here that skips the write.
+    manifest.tests = decision.value;
+    log(`  tests declaration: "${decision.value}" (${decision.source})`);
+    if (decision.source === 'accept-all-undeclared') {
       warn(
-        'No "tests" declared and none could be auto-detected (--accept-all skipped the prompt). ' +
-        'SPEC 6.7: the pre-push hook now BLOCKS a push with no declaration. Set "tests" (a command, ' +
-        'or "none" if there truly is no suite) in .claude/skills/.clud-bug.json, commit it, then push.',
+        'No test suite auto-detected (--accept-all skipped the prompt) — declared "tests": "none". ' +
+        'SPEC 6.7: "no suite detected" + "none" declared is a pass, so this does not block your next ' +
+        'push. If that is wrong (the repo does have a suite), edit "tests" in ' +
+        '.claude/skills/.clud-bug.json before you push, or the hook will block on the contradiction.',
       );
-    } else {
-      manifest.tests = decision.value;
-      log(`  tests declaration: "${decision.value}" (${decision.source})`);
     }
   }
 

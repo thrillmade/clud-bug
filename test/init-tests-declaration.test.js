@@ -53,18 +53,25 @@ test('init --accept-all auto-declares a detected package.json test script', asyn
   // manifest value above is the real, always-observable behavior.
 });
 
-test('init --accept-all with NOTHING detected leaves "tests" unset and warns loudly (never guesses "none")', async () => {
+// CRITICAL (#321 panel) — this used to leave "tests" UNSET here, which
+// wedged the very next push: the pre-push hook this same init run installs
+// BLOCKS on "nothing declared" regardless of suite detection. A
+// non-interactive `--accept-all` run that reaches its own first push already
+// trapped is exactly what §6.7's "MUST NOT complete without an answer"
+// forbids. §6.7's table makes "no suite detected" + "none" declared a PASS,
+// so "none" is the honest value nothing-detected supports — not a guess.
+test('init --accept-all with NOTHING detected declares "tests": "none" — never leaves the config in a state its own hook rejects', async () => {
   const dir = await makeRepoDir('clud-bug-tests-nodetect-');
   const r = runInit(dir, []);
   assert.equal(r.status, 0, r.stderr);
 
   const manifest = await readManifest(dir);
-  assert.equal(manifest.tests, undefined);
-  assert.match(r.stderr, /No "tests" declared and none could be auto-detected/);
-  assert.match(r.stderr, /BLOCKS a push with no declaration/);
+  assert.equal(manifest.tests, 'none');
+  assert.match(r.stderr, /No test suite auto-detected/);
+  assert.match(r.stderr, /declared "tests": "none"/);
 });
 
-test('init ignores the npm-init placeholder test script — same as no script at all', async () => {
+test('init ignores the npm-init placeholder test script — same as no script at all (declares "none", not unset)', async () => {
   const dir = await makeRepoDir('clud-bug-tests-placeholder-');
   await writeFile(
     join(dir, 'package.json'),
@@ -74,8 +81,8 @@ test('init ignores the npm-init placeholder test script — same as no script at
   assert.equal(r.status, 0, r.stderr);
 
   const manifest = await readManifest(dir);
-  assert.equal(manifest.tests, undefined);
-  assert.match(r.stderr, /No "tests" declared and none could be auto-detected/);
+  assert.equal(manifest.tests, 'none');
+  assert.match(r.stderr, /No test suite auto-detected/);
 });
 
 test('init --no-hooks never asks — there is no mechanical gate to declare for', async () => {
@@ -147,4 +154,38 @@ test('the pre-push hook installed by this same init run actually reads the decla
   const push = spawnSync('git', ['push', '-q', 'origin', 'e2e'], { cwd: clonePath, encoding: 'utf8' });
   assert.equal(push.status, 0, push.stderr);
   assert.match(push.stderr, /mechanical check \(6\.7 — tests before review\): exit 0/);
+});
+
+// CRITICAL (#321 panel) — end-to-end pin for the actual user-visible bug:
+// before the fix, `init --accept-all` with nothing detected left "tests"
+// UNSET, and the pre-push hook this exact run installs then BLOCKED the very
+// next push ("nothing declared" always blocks, regardless of what — if
+// anything — was detected). A revert of the hooks.ts/main.ts fix reproduces
+// that: this push goes from allowed back to BLOCKED.
+test('the pre-push hook installed by a --accept-all init with NOTHING detected does NOT block the first push', async () => {
+  const dir = await makeRepoDir('clud-bug-tests-e2e-nodetect-');
+  const r = runInit(dir, ['--commit']); // no package.json — nothing to detect
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal((await readManifest(dir)).tests, 'none');
+
+  const clonePath = join(dirname(dir), `${dir.split('/').pop()}-clone`);
+  const cloneResult = spawnSync('git', ['clone', '-q', dir, clonePath], { encoding: 'utf8' });
+  assert.equal(cloneResult.status, 0, cloneResult.stderr);
+  spawnSync('git', ['config', 'user.email', 'test@test'], { cwd: clonePath });
+  spawnSync('git', ['config', 'user.name', 'Test'], { cwd: clonePath });
+  spawnSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: clonePath });
+  spawnSync('git', ['checkout', '-q', '-b', 'e2e'], { cwd: clonePath });
+  spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'feat: e2e'], { cwd: clonePath });
+
+  const hookPath = join(dir, '.git', 'hooks', 'pre-push');
+  const hookBody = await readFile(hookPath, 'utf8');
+  const installedHook = join(clonePath, '.git', 'hooks', 'pre-push');
+  await mkdir(join(clonePath, '.git', 'hooks'), { recursive: true });
+  await writeFile(installedHook, hookBody);
+  await chmod(installedHook, 0o755);
+
+  const push = spawnSync('git', ['push', '-q', 'origin', 'e2e'], { cwd: clonePath, encoding: 'utf8' });
+  assert.equal(push.status, 0, push.stderr); // a revert to the old "leave unset" behavior blocks this
+  assert.doesNotMatch(push.stderr, /PUSH BLOCKED/);
+  assert.match(push.stderr, /declares "tests": "none" — no mechanical check to run/);
 });

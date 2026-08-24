@@ -523,7 +523,10 @@ const PKG_TEST_SCRIPT_PARSER =
  *   4. §6.7 mechanical check — resolve the `tests` declaration from the
  *      DEFAULT BRANCH ("read from the default branch, never the working tree"),
  *      through a real JSON parser, and run it. Non-zero blocks; the model does
- *      not run.
+ *      not run. #319 CRITICAL: if the parser itself cannot run (`node`
+ *      missing/broken), that is the TOOL failing, not a declaration — allow
+ *      and say so, distinct from every other row in this step (6.7: "a broken
+ *      binary MUST NOT be able to wedge a push").
  *   5. Print the review directive naming the exact command + range, and exit 0.
  *
  * Every `git` invocation inside the ref loop redirects stdin from /dev/null:
@@ -612,10 +615,24 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `  done`,
     `fi`,
     `testdecl=`,
+    // #319 CRITICAL — `nodeerror` separates "node ran and the declaration is
+    // legitimately absent" (testdecl stays empty; node itself exits 0 —
+    // TESTS_DECL_PARSER swallows its own JSON.parse errors) from "node itself
+    // could not run" (missing binary, corrupted install — a non-zero exit
+    // from the invocation). Conflating the two treats a broken TOOLCHAIN as a
+    // repo-config state and blocks the push on it — exactly what 6.7
+    // forbids: "An engine that is missing, stale, or cannot resolve its
+    // configuration ALLOWS ... A broken binary MUST NOT be able to wedge a
+    // push." Shared with the suite-detection node call below — either read
+    // failing takes the whole verdict fail-open (3c), not just its own row.
+    `nodeerror=0`,
     `if [ -n "$baseref" ]; then`,
     `  cfg=$(git show "$baseref:.claude/skills/.clud-bug.json" 2>/dev/null </dev/null) || cfg=`,
     `  if [ -n "$cfg" ]; then`,
-    `    testdecl=$(printf '%s' "$cfg" | node -e '${TESTS_DECL_PARSER}' 2>/dev/null) || testdecl=`,
+    `    if ! testdecl=$(printf '%s' "$cfg" | node -e '${TESTS_DECL_PARSER}' 2>/dev/null); then`,
+    `      testdecl=`,
+    `      nodeerror=1`,
+    `    fi`,
     `  fi`,
     `fi`,
     ``,
@@ -631,8 +648,14 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `  if [ "$suitedetected" = 0 ]; then`,
     `    pkgjson=$(git show "$baseref:package.json" 2>/dev/null </dev/null) || pkgjson=`,
     `    if [ -n "$pkgjson" ]; then`,
-    `      pkgtest=$(printf '%s' "$pkgjson" | node -e '${PKG_TEST_SCRIPT_PARSER}' 2>/dev/null) || pkgtest=`,
-    `      [ "$pkgtest" = "1" ] && suitedetected=1`,
+    // Same node-failure/legitimately-empty split as the declaration read
+    // above — a broken node here must not silently under-detect a real
+    // suite and fall through to a block; it sets the SAME `nodeerror` flag.
+    `      if pkgtest=$(printf '%s' "$pkgjson" | node -e '${PKG_TEST_SCRIPT_PARSER}' 2>/dev/null); then`,
+    `        [ "$pkgtest" = "1" ] && suitedetected=1`,
+    `      else`,
+    `        nodeerror=1`,
+    `      fi`,
     `    fi`,
     `  fi`,
     `fi`,
@@ -642,14 +665,33 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `#         unblocks pushing can never itself be pushed." testdecl above was`,
     `#         read from the OLD base ref, so the one push that ADDS a missing`,
     `#         declaration (or replaces a dishonest "none") would otherwise be`,
-    `#         judged by the very state it corrects. Recognized narrowly: the`,
-    `#         pushed range's entire diff touches nothing but the declaration`,
-    `#         file. Multi-ref pushes share $range's existing first-ref-only`,
-    `#         limitation (see "N refs were pushed" below) — not widened here.`,
+    `#         judged by the very state it corrects. Recognized narrowly: EVERY`,
+    `#         changed path must be one clud-bug itself owns as install/config`,
+    `#         mechanism — the declaration file, and the settings file the`,
+    `#         commit-review hook is merged into (init/update can write both in`,
+    `#         the SAME bootstrap commit: e.g. \`--hook-trigger both\` merges the`,
+    `#         commit hook into .claude/settings.json and declares "tests" in`,
+    `#         one run — the original one-file check never fired for that real`,
+    `#         flow, wedging exactly the push §6.7 says must be allowed). Widened`,
+    `#         to this fixed pair, not to .claude/ broadly: neither file can`,
+    `#         carry user feature content, so the anti-smuggling property the`,
+    `#         "also changes other files" case below tests still holds. Multi-ref`,
+    `#         pushes share $range's existing first-ref-only limitation (see`,
+    `#         "N refs were pushed" below) — not widened here.`,
     `declonlychange=0`,
     `if [ -n "$range" ]; then`,
     `  changedpaths=$(git diff --name-only "$range" 2>/dev/null </dev/null) || changedpaths=`,
-    `  [ "$changedpaths" = ".claude/skills/.clud-bug.json" ] && declonlychange=1`,
+    `  if [ -n "$changedpaths" ]; then`,
+    `    declonlychange=1`,
+    `    while IFS= read -r changedpath; do`,
+    `      case "$changedpath" in`,
+    `        .claude/skills/.clud-bug.json|.claude/settings.json) ;;`,
+    `        *) declonlychange=0 ;;`,
+    `      esac`,
+    `    done <<CLUD_BUG_CHANGED`,
+    `$changedpaths`,
+    `CLUD_BUG_CHANGED`,
+    `  fi`,
     `fi`,
     `allowexempt=0`,
     `if [ "$declonlychange" = 1 ] && { [ -z "$testdecl" ] || [ "$testdecl" = "none" ]; }; then`,
@@ -661,8 +703,13 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `if [ -z "$baseref" ]; then`,
     // 6.5: a gate that could not run must say so rather than exit 0 in silence.
     `  printf 'clud-bug: no default-branch ref for remote %s — mechanical check skipped (6.7: a gate that cannot resolve its configuration allows).\\n' "$remote" >&2`,
+    // #319 CRITICAL — checked BEFORE the exemption/declaration branches below
+    // so a node failure always gets ITS OWN message, never one that happens
+    // to also fit the (unreliable) partial state a broken parse left behind.
+    `elif [ "$nodeerror" = 1 ]; then`,
+    `  printf 'clud-bug: could not read the "tests" declaration — the node binary needed to parse .claude/skills/.clud-bug.json (or package.json, for suite detection) failed or is unavailable. SPEC 6.7: an engine that cannot resolve its configuration allows; a broken binary MUST NOT be able to wedge a push. Mechanical check skipped.\\n' >&2`,
     `elif [ "$allowexempt" = 1 ]; then`,
-    `  printf 'clud-bug: this push only changes the "tests" declaration in .claude/skills/.clud-bug.json — allowed regardless of the state it replaces (SPEC 6.7: the config that unblocks pushing must itself be pushable).\\n' >&2`,
+    `  printf 'clud-bug: this push only changes clud-bug local-gate config (.claude/skills/.clud-bug.json and/or .claude/settings.json) — allowed regardless of the state it replaces (SPEC 6.7: the config that unblocks pushing must itself be pushable).\\n' >&2`,
     `elif [ -z "$testdecl" ]; then`,
     `  if [ "$suitedetected" = 1 ]; then`,
     `    printf 'clud-bug: PUSH BLOCKED — %s has test files but no "tests" declaration. SPEC 6.7: a repository with a detected suite that is not run blocks. Add "tests": "<command>" to .claude/skills/.clud-bug.json on the default branch, then push again.\\n' "$baseref" >&2`,
@@ -778,21 +825,27 @@ export function planPrePushInstall(input: {
 // install makes — the exact wedge #276's own trailing comment flagged.
 
 export interface TestsDeclarationResult {
-  /** The value to persist as `manifest.tests` — a command, or the literal
-   * `"none"`. `null` ONLY under `acceptAll` with nothing detected — see the
-   * `accept-all-undeclared` source: writing a guessed `"none"` with no human
-   * having looked at it is exactly the dishonesty §6.7's detection exists to
-   * prevent, so the caller must warn and leave the manifest untouched rather
-   * than invent an answer here. */
-  value: string | null;
+  /** The value to persist as `manifest.tests` — always a command or the
+   * literal `"none"`, NEVER absent (§6.7: "Setup MUST ask, and MUST NOT
+   * complete without an answer" — a non-interactive `init` that could still
+   * leave the manifest undeclared would violate that on its own accept-all
+   * path). CRITICAL #319 fix: `acceptAll` with nothing detected used to
+   * return `null` here and skip the manifest write entirely — the hook this
+   * same `init` run installs then blocks the very first push on "nothing
+   * declared", a trap a non-interactive setup can never see coming. §6.7's
+   * own table makes `no suite detected` + `"none"` declared a PASS: writing
+   * `"none"` in that cell is the HONEST declaration the local detectors
+   * actually support, not the dishonest one the table reserves for the `yes`
+   * rows (a suite the detector CAN see, declared away). */
+  value: string;
   source: 'accept-all-detected' | 'accept-all-undeclared' | 'user-entered' | 'user-accepted-default';
 }
 
 /**
- * Resolves the `tests` declaration at `init` time. ALWAYS returns — this is
- * what "MUST NOT complete without an answer" means operationally: the caller
- * gets a value (or the explicit `null` that means "ask again later", never a
- * silently-skipped question).
+ * Resolves the `tests` declaration at `init` time. ALWAYS returns a real
+ * value — this is what "MUST NOT complete without an answer" means
+ * operationally: the manifest is never left with `tests` unset once this
+ * returns, on ANY path, interactive or not.
  *
  * `ask` is INJECTED, never imported here — this function does no terminal
  * I/O itself, so it is a plain async function callers (and tests) can invoke
@@ -809,14 +862,22 @@ export async function resolveTestsDeclaration(input: {
 }): Promise<TestsDeclarationResult> {
   const { acceptAll, detected, ask } = input;
   // --accept-all never prompts (matches the existing branch-protection
-  // pattern) — but it also must never GUESS "none" with no one looking; that
-  // would be the dishonest declaration §6.7 names by name. A real detected
-  // command is safe to accept automatically (it is evidence, not a guess);
-  // the absence of one is not evidence of the absence of tests.
+  // pattern). A real detected command is evidence, safe to accept
+  // automatically. Nothing detected is ALSO an answer, not a skipped
+  // question: §6.7's table makes "no suite detected" + "none" declared a
+  // PASS, so "none" here is the honest declaration these local, no-network
+  // detectors actually support — never a blind guess. (The table's dishonest
+  // cell is "yes" + "none" — a suite the detector CAN see, declared away.
+  // This init-time signal is narrower than the hook's own push-time
+  // detection — see `detectPackageTestScript` — so a suite it missed can
+  // still surface at push time; the hook's base-ref detection blocks THAT
+  // push on the merits, naming the contradiction, never silently. That
+  // possible follow-up block is strictly better than the guaranteed one
+  // `null` used to leave behind — see the #319 test file for both.)
   if (acceptAll) {
     return detected
       ? { value: detected, source: 'accept-all-detected' }
-      : { value: null, source: 'accept-all-undeclared' };
+      : { value: 'none', source: 'accept-all-undeclared' };
   }
   const suggestion = detected ? `"${detected}"` : '"none"';
   const answer = (

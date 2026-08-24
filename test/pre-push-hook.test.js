@@ -64,8 +64,10 @@ async function makeClonePair(cludBugJson) {
 
 /** Invoke the script the way git does: an executable file, argv = <remote>
  * <url>, and one `<local ref> <local oid> <remote ref> <remote oid>` line per
- * pushed ref on stdin. */
-async function runPrePush(cwd, refLines, script = PREPUSH) {
+ * pushed ref on stdin. `envOverrides` merges on top of the ambient
+ * `process.env` — used by the #319 node-infra-failure tests below to put a
+ * broken `node` shim earlier on PATH without touching this machine's real one. */
+async function runPrePush(cwd, refLines, script = PREPUSH, envOverrides) {
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-prepush-run-'));
   const path = join(dir, 'pre-push');
   await writeFile(path, script);
@@ -74,7 +76,20 @@ async function runPrePush(cwd, refLines, script = PREPUSH) {
     cwd,
     encoding: 'utf8',
     input: refLines.length ? refLines.join('\n') + '\n' : '',
+    env: envOverrides ? { ...process.env, ...envOverrides } : process.env,
   });
+}
+
+/** A fake `node` on PATH that always fails — stands in for BOTH "missing"
+ * (command not found, would exit 127 with no shim at all) and "broken"
+ * (a corrupted install, any non-zero exit): the #319 fix checks the exit
+ * status of the `node` invocation, not what kind of failure produced it. */
+async function installBrokenNode() {
+  const binDir = await mkdtemp(join(tmpdir(), 'clud-bug-brokennode-'));
+  const nodePath = join(binDir, 'node');
+  await writeFile(nodePath, '#!/bin/sh\nexit 1\n');
+  await chmod(nodePath, 0o755);
+  return binDir;
 }
 
 describe('buildPrePushHookScript', () => {
@@ -436,7 +451,7 @@ describe('pre-push hook — integration (real git state)', () => {
 
     const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
     expect(r.status).toBe(0);
-    expect(r.stderr).toMatch(/this push only changes the "tests" declaration/);
+    expect(r.stderr).toMatch(/this push only changes clud-bug local-gate config/);
   });
 
   it('§6.7 (#319) bootstrap exemption: a push that ALSO changes other files does not qualify — the old block still applies', async () => {
@@ -453,11 +468,125 @@ describe('pre-push hook — integration (real git state)', () => {
 
     const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
     // Judged by the OLD base-ref state (nothing declared) — exemption does
-    // not apply because the diff is not JUST the declaration file. This is
-    // read from the base ref (§6.3), so the new "true" the working tree
-    // added has no effect on THIS push's own verdict.
+    // not apply because the diff is not JUST clud-bug's own local-gate
+    // config. This is read from the base ref (§6.3), so the new "true" the
+    // working tree added has no effect on THIS push's own verdict.
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/PUSH BLOCKED/);
+  });
+
+  // MINOR (#321 panel) — the exemption as first shipped only recognized a
+  // diff touching EXACTLY `.claude/skills/.clud-bug.json`. A real bootstrap
+  // run of `clud-bug init --hook-trigger both --commit` (or `update`, moving
+  // a repo onto the push trigger for the first time) writes the declaration
+  // AND merges the commit-review hook into `.claude/settings.json` in the
+  // SAME commit — the narrower check never fired for that push, wedging
+  // exactly the scenario §6.7's exemption exists for. Widened to a fixed
+  // two-file allowlist (both owned exclusively by clud-bug's own install
+  // tooling, never user content) rather than to `.claude/` broadly, so the
+  // test right above (an unrelated `feature.txt` riding along) still blocks.
+  it('§6.7 (#319/#321) bootstrap exemption: widened to ALSO cover .claude/settings.json (the hook-install file init writes in the same bootstrap commit)', async () => {
+    const { clone } = await makeClonePair({ version: 1, installed: [] });
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    await writeFile(
+      join(clone, '.claude', 'skills', '.clud-bug.json'),
+      JSON.stringify({ version: 1, installed: [], tests: 'true' }),
+    );
+    await mkdir(join(clone, '.claude'), { recursive: true });
+    await writeFile(join(clone, '.claude', 'settings.json'), JSON.stringify({ hooks: {} }));
+    git(clone, ['add', '.claude']);
+    git(clone, ['commit', '-q', '-m', 'bootstrap: declare tests AND install the commit-review hook']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0); // a revert to the exact-match check must fail this
+    expect(r.stderr).toMatch(/this push only changes clud-bug local-gate config/);
+  });
+
+  it('§6.7 (#319/#321) bootstrap exemption: .claude/settings.json ALONE (no declaration change) also qualifies', async () => {
+    // Generalizing to an allowlist (not just "exactly the declaration file")
+    // must hold for any subset of it, not only the one pairing named above.
+    const { clone } = await makeClonePair({ version: 1, installed: [] });
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    await mkdir(join(clone, '.claude'), { recursive: true });
+    await writeFile(join(clone, '.claude', 'settings.json'), JSON.stringify({ hooks: {} }));
+    git(clone, ['add', '.claude']);
+    git(clone, ['commit', '-q', '-m', 'install the commit-review hook only']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/this push only changes clud-bug local-gate config/);
+  });
+
+  it('§6.7 (#319/#321) bootstrap exemption: settings.json PLUS an unrelated file still does not qualify', async () => {
+    const { clone } = await makeClonePair({ version: 1, installed: [] });
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    await mkdir(join(clone, '.claude'), { recursive: true });
+    await writeFile(join(clone, '.claude', 'settings.json'), JSON.stringify({ hooks: {} }));
+    await writeFile(join(clone, 'feature.txt'), 'unrelated change');
+    git(clone, ['add', '.claude', 'feature.txt']);
+    git(clone, ['commit', '-q', '-m', 'install the hook AND ship a feature in the same push']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/PUSH BLOCKED/);
+  });
+
+  // CRITICAL (#321 panel, both lenses) — a broken/unavailable "node" during
+  // the declaration or detection read is an INFRA failure, never a
+  // repo-config state. Before the fix, node failing here left `testdecl`
+  // empty exactly like a genuinely undeclared repo, and the verdict step
+  // blocked on "nothing declared" — a broken toolchain wedging a push, which
+  // 6.7 forbids outright: "A broken binary MUST NOT be able to wedge a push."
+  it('§6.7 (#319/#321) CRITICAL: a broken "node" during the DECLARATION read fails OPEN, not "nothing declared"', async () => {
+    // A real declaration exists on the base ref — if the fix regresses to
+    // treating a node failure as an empty read, this looks exactly like the
+    // "nothing declared" row and blocks.
+    const { clone } = await makeClonePair({ version: 1, installed: [], tests: 'true' });
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: node-broken-decl']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const brokenNodeDir = await installBrokenNode();
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`], PREPUSH, {
+      PATH: `${brokenNodeDir}:${process.env.PATH}`,
+    });
+
+    expect(r.status).toBe(0); // MUST NOT block — this is the tool breaking, not the repo
+    expect(r.stderr).toMatch(/could not read the "tests" declaration/);
+    expect(r.stderr).toMatch(/node/);
+    expect(r.stderr).not.toMatch(/PUSH BLOCKED/);
+    expect(r.stderr).toMatch(/review-prompt --trigger push/); // the model half still runs (4.1: advisory)
+  });
+
+  it('§6.7 (#319/#321) CRITICAL: a broken "node" during SUITE DETECTION (package.json parse) also fails OPEN — not just the declaration read', async () => {
+    // No .clud-bug.json at all, so the DECLARATION-read node call never even
+    // fires — only the SECOND node invocation (package.json's test script,
+    // for suite detection) hits the broken binary. Pins that the fix covers
+    // BOTH node call sites, not only the one the declaration read uses.
+    const origin = (await makeClonePair()).origin;
+    await writeFile(join(origin, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'jest --ci' } }));
+    git(origin, ['add', 'package.json']);
+    git(origin, ['commit', '-q', '-m', 'add package.json']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: node-broken-detect']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const brokenNodeDir = await installBrokenNode();
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`], PREPUSH, {
+      PATH: `${brokenNodeDir}:${process.env.PATH}`,
+    });
+
+    expect(r.status).toBe(0); // MUST NOT block on a real (but undetectable) suite
+    expect(r.stderr).toMatch(/could not read the "tests" declaration/);
+    expect(r.stderr).not.toMatch(/PUSH BLOCKED/);
   });
 
   it('§6.7: an unresolvable default branch ALLOWS the push and says so (a broken gate never wedges it)', async () => {
@@ -587,8 +716,18 @@ describe('resolveTestsDeclaration (#319 — §6.7 "Setup MUST ask, and MUST NOT 
     expect(asked).toBe(false); // --accept-all never prompts
   });
 
-  it('--accept-all with NOTHING detected returns null, not a guessed "none" — the caller must warn, never invent an unreviewed answer', async () => {
+  // CRITICAL (#321 panel) — this used to return `value: null` here and the
+  // caller (`main.ts`) skipped the manifest write entirely, so a freshly
+  // `init --accept-all`-ed repo with nothing detected reached its first push
+  // with NO declaration — which the pre-push hook this same run installs
+  // then BLOCKS ("nothing declared" always blocks). A non-interactive setup
+  // trapping its own very next push is exactly what §6.7's "MUST NOT complete
+  // without an answer" forbids. §6.7's table makes "no suite detected" +
+  // "none" declared a PASS, so "none" here is the honest value these local
+  // detectors actually support — not a guess "accept-all-detected" already
+  // wasn't making for a REAL command.
+  it('--accept-all with NOTHING detected declares "none" (the honest value for "no suite detected"), never leaves it unset', async () => {
     const r = await resolveTestsDeclaration({ acceptAll: true, detected: null, ask: askReturning('') });
-    expect(r).toEqual({ value: null, source: 'accept-all-undeclared' });
+    expect(r).toEqual({ value: 'none', source: 'accept-all-undeclared' });
   });
 });

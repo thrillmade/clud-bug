@@ -13,3 +13,17 @@
 
 ---
 
+## 2026-08-24 14:56 - PR #321 panel fixes: node-infra fail-open in the §6.7 gate, and an honest accept-all "none"
+
+**Reasoning:** A review panel on #319/#321 found both node-parse call sites in the pre-push hook could not tell a broken/missing node from a legitimately absent declaration (SPEC 6.7: "a broken binary MUST NOT be able to wedge a push" — but it did, misread as "nothing declared" and blocked), and that clud-bug init --accept-all with nothing detected left the manifest undeclared entirely, so the very push that hook installs would go on to block itself (SPEC 6.7: "Setup MUST ask, and MUST NOT complete without an answer"). Both states are now unrepresentable rather than merely avoided: a nodeerror flag forces fail-open before any declaration/exemption branch runs, and the resolveTestsDeclaration accept-all branch always returns a real value ("none" is the honest cell for "no suite detected", per the table). Also widened the bootstrap exemption file allowlist (a real init --hook-trigger both bootstrap writes .claude/settings.json too, not just .clud-bug.json, in the same commit) and replaced a stale SPEC line-number citation in the PR description with the section anchor SPEC.md already uses to reference itself.
+
+**Alternatives considered:** For the node failure: keep the "|| var=" fallback and only check for emptiness — rejected: cannot distinguish a legitimately empty field from node failing to run at all, which is the actual bug., For accept-all-undeclared: leave the null-skips-the-write branch in main.ts and just improve the warning text — rejected: the manifest would still be undeclared and the freshly-installed hook would still block the very next push; the trap is the bug, not the wording., For the bootstrap exemption: widen to all of .claude/ broadly — rejected: would let unrelated skill/workflow content ride along under cover of a declaration fix, defeating the anti-smuggling test #319 already shipped.
+
+**Implications:**
+- A broken/missing node now allows the push with a distinct "could not read the tests declaration" message instead of blocking; revert-proofed by removing just the new nodeerror verdict branch (2 tests fail in test/pre-push-hook.test.js), restoring passes them again.
+- TestsDeclarationResult.value is now typed string, never null — the dead null-branch in main.ts is gone, so the undeclared state is unrepresentable in the type, not just avoided by convention; revert-proofed across hooks.ts + main.ts together (4 tests fail across two files), restoring passes all 4 again.
+- The bootstrap exemption allowlist is a fixed 2 files (.claude/skills/.clud-bug.json, .claude/settings.json), not a directory prefix — an unrelated file anywhere in the diff, including elsewhere under .claude/, still blocks.
+- npm test now 55 files / 1224 tests (6 new); npm run build and test:fixtures still clean. The PR #321 description was updated to match: the citation fix plus the two behavior bullets the code now supersedes, and a Panel follow-up addendum.
+
+---
+
