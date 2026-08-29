@@ -4,6 +4,8 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-24
+
 ### Added
 
 - **A `pre-push` local review surface (#276).** There was none: `git grep -inE 'pre-push|prePush|pre_push' origin/main -- src/ templates/` returned **0 hits** (control probe `PostToolUse` → 2 files, so the search itself worked), while SPEC 2.0 §4.1 says "A reviewer MUST support both, and **push is the default**" and §6.7 names the mechanism: "Git allows one `pre-push` hook, so ownership follows what is installed."
