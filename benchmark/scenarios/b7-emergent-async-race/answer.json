@@ -1,0 +1,12 @@
+{
+  "id": "b7-emergent-async-race",
+  "class": "emergent",
+  "severity": "MAJOR",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    35,
+    47
+  ],
+  "defect": "aggregate() reads each metric's running bucket, awaits an async normalize, then writes bucket+1 back — but runs the iterations concurrently via Promise.all(map(...)), so every same-metric iteration reads the identical pre-await bucket and their writes clobber one another, collapsing N samples into 1."
+}

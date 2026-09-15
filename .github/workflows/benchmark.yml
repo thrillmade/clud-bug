@@ -1,0 +1,188 @@
+name: benchmark
+
+# Scores the committed planted-defect corpus against the shipped review recipe
+# and opens a PR with the result (#270, SPEC 2.0 §8.2 — "A reviewer MUST
+# periodically be given a change carrying a defect whose presence is known in
+# advance, and MUST report it").
+#
+# Why this one may consume ANTHROPIC_API_KEY when PR #170 deleted the two
+# workflows that did: those ran on `pull_request` alongside the hosted App's
+# AI Gateway path and double-billed every PR. This runs on a weekly schedule
+# and on demand, never on a PR trigger, and reviews synthetic scenarios rather
+# than the repository's own diff — there is no second reviewer to double.
+#
+# It never fails the repository red. A missing key, a cost stop, a reviewer
+# that returns nothing: each is recorded in the result file as `unverified`
+# and surfaced on the PR, because a benchmark that goes red is a benchmark
+# someone turns off. A run the renderer refuses — one that scored nothing on
+# one side of the corpus, or did not cover it — is a warning too: it keeps its
+# transcript in `history/`, replaces no published claim, and says so on the PR.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Shuffle seed for the run order. Empty uses the run id — the runner always orders from a seed and always records it, so a cost stop never truncates the same tail twice'
+        required: false
+        type: string
+      costCapUsd:
+        description: 'Operator cost cap for the whole run, USD (SPEC 2.0 §4.9). Empty uses the cap scripts/run-benchmark.mjs defaults to — the only place that number lives'
+        required: false
+        type: string
+      suite:
+        description: 'all | planted | decoys | a comma-separated list of scenario ids'
+        required: false
+        default: 'all'
+        type: string
+
+permissions: {}
+
+# One run at a time. The cron and a dispatch each enforce their own cost cap
+# against the same key, so two in flight spend twice the ceiling and open two
+# competing result PRs. Queued rather than cancelled: whatever is already
+# running has already spent.
+concurrency:
+  group: benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    # Forks inherit the schedule but not the key; running there would spend a
+    # fork owner's secret on our corpus.
+    if: github.repository == 'thrillmade/clud-bug'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the result branch
+      pull-requests: write   # open the PR carrying it
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # The key gate is a step, not a job-level `if`: the `secrets` context is
+      # not available there, and a scheduled run with no key must end in a
+      # warning rather than a red cross.
+      - name: Check for a reviewer key
+        id: gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::warning title=Benchmark skipped::No ANTHROPIC_API_KEY secret is configured, so no reviewer can be called. The published score stays at whatever the last run measured."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.ok == 'true'
+        run: npm ci
+      - if: steps.gate.outputs.ok == 'true'
+        run: npm run build   # the runner imports the scorer and the recipe from dist/
+
+      - name: Install Claude Code
+        if: steps.gate.outputs.ok == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Score the corpus
+        id: score
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SEED: ${{ inputs.seed }}
+          COST_CAP_USD: ${{ inputs.costCapUsd }}
+          SUITE: ${{ inputs.suite || 'all' }}
+          TRIGGER: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          ARGS=(--suite "$SUITE" --trigger "$TRIGGER" --run-id "$RUN_ID")
+          if [ -n "${SEED:-}" ]; then ARGS+=(--seed "$SEED"); fi
+          if [ -n "${COST_CAP_USD:-}" ]; then ARGS+=(--cost-cap-usd "$COST_CAP_USD"); fi
+          # A subset is a spot check: it scores fewer scenarios and names no
+          # remainder, so it goes to scratch and nothing downstream publishes
+          # it. scripts/run-benchmark.mjs refuses it into the results dir
+          # anyway; this is what keeps a dispatch out of that refusal.
+          if [ "$SUITE" != all ]; then
+            ARGS+=(--out "$RUNNER_TEMP/benchmark-subset")
+          fi
+          # Kept so a refused render can put back what was published before,
+          # rather than leaving an unpublishable result file in the PR.
+          cp benchmark/results/latest.json "$RUNNER_TEMP/previous-latest.json"
+          node scripts/run-benchmark.mjs "${ARGS[@]}"
+          PUBLISHED=false
+          if [ "$SUITE" = all ]; then
+            if node scripts/render-benchmark.mjs; then
+              PUBLISHED=true
+            else
+              # readLatest refused it — a run that scored nothing on one side of
+              # the corpus, or one that did not cover it. The run is still real
+              # evidence and stays in history/; what it may not do is replace a
+              # published score. A red cross here is a benchmark someone turns
+              # off, so this is a warning on a PR that carries the transcript.
+              cp "$RUNNER_TEMP/previous-latest.json" benchmark/results/latest.json
+              echo "::warning title=Benchmark not published::The run is not publishable (see the refusal above). Its per-scenario verdicts are in benchmark/results/history/${RUN_ID}.json; every published claim stays at the last whole-corpus run."
+            fi
+          else
+            echo "::notice::Scored --suite $SUITE only; the published score is left at the last whole-corpus run."
+          fi
+          echo "published=$PUBLISHED" >> "$GITHUB_OUTPUT"
+
+      - name: Open a PR with the result
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          PUBLISHED: ${{ steps.score.outputs.published }}
+        run: |
+          set -euo pipefail
+          # `git diff` alone would miss the new history/<runId>.json, which is
+          # untracked.
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "::notice::The run produced no file changes at all — nothing to open a PR for."
+            exit 0
+          fi
+
+          BRANCH="benchmark/run-${RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add benchmark/results README.md benchmark/README.md benchmark/RESULTS.md site/lib/benchmark-score.ts
+          git commit -m "Benchmark run ${RUN_ID}: re-score the planted-defect corpus (#270)"
+          git push -u origin "$BRANCH"
+
+          # This run's own transcript, never latest.json: a refused render
+          # leaves latest.json at the previous run, and a PR titled with
+          # somebody else's numbers is the failure this whole lane is about.
+          SUMMARY=$(node -e "
+            const r = require('./benchmark/results/history/' + process.env.RUN_ID + '.json');
+            const t = r.totals;
+            process.stdout.write(
+              'caught ' + t.caught + '/' + t.total + ' (' + t.recallPct + '%), ' +
+              t.falsePositives + ' false flag(s) of ' + t.decoysTotal + ' decoys, ' +
+              t.unverified + ' unverified, \$' + r.cost.spentUsd + ' of a \$' + r.cost.capUsd + ' cap.'
+            );
+          ")
+          if [ "${PUBLISHED:-false}" = true ]; then
+            PUBLISHED_NOTE="Every published claim in this diff was re-rendered by \`scripts/render-benchmark.mjs\` from \`benchmark/results/latest.json\`; \`scripts/check-benchmark-claims.mjs\` is what keeps them in agreement."
+          else
+            PUBLISHED_NOTE="**This run was not publishable** and replaced nothing: \`readLatest()\` refused it, so \`latest.json\` and every rendered claim stay at the last whole-corpus run. The transcript is in \`benchmark/results/history/${RUN_ID}.json\` — read the workflow log for the refusal."
+          fi
+          gh pr create \
+            --base dev \
+            --head "$BRANCH" \
+            --title "Benchmark run ${RUN_ID} — ${SUMMARY}" \
+            --body "Automated planted-defect benchmark run (SPEC 2.0 §8.2, #270).
+
+          ${SUMMARY}
+
+          ${PUBLISHED_NOTE} Per-defect verdicts are in the result file.
+
+          **A miss is not a nit.** §8.2: a reviewer that returns clean on a planted defect is not producing clean reviews, and every clean result it produced since its last passing run is suspect and must be reported as such."

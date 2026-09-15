@@ -4,6 +4,7 @@ class: cross-cutting
 severity: MED-HIGH
 one_line_defect: The bucketing PR groups UTC event timestamps via the pre-existing dayKey() helper, which derives the calendar day from LOCAL time, so in any non-UTC timezone a just-past-midnight-UTC event is filed under the wrong day.
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: Every line of the bucket.mjs diff is individually correct — it parses UTC timestamps, keys each event by dayKey(ts), and groups on that key; the defect is the mismatch between what the diff assumes dayKey does (return the UTC day) and what it actually does (return the local day via getFullYear/getMonth/getDate), and that helper lives in daycalc.mjs, a file the diff only exposes, never changes.
 correct_finding: Report that bucketByDay's "group by UTC day" contract is broken because dayKey (daycalc.mjs) reads the calendar day off local-time accessors (getFullYear/getMonth/getDate), so on a host whose TZ is behind UTC an event within a few hours past midnight UTC rolls back into the previous local day and is miscounted; ground it either by running `node reproduce.mjs` with TZ=America/New_York (the 02:30Z event lands under 2026-03-01 instead of 2026-03-02) or by naming the violated invariant (UTC-timestamped events must bucket by UTC day, but dayKey uses local time, so bucketing is host-timezone-dependent).
 ---

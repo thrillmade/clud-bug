@@ -1,0 +1,12 @@
+{
+  "id": "c6-clean-permission",
+  "class": "clean",
+  "severity": "none",
+  "expected": "clean",
+  "file": "module.mjs",
+  "lineRange": [
+    46,
+    66
+  ],
+  "defect": "NONE — this code is correct"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "b8-emergent-float-accumulate",
+  "class": "emergent",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    36,
+    54
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        20,
+        26
+      ]
+    }
+  ],
+  "defect": "applyPayment carries money as binary-float dollars and draws a running balance down invoice by invoice, so accumulated rounding error makes the running balance drift a sub-cent below the true cents balance — a payment equal to the exact total trips the \"can I cover this?\" guard on the last invoice and strands it, leaving a phantom balance."
+}

@@ -95,10 +95,26 @@ describe('buildLocalReviewHook', () => {
 });
 
 describe('mergeLocalReviewHook', () => {
+  // #266 — `mergeLocalReviewHook` now merges THREE entries: the commit-review
+  // entry, and the two harness-attestation registrations SPEC 2.0 §4.4:961
+  // requires to live in the repository's COMMITTED settings. The assertions
+  // below therefore count OUR commit-review entry by its marker rather than
+  // counting the whole array, so an extra entry can never make a real
+  // duplicate-entry regression read as the new normal.
+  const reviewEntries = (s) =>
+    s.hooks.PostToolUse.filter((e) =>
+      e.hooks.some((h) => String(h.command ?? h.prompt ?? '').includes('clud-bug-local-review')),
+    );
+  const attestEntries = (s) =>
+    [...(s.hooks.PostToolUse ?? []), ...(s.hooks.SubagentStop ?? [])].filter((e) =>
+      e.hooks.some((h) => String(h.command ?? '').includes('clud-bug-attest')),
+    );
+
   it('adds the hook to empty / undefined settings', () => {
     const s = mergeLocalReviewHook(undefined, COMMIT_REVIEW_COMMAND);
-    expect(s.hooks.PostToolUse).toHaveLength(1);
-    expect(s.hooks.PostToolUse[0].hooks[0].type).toBe('command');
+    expect(reviewEntries(s)).toHaveLength(1);
+    expect(reviewEntries(s)[0].hooks[0].type).toBe('command');
+    expect(attestEntries(s)).toHaveLength(2); // PostToolUse(Agent) + SubagentStop
   });
 
   it('preserves unrelated settings and other hooks', () => {
@@ -112,14 +128,17 @@ describe('mergeLocalReviewHook', () => {
     const s = mergeLocalReviewHook(existing, COMMIT_REVIEW_COMMAND);
     expect(s.model).toBe('opus'); // unrelated top-level key preserved
     expect(s.hooks.PreToolUse).toHaveLength(1); // other event preserved
-    expect(s.hooks.PostToolUse).toHaveLength(2); // the user's Edit hook + ours
+    expect(s.hooks.PostToolUse).toHaveLength(3); // the user's Edit hook + ours + attestation
     expect(s.hooks.PostToolUse.some((e) => e.matcher === 'Edit')).toBe(true);
+    expect(reviewEntries(s)).toHaveLength(1);
   });
 
   it('is idempotent — re-running replaces ours, never duplicates', () => {
     const once = mergeLocalReviewHook(undefined, COMMIT_REVIEW_COMMAND);
     const twice = mergeLocalReviewHook(once, COMMIT_REVIEW_COMMAND);
-    expect(twice.hooks.PostToolUse).toHaveLength(1);
+    expect(reviewEntries(twice)).toHaveLength(1);
+    expect(twice.hooks.PostToolUse).toHaveLength(once.hooks.PostToolUse.length);
+    expect(attestEntries(twice)).toHaveLength(2);
   });
 
   it('replaces the OLD broken type:agent hook in place (upgrade path)', () => {
@@ -135,8 +154,8 @@ describe('mergeLocalReviewHook', () => {
       },
     };
     const s = mergeLocalReviewHook(old, COMMIT_REVIEW_COMMAND);
-    expect(s.hooks.PostToolUse).toHaveLength(1);
-    const h = s.hooks.PostToolUse[0].hooks[0];
+    expect(reviewEntries(s)).toHaveLength(1);
+    const h = reviewEntries(s)[0].hooks[0];
     expect(h.type).toBe('command'); // upgraded
     expect(h.prompt).toBeUndefined();
   });
@@ -162,13 +181,14 @@ describe('mergeLocalReviewHook', () => {
     const v1 = mergeLocalReviewHook(undefined, COMMIT_REVIEW_COMMAND);
     const v2command = COMMIT_REVIEW_COMMAND + '\n# bumped';
     const v2 = mergeLocalReviewHook(v1, v2command);
-    expect(v2.hooks.PostToolUse).toHaveLength(1);
-    expect(v2.hooks.PostToolUse[0].hooks[0].command).toBe(v2command);
+    expect(reviewEntries(v2)).toHaveLength(1);
+    expect(reviewEntries(v2)[0].hooks[0].command).toBe(v2command);
   });
 
   it('tolerates a non-object existing value', () => {
     const s = mergeLocalReviewHook('garbage', COMMIT_REVIEW_COMMAND);
-    expect(s.hooks.PostToolUse).toHaveLength(1);
+    expect(reviewEntries(s)).toHaveLength(1);
+    expect(attestEntries(s)).toHaveLength(2);
   });
 });
 
@@ -315,6 +335,60 @@ describe('commit-review hook — integration (real git state)', () => {
     expect(rReadOnly.stdout.trim()).toBe('');
   });
 
+  // #303 coverage — the reflog-reason gate above (the `case "$reason" in
+  // commit*|rebase*|...` allowlist) is what makes these two silent, not the
+  // cheap same-sha shortcut: both scenarios move HEAD to a sha the hook has
+  // never seen before, so the check MUST fall through to reflog and find a
+  // reason outside the allowlist.
+  it('#303 coverage: HEAD moved by `git reset --hard HEAD~1` (no new commit) does not fire', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+
+    await writeFile(join(repo, 'e.txt'), 'e');
+    git(repo, ['add', 'e.txt']);
+    git(repo, ['commit', '-q', '-m', 'feat: add e']);
+
+    runHook(cmd, repo, {}, npxBin); // seed baseline at the post-commit HEAD
+
+    // Moves HEAD to a DIFFERENT, never-before-seen sha with no new commit
+    // object created — reflog records this as a `reset`, not a `commit`.
+    git(repo, ['reset', '--hard', 'HEAD~1']);
+
+    const r = runHook(cmd, repo, { tool_input: { command: 'git reset --hard HEAD~1' } }, npxBin);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('');
+  });
+
+  it('#303 coverage: HEAD moved by checking out to another branch and back (no new commit) does not fire', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+
+    // 'other' needs its OWN tip — a checkout landing on the same sha it
+    // already left would be caught by the cheap same-sha shortcut before
+    // ever reaching the reflog check this test pins.
+    git(repo, ['branch', 'other']);
+    await writeFile(join(repo, 'o.txt'), 'o');
+    git(repo, ['add', 'o.txt']);
+    git(repo, ['commit', '-q', '-m', 'feat: add o']); // advances main past 'other'
+
+    runHook(cmd, repo, {}, npxBin); // seed baseline at main's new tip
+
+    git(repo, ['checkout', '-q', 'other']);
+    const rAway = runHook(cmd, repo, { tool_input: { command: 'git checkout other' } }, npxBin);
+    expect(rAway.status).toBe(0);
+    expect(rAway.stdout.trim()).toBe('');
+
+    // Back to main — a DIFFERENT sha than the one just observed (so the
+    // cheap shortcut can't short-circuit this check), reached via another
+    // `checkout`, never a `commit`.
+    git(repo, ['checkout', '-q', 'main']);
+    const rBack = runHook(cmd, repo, { tool_input: { command: 'git checkout main' } }, npxBin);
+    expect(rBack.status).toBe(0);
+    expect(rBack.stdout.trim()).toBe('');
+  });
+
   it('#240 vector 1: a commit in a LINKED WORKTREE resolves to the primary checkout\'s shared bookkeeping', async () => {
     const repo = await makeRepo();
     const npxBin = await installFakeNpx('recipe');
@@ -448,6 +522,119 @@ describe('commit-review hook — integration (real git state)', () => {
     const rSame = runHook(cmd, repo, { tool_input: { command: 'git status' } }, npxBin);
     expect(rSame.status).toBe(0);
     expect(rSame.stdout.trim()).toBe('');
+  });
+});
+
+// #312 — the review recipe fetched above auto-updates on every fire (`npx
+// clud-bug@next` re-resolves fresh each call); this SCRIPT — the trigger and
+// gating logic baked into `.claude/settings.json` — does not. These tests
+// exercise the freshness note: two local file reads (this repo's own
+// manifest, and update-notifier's existing once-a-day cache), never a
+// network call of the hook's own.
+describe('commit-review hook — freshness note (#312, real git state)', () => {
+  it('warns when this repo\'s manifest is behind the cached "latest" version', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    const home = await mkdtemp(join(tmpdir(), 'clud-bug-home-'));
+
+    await mkdir(join(repo, '.claude', 'skills'), { recursive: true });
+    await writeFile(
+      join(repo, '.claude', 'skills', '.clud-bug.json'),
+      JSON.stringify({ lastUpdateVersion: '0.7.0-rc.20' }),
+    );
+    await mkdir(join(home, '.cache', 'clud-bug'), { recursive: true });
+    await writeFile(
+      join(home, '.cache', 'clud-bug', 'update-check.json'),
+      JSON.stringify({ latest: '0.7.0-rc.27' }),
+    );
+
+    runHook(cmd, repo, {}, npxBin, { HOME: home }); // seed the HEAD-moved baseline
+    await writeFile(join(repo, 'f.txt'), 'x');
+    git(repo, ['add', 'f.txt']);
+    git(repo, ['commit', '-q', '-m', 'feat: add f']);
+    const r = runHook(cmd, repo, { tool_input: { command: 'git commit -m feat' } }, npxBin, { HOME: home });
+
+    expect(r.status).toBe(2);
+    expect(r.stdout).toMatch(/hook trigger script was installed at v0\.7\.0-rc\.20/);
+    expect(r.stdout).toMatch(/clud-bug v0\.7\.0-rc\.27 has been observed/);
+    expect(r.stdout).toMatch(/run 'clud-bug update'/);
+    expect(r.stdout).toMatch(/fake recipe/); // the review itself still ran
+  });
+
+  it('stays silent when the manifest already matches the cached "latest" version', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    const home = await mkdtemp(join(tmpdir(), 'clud-bug-home-'));
+
+    await mkdir(join(repo, '.claude', 'skills'), { recursive: true });
+    await writeFile(
+      join(repo, '.claude', 'skills', '.clud-bug.json'),
+      JSON.stringify({ lastUpdateVersion: '0.7.0-rc.27' }),
+    );
+    await mkdir(join(home, '.cache', 'clud-bug'), { recursive: true });
+    await writeFile(
+      join(home, '.cache', 'clud-bug', 'update-check.json'),
+      JSON.stringify({ latest: '0.7.0-rc.27' }),
+    );
+
+    runHook(cmd, repo, {}, npxBin, { HOME: home });
+    await writeFile(join(repo, 'f.txt'), 'x');
+    git(repo, ['add', 'f.txt']);
+    git(repo, ['commit', '-q', '-m', 'feat: add f']);
+    const r = runHook(cmd, repo, { tool_input: { command: 'git commit -m feat' } }, npxBin, { HOME: home });
+
+    expect(r.status).toBe(2);
+    expect(r.stdout).not.toMatch(/hook trigger script was installed at/);
+  });
+
+  it('stays silent when the installed version is NEWER than the cached "latest" (not just different)', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    const home = await mkdtemp(join(tmpdir(), 'clud-bug-home-'));
+
+    // Installed is AHEAD of the cache — the routine race where `clud-bug
+    // update` stamps the manifest immediately but update-notifier's
+    // once-a-day background poll hasn't caught up yet. A plain `!=` gate
+    // fires here (backwards); the directional check must not.
+    await mkdir(join(repo, '.claude', 'skills'), { recursive: true });
+    await writeFile(
+      join(repo, '.claude', 'skills', '.clud-bug.json'),
+      JSON.stringify({ lastUpdateVersion: '0.8.0' }),
+    );
+    await mkdir(join(home, '.cache', 'clud-bug'), { recursive: true });
+    await writeFile(
+      join(home, '.cache', 'clud-bug', 'update-check.json'),
+      JSON.stringify({ latest: '0.7.0-rc.27' }),
+    );
+
+    runHook(cmd, repo, {}, npxBin, { HOME: home });
+    await writeFile(join(repo, 'f.txt'), 'x');
+    git(repo, ['add', 'f.txt']);
+    git(repo, ['commit', '-q', '-m', 'feat: add f']);
+    const r = runHook(cmd, repo, { tool_input: { command: 'git commit -m feat' } }, npxBin, { HOME: home });
+
+    expect(r.status).toBe(2);
+    expect(r.stdout).not.toMatch(/hook trigger script was installed at/);
+  });
+
+  it('stays silent (fails open) when neither local file exists — never guesses', async () => {
+    const repo = await makeRepo();
+    const npxBin = await installFakeNpx('recipe');
+    const cmd = buildCommitReviewCommand();
+    const home = await mkdtemp(join(tmpdir(), 'clud-bug-home-'));
+
+    // No .claude/skills/.clud-bug.json, no ~/.cache/clud-bug/update-check.json.
+    runHook(cmd, repo, {}, npxBin, { HOME: home });
+    await writeFile(join(repo, 'f.txt'), 'x');
+    git(repo, ['add', 'f.txt']);
+    git(repo, ['commit', '-q', '-m', 'feat: add f']);
+    const r = runHook(cmd, repo, { tool_input: { command: 'git commit -m feat' } }, npxBin, { HOME: home });
+
+    expect(r.status).toBe(2);
+    expect(r.stdout).not.toMatch(/hook trigger script was installed at/);
   });
 });
 

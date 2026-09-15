@@ -18,6 +18,10 @@ jobs:
       # must be valid SemVer. Runs before install — it needs no deps, and a
       # bad version should fail in seconds, not after a full build.
       - run: node scripts/check-version.mjs
+      # Published-claim guard (#270): every benchmark number in the docs and
+      # on the site is rendered from benchmark/results/latest.json. Same
+      # no-deps, fail-in-seconds shape as the version guard above.
+      - run: node scripts/check-benchmark-claims.mjs
       # v0.7.0: vitest replaces node:test; needs install before npm test.
       - run: npm ci
       - run: npm run build
@@ -121,7 +125,10 @@ jobs:
               '',
             ].join('\n'));
           "
+          # benchmark.yml (#270) also consumes the key, but on a schedule and over
+          # synthetic scenarios — its header says why that is not the same double-bill.
           for wf in .github/workflows/ci.yml \
+                    .github/workflows/benchmark.yml \
                     .ci-rendered/strict-mode-gate-probe.yml; do
             if [ -f "$wf" ]; then ./actionlint "$wf"; fi
           done

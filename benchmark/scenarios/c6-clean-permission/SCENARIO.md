@@ -4,6 +4,7 @@ class: clean
 severity: none
 one_line_defect: NONE — this code is correct
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_correct: The ownership term in the `||` chain is guarded by `!isGuest` (closing the guest/anonymous null-id collision) and `moderatesHere` is gated by `role === 'moderator'` (so a stale moderatorIds entry grants nothing), so every unauthorized role × ownership × pinned × channel-membership combination is denied.
 correct_finding: NONE. A correct review reports no finding here; any critical/major flag is a FALSE POSITIVE.
 ---

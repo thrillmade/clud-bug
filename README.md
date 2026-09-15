@@ -41,7 +41,8 @@ The naturalist arrives at your repo, surveys the habitat, and assembles a field 
 4. **Writes** the chosen specimens to `.claude/skills/<name>/SKILL.md` (Claude Code auto-loads them in the GitHub Action).
 5. **Drafts the field kit** at `.github/workflows/clud-bug-review.yml` with your project description filled in and the right permissions/tool allowlist for `gh pr comment` to actually post.
 6. **Briefs other agents** by adding a `<!-- clud-bug-start -->` block to `AGENTS.md` — and only to `AGENTS.md` (creating it if missing; it's the cross-tool canonical). Per-tool files that already exist — `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.continuerules`, `.cursor/rules/*.md` — get a one-line redirect stub pointing back at `AGENTS.md`, never a copy of the instructions. One source, seven pointers, one drift rate. If a file already redirects (a `@AGENTS.md` import, logmind's stub, or any link to `AGENTS.md`) it's left untouched, and anything you hand-wrote around our block is preserved. Re-runs replace the block in `AGENTS.md` in place. Files you didn't already have are left uncreated — no proliferating stubs.
-7. **Offers to enable `required_conversation_resolution`** on your default branch. Clud Bug auto-resolves its own review threads when fixes land — but that only gates merges when conversation-resolution is required. Init detects the current state via `gh`, prompts to enable (auto-yes with `--accept-all`), and degrades to an advisory message if you lack admin perms / `gh` isn't installed / the branch has no base protection rule. Pass `--no-set-protection` to skip the prompt entirely — for repos that manage branch protection via ruleset or org policy.
+7. **Registers the harness attestation** — two Claude Code hooks in `.claude/settings.json` plus the `.claude/agents/clud-bug-reviewer.md` subagent definition, so the harness itself records which reasoners reviewed a change. See [Harness attestation](#harness-attestation--the-record-of-which-reasoners-actually-ran). Skipped by `--no-hooks`.
+8. **Offers to enable `required_conversation_resolution`** on your default branch. Clud Bug auto-resolves its own review threads when fixes land — but that only gates merges when conversation-resolution is required. Init detects the current state via `gh`, prompts to enable (auto-yes with `--accept-all`), and degrades to an advisory message if you lack admin perms / `gh` isn't installed / the branch has no base protection rule. Pass `--no-set-protection` to skip the prompt entirely — for repos that manage branch protection via ruleset or org policy.
 
 ## The local review, before you push
 
@@ -195,6 +196,44 @@ clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical|
 **Overriding the origin:** set `CLUD_BUG_NOTARY_URL` to point at a staging or self-hosted notary instead of the production default. It's ignored when the repo has opted out (`notary: false` always wins).
 
 Free tier / no App install: submitting a bundle to a notary you're not entitled to falls back automatically to the same labeled self-attested check — the review is never blocked, it just isn't independently certified.
+
+### Harness attestation — the record of which reasoners actually ran
+
+A review is only worth the distance between reviewer and author. Claiming that distance needs
+evidence, and the evidence can't come from the reviewing agent's own say-so. So `clud-bug init`
+registers two **Claude Code hooks** in your repo's committed `.claude/settings.json`:
+
+| Event | Matcher | What it records |
+|---|---|---|
+| `PostToolUse` | `Agent` | the harness's id for the subagent, the role, the **resolved** model, the effort level, the dispatching tool call, and a lens label |
+| `SubagentStop` | `clud-bug-reviewer` | that the same subagent id finished |
+
+Both rows are written to `<git-common-dir>/clud-bug-attest.jsonl` — outside the work tree, because
+a record named for a commit cannot live inside it. Neither hook makes a network call, neither can
+block or slow your session, and **the prompt text is never recorded** (only a digest of it): a
+verbatim review prompt publishes the strategy an adversarial pass depends on, and can carry quoted
+source out of the repository.
+
+An attestation is the **pair**, joined on the agent id. A dispatch row alone says a reviewer was
+launched; only a matching completion says one ran to the end. `clud-bug post-check-run` re-derives
+the field from that store at submit time and discards whatever the review artifact carried — a
+record handed over by the party being checked is not evidence about that party.
+A notary re-derives nothing from it beyond what the committed registration independently supports.
+
+Two honest limits. Its force is *tamper-evidence, not tamper-proofness* — and the two halves of
+that differ: the record file lives outside the work tree, so a fabricated row leaves no trace in
+any diff. What is tamper-evident is the **registration** — but only when it is actually
+**committed**: weakening or deleting a committed hook is a visible hunk in the diff under review,
+but a `.gitignore`d `.claude/` (or a `cwd` that isn't inside a git repository at all) commits
+nothing, so there is no diff for a reviewer to see. `clud-bug init`/`update` check this — with
+`git check-ignore` on both `.claude/settings.json` and `.claude/agents/clud-bug-reviewer.md`, right
+after writing them — and print a loud warning naming the offending file when the registration can't
+be committed from here; the bundle a review submits also carries `registration: 'uncommittable'` in
+that case, so a notary can see it too. Absent that warning, the claim also establishes only that a
+distinct reasoner ran — it says nothing about who the operator is.
+
+`clud-bug update` retrofits both hooks and the `.claude/agents/clud-bug-reviewer.md` subagent
+definition onto an existing install, and runs the same committability check.
 
 ## Bot-authored PRs (Dependabot, Renovate, fork PRs)
 
@@ -389,6 +428,22 @@ curl -o .github/workflows/clud-bug-review.yml \
 ```
 
 The CLI does this for you, plus skill curation.
+
+## Does it catch anything? — the planted-defect benchmark
+
+<!-- BEGIN benchmark-score -->
+<!-- Generated by scripts/render-benchmark.mjs from benchmark/results/latest.json. Do not edit by hand. -->
+
+**Planted-defect benchmark — regression corpus.** On the 20-scenario committed corpus (model unrecorded, effort unrecorded, recipe unrecorded, manual panel (pre-automation)), clud-bug caught 14/14 planted defects (100%) and false-flagged 0 of 6 clean decoys. Run 2026-07-03: spend not metered. This corpus is public and fixed, so the reviewer may have seen it — it measures regression, not liveness; SPEC 2.0 §8.2's generated planted-defect test is tracked separately. Per-defect table: benchmark/results/latest.json.
+
+_The recipe that produced this score was not recorded, so it cannot be matched to the one shipping today — read it as a historical measurement, not a reproducible claim._
+
+<!-- END benchmark-score -->
+
+The corpus, the answer keys and the runner are in [`benchmark/`](benchmark/);
+`.github/workflows/benchmark.yml` re-scores it on a schedule and opens a PR with
+the result, so the number above is whatever the last run measured rather than a
+number anyone typed.
 
 ## Contributing
 

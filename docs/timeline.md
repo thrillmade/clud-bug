@@ -13,6 +13,12 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-09 (6 decisions)
+
+- **2026-09-15** — Build harness attestation (#266 PR1, SPEC §4.4/§4.5/§8.1): the harness records which reviewing agents ran; the bundle carries the record; post-check-run re-derives it at the boundary *(feat/266-harness-attestation)* — [decisions-branches/feat__266-harness-attestation.md](decisions-branches/feat__266-harness-attestation.md)
+- *... 4 more decisions ...*
+- **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
+
 ## 2026-08 (27 decisions)
 
 - **2026-08-24** — CI-only failure root cause: init --commit never checked git commit exit status, and the e2e test fixture had no repo-local git identity *(319-declaration-matrix)* — [decisions-branches/319-declaration-matrix.md](decisions-branches/319-declaration-matrix.md)

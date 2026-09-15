@@ -4,6 +4,7 @@ class: emergent
 severity: MAJOR
 one_line_defect: serializeEntries writes entry content verbatim, so a body line that looks like a col-0 `<!-- entry-start/end:... -->` marker forges a delimiter and the reader mis-frames entries (phantom entry appears, real entry evicted).
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: Every writer line is a correct plain string concat and every reader line is a correct marker scan; the corruption only exists in the *interaction* of unescaped content with the line-based framing, never on any one changed line.
 correct_finding: Report that the serialization format is not injection-safe — entry content is not escaped/guarded, so multiline content containing a column-0 marker line forges a delimiter and breaks the parse round-trip. Ground it either by running `node reproduce.mjs` (round-trip is not the identity: `note-1001` evicted, `phantom` appears) or by naming the violated invariant: `parseEntries(serializeEntries(x))` must equal `x`, which fails whenever content can contain a line matching the marker grammar.
 ---

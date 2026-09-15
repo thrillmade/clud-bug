@@ -1,0 +1,12 @@
+{
+  "id": "c2-clean-union",
+  "class": "clean",
+  "severity": "none",
+  "expected": "clean",
+  "file": "module.mjs",
+  "lineRange": [
+    18,
+    41
+  ],
+  "defect": "NONE — this code is correct"
+}

@@ -28,6 +28,7 @@ import {
   type DesignConfig,
 } from '../core/index.js';
 import { readManifest } from './skills.js';
+import { REVIEWER_AGENT_TYPE } from './hooks.js';
 
 /** Marker that identifies a clud-bug local-review recipe (idempotency + hook detection). */
 export const CLUD_BUG_RECIPE_MARKER = 'clud-bug-local-review';
@@ -316,11 +317,24 @@ export function renderReviewRecipe(input: {
       're-checks a `quote` grounding against the diff, so quote the line EXACTLY. Finding nothing is the ' +
       'normal, common outcome — be precise, not exhaustive.';
   } else {
+    // #266 — each pass names the SAME `subagent_type`, and a per-pass
+    // `description`. Both are load-bearing rather than cosmetic: the
+    // `SubagentStop` hook committed to `.claude/settings.json` matches on the
+    // agent type, so that string is what decides which completions become
+    // attestation records (SPEC 2.0 §4.4), and the description is the lens
+    // label §4.4:957 asks for — the harness records it, the prompt it labels is
+    // never recorded (§4.4:959).
     const passLines = Array.from({ length: maxPasses }, (_, i) => {
       const role = roleForPass(plan.roles, i, 'Reviewer');
       const tier = role.tier ? ` · ${role.tier} tier` : '';
-      return `  ${i + 1}. **${role.name}**${tier}`;
+      return `  ${i + 1}. **${role.name}**${tier} — \`description: "${role.name}${role.tier ? ` · ${role.tier}` : ''} — pass ${i + 1} of ${maxPasses}"\``;
     }).join('\n');
+    const dispatchTypeRule =
+      `Dispatch every pass with **subagent_type: \`${REVIEWER_AGENT_TYPE}\`** and the \`description\` ` +
+      `shown beside it. The type is what the harness's own attestation hook matches on, so a pass ` +
+      `dispatched as anything else leaves no record that it ran and cannot count toward the ` +
+      `review's independence (SPEC 2.0 §4.4). Do not write that record yourself — it is the ` +
+      `harness's, and clud-bug reads it from the harness when it certifies.`;
     // 6c: a 2-pass cross-check escalates to a conditional 3rd Mantis arbiter
     // only when the first two passes disagree on a gate-relevant finding. Gate
     // the prose to the same shape as `shouldEscalate` (cross-check + exactly 2
@@ -352,7 +366,7 @@ export function renderReviewRecipe(input: {
       `a strong model for \`wasp\`/\`mantis\`). Each pass applies the three lenses above and MAY ground ` +
       `a MAJOR in a failing CI check (§3c) — no pass ever executes anything itself — so the ` +
       `ground-or-drop mandate is enforceable in every mode, not only at the arbiter:\n\n${passLines}\n\n` +
-      `${MODE_AGGREGATION[mode]}${escalation}\n\n` +
+      `${MODE_AGGREGATION[mode]}${escalation}\n\n${dispatchTypeRule}\n\n` +
       `**Grounding rule (every pass):** ${GROUNDING_RULE}\n\n${NO_EXECUTION}\n\n${SEVERITY_RULE}`;
   }
 

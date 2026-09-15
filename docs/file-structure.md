@@ -16,6 +16,7 @@ clud-bug
 ├── .logmind
 │   └── config.yml
 ├── benchmark
+│   ├── results
 │   ├── scenarios
 │   ├── README.md
 │   └── RESULTS.md
@@ -34,10 +35,13 @@ clud-bug
 ├── fixtures
 │   └── reviews
 ├── scripts
+│   ├── check-benchmark-claims.mjs
 │   ├── check-version.mjs
 │   ├── fixture-check.mjs
 │   ├── gen-version.mjs
-│   └── render-ci.mjs
+│   ├── render-benchmark.mjs
+│   ├── render-ci.mjs
+│   └── run-benchmark.mjs
 ├── site
 │   ├── app
 │   ├── lib
@@ -63,7 +67,13 @@ clud-bug
 │   ├── core
 │   ├── golden
 │   ├── agents-md.test.js
+│   ├── attestation-hook.test.js
+│   ├── attestation-rederive.test.js
+│   ├── attestation.test.js
 │   ├── audit.test.js
+│   ├── benchmark-claims.test.js
+│   ├── benchmark-corpus.test.js
+│   ├── benchmark-runner.test.js
 │   ├── branch-protection.test.js
 │   ├── build-bundle.test.js
 │   ├── check-verdict.test.js
