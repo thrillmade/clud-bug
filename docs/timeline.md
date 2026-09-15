@@ -15,6 +15,7 @@ PR's CI run, so this file is always coherent with current `main`.
 
 ## 2026-09
 
+- **2026-09-15** — Dependabot targets dev, not main: dependency bumps ride the normal dev→main promotion *(chore/dependabot-target-dev)* — [decisions-branches/chore__dependabot-target-dev.md](decisions-branches/chore__dependabot-target-dev.md)
 - **2026-09-15** — Fix #284: logmind-self-update hands setup-logmind a v-prefixed exact tag, guards an empty LATEST, drops the flag cobra rejects *(fix/284-logmind-self-update)* — [decisions-branches/fix__284-logmind-self-update.md](decisions-branches/fix__284-logmind-self-update.md)
 
 ## 2026-08 (23 decisions)
