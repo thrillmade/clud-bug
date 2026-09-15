@@ -82,6 +82,29 @@
 //   identity unset, or the commit's author can't be read — because a false
 //   FIRE is noise but a false SKIP is an unreviewed commit, exactly the bug
 //   class #239/#240 exist to prevent.
+//
+// #312 (hook-freshness note): the recipe this hook FETCHES auto-updates on
+//   every fire (`npx clud-bug@next` re-resolves fresh each call); the hook's
+//   own TRIGGER/GATING script — the text you are reading right now — does
+//   not. It is a static string baked into `.claude/settings.json` at
+//   `init`/`update` time, so a fix to this file (like #240 vector 3's own
+//   fail-open gate, or #249's authorship filter) never reaches an
+//   already-installed repo until someone thinks to re-run `clud-bug update`
+//   — and the ONE nudge that already exists for that (`update-notifier.ts`)
+//   never fires here: it's gated on an interactive TTY, and this hook runs
+//   detached, from a non-interactive Bash tool call. So: tell the user from
+//   INSIDE the hook, using only two local file reads (never a network call
+//   of its own) — the version this repo's OWN manifest was last stamped
+//   with (by whichever `init`/`update` last ran), and the newest version
+//   update-notifier's existing once-a-day BACKGROUND refresh already
+//   cached, compared with the same prerelease-aware ORDERING
+//   `isNewerVersion` (update-notifier.ts) already implements — not plain
+//   inequality, which fires backwards whenever the installed version is
+//   already ahead of a cache that hasn't caught up yet (a routine race: the
+//   manifest is stamped immediately by `update`, the cache refreshes at most
+//   once a day). Either file missing (never run, or a repo old enough to
+//   predate the field) means "cannot tell" and stays silent — the same
+//   fail-open rule every other gate in this file follows.
 
 /** Stable marker embedded in our hook so re-runs — and upgrades from the old,
  * broken `type: agent` hook — replace it in place. */
@@ -116,6 +139,55 @@ export const PENDING_QUEUE_FILE = 'clud-bug-pending';
  * complete. `fired !== done` for the same sha means a review is still open. */
 export const HOOK_FIRED_FILE = 'clud-bug-hook-fired';
 export const REVIEW_DONE_FILE = 'clud-bug-review-done';
+
+/** #312 — parses `lastUpdateVersion` out of `.claude/skills/.clud-bug.json`
+ * on stdin: the clud-bug version that most recently wrote THIS repo's own
+ * config (whichever `init`/`update` ran last). A real parser, never an
+ * ad-hoc shell scrape of JSON — same convention as `TESTS_DECL_PARSER`
+ * below, single-quote-free so it embeds cleanly in `node -e '…'`. */
+const MANIFEST_VERSION_PARSER =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
+  'try{var j=JSON.parse(s);var v=j&&j.lastUpdateVersion;' +
+  'if(typeof v==="string")process.stdout.write(v.trim())}' +
+  'catch(e){}})';
+
+/** #312 — parses `latest` out of update-notifier's own cache file
+ * (`~/.cache/clud-bug/update-check.json`). That cache is refreshed at most
+ * once a day by a DETACHED background process (see `update-notifier.ts`) —
+ * reading it here is a plain local file read, never a network call of its
+ * own. Same shape as `MANIFEST_VERSION_PARSER` above. */
+const UPDATE_CACHE_LATEST_PARSER =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
+  'try{var j=JSON.parse(s);var v=j&&j.latest;' +
+  'if(typeof v==="string")process.stdout.write(v.trim())}' +
+  'catch(e){}})';
+
+/** #312 — decides whether the cached "latest" version (argv[2]) is actually
+ * NEWER than the installed version (argv[1]), for clud-bug's `X.Y.Z` /
+ * `X.Y.Z-rc.N` scheme; prints `1` when it is, nothing otherwise. A plain
+ * string-inequality check (`!=`) fires BACKWARDS whenever the installed
+ * version is already ahead of whatever update-notifier's once-a-day
+ * background poll last cached — a routine race, not a contrived one:
+ * `clud-bug update` stamps the manifest immediately, the cache catches up at
+ * most once a day. Ports the same numeric/prerelease ordering
+ * `isNewerVersion` already implements in update-notifier.ts (a stable build
+ * ranks above any prerelease of the same core) rather than reimplementing it
+ * as string equality — that function can't be imported here: this string is
+ * evaluated by a bare `node -e` inside a shell script baked into
+ * `.claude/settings.json`, with no access to this package's own modules.
+ * Single-quote-free, same convention as the parsers above; takes its inputs
+ * as argv (not stdin) since there is no file to read — both versions are
+ * already local shell variables by the time this runs. */
+const VERSION_IS_NEWER_PARSER =
+  'try{var parse=function(v){var s=String(v).split("-");' +
+  'var nums=(s[0]||"").split(".").map(function(n){return Number(n)||0});' +
+  'var pre=s[1];var preNum=pre?Number((pre.match(/\\d+/)||["0"])[0]):Infinity;' +
+  'return nums.concat([preNum])};' +
+  'var installed=parse(process.argv[1]||"");var cached=parse(process.argv[2]||"");' +
+  'var len=Math.max(cached.length,installed.length);var newer=false;' +
+  'for(var i=0;i<len;i++){var x=cached[i]||0,y=installed[i]||0;if(x!==y){newer=x>y;break}}' +
+  'if(newer)process.stdout.write("1")' +
+  '}catch(e){}';
 
 /**
  * Build the shell `command` of the commit-review hook. Pins to a FLOATING npm
@@ -171,6 +243,15 @@ export const REVIEW_DONE_FILE = 'clud-bug-review-done';
  *      surfaces) still `exit 2` with a one-line notice rather than going
  *      silent (#239) — the commit itself is never blocked either way (this
  *      hook runs `async` after the tool already ran).
+ *   8. #312 — before surfacing anything, check whether THIS SCRIPT (not the
+ *      recipe it just fetched) is itself behind: two local file reads, no
+ *      network call of their own, comparing the version this repo's own
+ *      manifest was last stamped with against the newest version
+ *      update-notifier's existing background refresh already cached — using
+ *      the same directional, prerelease-aware ordering as `isNewerVersion`,
+ *      not plain inequality (see VERSION_IS_NEWER_PARSER). Only when the
+ *      cache is actually AHEAD, prepend a one-line nudge to re-run
+ *      `clud-bug update`.
  */
 export function buildCommitReviewCommand(pin: string = 'next'): string {
   return [
@@ -273,6 +354,30 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     `  grep -qxF "$firedsha" "$pending" 2>/dev/null || printf '%s\\n' "$firedsha" >> "$pending" 2>/dev/null || true`,
     `  note="clud-bug: review deferred (usage limit) for $firedsha — run 'clud-bug review --pending' when capacity returns."`,
     `fi`,
+    // #312 — is THIS SCRIPT (not the recipe it fetches) behind? Two local
+    // reads, no network of their own: the version this repo's manifest was
+    // last stamped with, and the newest version update-notifier's existing
+    // background refresh already cached (see the file-header comment for
+    // the full rationale). Either missing means "cannot tell" — stay quiet.
+    `staleNote=`,
+    `toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || toplevel=`,
+    `installedver=`,
+    `if [ -n "$toplevel" ] && [ -f "$toplevel/.claude/skills/.clud-bug.json" ]; then`,
+    `  installedver=$(node -e '${MANIFEST_VERSION_PARSER}' < "$toplevel/.claude/skills/.clud-bug.json" 2>/dev/null) || installedver=`,
+    `fi`,
+    `if [ -n "$installedver" ] && [ -f "$HOME/.cache/clud-bug/update-check.json" ]; then`,
+    `  cachedlatest=$(node -e '${UPDATE_CACHE_LATEST_PARSER}' < "$HOME/.cache/clud-bug/update-check.json" 2>/dev/null) || cachedlatest=`,
+    // Directional, not `!=`: only nudge when the cache is actually AHEAD of
+    // what's installed. `!=` alone fires backwards when the installed
+    // version is already newer than a cache that hasn't caught up yet (see
+    // VERSION_IS_NEWER_PARSER's own comment for why that race is routine).
+    `  if [ -n "$cachedlatest" ]; then`,
+    `    isnewer=$(node -e '${VERSION_IS_NEWER_PARSER}' "$installedver" "$cachedlatest" 2>/dev/null) || isnewer=`,
+    `    if [ "$isnewer" = "1" ]; then`,
+    `      staleNote="clud-bug: this repo's hook trigger script was installed at v$installedver; clud-bug v$cachedlatest has been observed on this machine since — run 'clud-bug update' to refresh the trigger logic (the review recipe above already auto-updates on its own)."`,
+    `    fi`,
+    `  fi`,
+    `fi`,
     // #240 vector 2 — the hook SEES the Bash command line (it's the tool
     // input this hook fired on); a `--no-verify` commit bypasses whatever
     // git hooks this repo mandates. Flag it (never hard-deny — that could
@@ -298,6 +403,7 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     `  printf '%s' "$sha" > "$gitdir/clud-bug-review-skipped" 2>/dev/null || true`,
     `  grep -qxF "$sha" "$pending" 2>/dev/null || printf '%s\\n' "$sha" >> "$pending" 2>/dev/null || true`,
     `  [ -n "$note" ] && printf '%s\\n\\n' "$note"`,
+    `  [ -n "$staleNote" ] && printf '%s\\n\\n' "$staleNote"`,
     `  printf "clud-bug: review deferred (error: recipe fetch failed) for %s — run 'clud-bug review --pending' once resolved.\\n" "$sha"`,
     `  exit 2`,
     `fi`,
@@ -310,6 +416,7 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     // actually confirmed; until then it stays enumerable and drainable.
     `grep -qxF "$sha" "$pending" 2>/dev/null || printf '%s\\n' "$sha" >> "$pending" 2>/dev/null || true`,
     `[ -n "$note" ] && printf '%s\\n\\n' "$note"`,
+    `[ -n "$staleNote" ] && printf '%s\\n\\n' "$staleNote"`,
     `printf '%s\\n\\n%s\\n' "clud-bug commit review (max mode — on this session's subscription): a commit was just made. Follow this recipe now — review that commit against the skills it names and surface any findings. When you finish, run: clud-bug review-done $sha (a killed session must never look like a completed review)." "$recipe"`,
     `exit 2`,
   ].join('\n');

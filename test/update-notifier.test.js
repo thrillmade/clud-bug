@@ -40,6 +40,13 @@ describe('maybeNotifyUpdate', () => {
     spy.mockRestore();
     expect(out).toMatch(/clud-bug 0\.7\.0-rc\.20 is available/);
     expect(out).toMatch(/clud-bug update/);
+    // #312 — the nudge used to claim "max-mode hooks already auto-update",
+    // true of the review recipe an installed hook fetches (it re-resolves
+    // fresh every fire) but false of the hook's own trigger/gating script
+    // (baked into .claude/settings.json at init/update time). Pin the
+    // narrower, true claim instead of the broad one.
+    expect(out).toMatch(/trigger script, which does not auto-update on its own/);
+    expect(out).not.toMatch(/hooks already auto-update/);
   });
 
   it('is silent when the current version is already the latest', async () => {

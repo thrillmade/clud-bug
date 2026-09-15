@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (3 decisions)
+## 2026-09 (4 decisions)
 
-- **2026-09-15** — Ship fixtures/reviews in the npm package so every producer can run the SPEC §4.3 corpus test (#256) *(chore/ship-fixtures)* — [decisions-branches/chore__ship-fixtures.md](decisions-branches/chore__ship-fixtures.md)
-- *... 1 more decision ...*
+- **2026-09-15** — Fix #312 + #303 + #253 residual: hook freshness note, reflog-reason coverage, one live-block-span primitive for AGENTS.md marker blocks *(fix/update-lane-312-303-253)* — [decisions-branches/fix__update-lane-312-303-253.md](decisions-branches/fix__update-lane-312-303-253.md)
+- *... 2 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)

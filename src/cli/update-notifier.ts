@@ -64,7 +64,12 @@ export async function maybeNotifyUpdate(
     if (typeof cache.latest === 'string' && isNewerVersion(cache.latest, current)) {
       process.stderr.write(
         `\n  ⬆ clud-bug ${cache.latest} is available (you have ${current}).\n` +
-          `    Run \`clud-bug update\` to refresh your kit. (max-mode hooks already auto-update.)\n\n`,
+          // #312 — "max-mode hooks already auto-update" overclaimed: only the
+          // review RECIPE an installed hook fetches re-resolves fresh on
+          // every fire. The hook's own TRIGGER/GATING script — baked into
+          // .claude/settings.json at init/update time — does not, which is
+          // exactly what running `clud-bug update` here refreshes.
+          `    Run \`clud-bug update\` to refresh your kit — including the hook's trigger script, which does not auto-update on its own (the review recipe it fetches each run does).\n\n`,
       );
     }
 
