@@ -4,11 +4,14 @@ import { join, dirname } from 'node:path';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { reviewPrompt } from '../core/prompts.js';
 import { detect, buildDescriptionLine } from '../core/detect.js';
+import { REGISTRATION_PATHS, isRegistrationPathCommittable } from '../core/attestation.js';
 import { loadBaseline, readManifest, writeManifest, type LoadBaselineOptions } from './skills.js';
 import { applyToRepo as applyAgentDocs } from './agents-md.js';
 import {
   mergeLocalReviewHook, buildCommitReviewCommand, CLUD_BUG_HOOK_MARKER,
   buildPrePushHookScript, CLUD_BUG_PREPUSH_MARKER, PREPUSH_HOOK_FILE,
+  mergeAttestationHooks, ATTESTATION_HOOK_MARKER,
+  buildReviewerAgentFile, REVIEWER_AGENT_PATH, REVIEWER_AGENT_MARKER,
 } from './hooks.js';
 
 // Re-render the user's workflow + refresh baseline skills using the
@@ -203,24 +206,73 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
     }
   }
 
+  // Which local review surface, if any, this repo already opted into. `update`
+  // refreshes what is installed and never adds a surface the repo did not ask
+  // for (SPEC 2.0 §4.1) — but the #266 attestation registration is not a
+  // surface, it is the record of which reasoners ran on the surface already
+  // there, so it retrofits onto EITHER (a repo on the pre-push default has no
+  // settings.json at all until this runs).
+  const hooksDirResult = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd, encoding: 'utf8' });
+  const prePushPath =
+    hooksDirResult.status === 0 ? join(cwd, hooksDirResult.stdout.trim(), PREPUSH_HOOK_FILE) : null;
+  const priorPrePush = prePushPath ? await readSafe(prePushPath) : undefined;
+  const prePushIsOurs = !!priorPrePush && priorPrePush.includes(CLUD_BUG_PREPUSH_MARKER);
+
   // 5c. Refresh the native commit-review hook (Wave 6b) in place when it was
   //     scaffolded via `clud-bug init --with-hooks` and our entry is intact (the
-  //     `clud-bug-local-review` marker). settings.json is user-managed — we only
-  //     re-merge OUR marked hook, never touching the user's other hooks/settings.
+  //     `clud-bug-local-review` marker), plus the #266 attestation entries.
+  //     settings.json is user-managed — we only re-merge OUR marked hooks,
+  //     never touching the user's other hooks/settings.
   const settingsPath = join(cwd, '.claude', 'settings.json');
-  if (await pathExists(settingsPath)) {
-    const prior = await readSafe(settingsPath);
-    if (prior && prior.includes(CLUD_BUG_HOOK_MARKER)) {
-      try {
-        const merged = mergeLocalReviewHook(JSON.parse(prior), buildCommitReviewCommand());
-        await maybeWrite(settingsPath, JSON.stringify(merged, null, 2) + '\n', changed, unchanged, 'commit-review hook');
-      } catch {
-        skipped.push({
-          path: settingsPath,
-          label: 'commit-review hook',
-          reason: 'settings.json is not valid JSON; left untouched',
-        });
-      }
+  const priorSettings = (await pathExists(settingsPath)) ? await readSafe(settingsPath) : null;
+  const commitHookInstalled = !!priorSettings && priorSettings.includes(CLUD_BUG_HOOK_MARKER);
+  if (commitHookInstalled || prePushIsOurs || !!priorSettings?.includes(ATTESTATION_HOOK_MARKER)) {
+    try {
+      const existing = priorSettings === null ? undefined : JSON.parse(priorSettings);
+      const merged = commitHookInstalled
+        ? mergeLocalReviewHook(existing, buildCommitReviewCommand())
+        : mergeAttestationHooks(existing);
+      const label = commitHookInstalled ? 'commit-review + attestation hooks' : 'attestation hooks';
+      await mkdir(dirname(settingsPath), { recursive: true });
+      await maybeWrite(settingsPath, JSON.stringify(merged, null, 2) + '\n', changed, unchanged, label);
+    } catch {
+      skipped.push({
+        path: settingsPath,
+        label: 'commit-review + attestation hooks',
+        reason: 'settings.json is not valid JSON; left untouched',
+      });
+    }
+
+    // The subagent definition the SubagentStop matcher names. Markerless means
+    // hand-owned — same rule as the local-review slash command above.
+    const agentPath = join(cwd, ...REVIEWER_AGENT_PATH);
+    const priorAgent = await readSafe(agentPath);
+    if (priorAgent === null || priorAgent.includes(REVIEWER_AGENT_MARKER)) {
+      await mkdir(dirname(agentPath), { recursive: true });
+      await maybeWrite(agentPath, buildReviewerAgentFile(), changed, unchanged, 'reviewer subagent');
+    } else {
+      skipped.push({
+        path: agentPath,
+        label: 'reviewer subagent',
+        reason: 'markerless (user-customized); delete it and re-run to refresh',
+      });
+    }
+
+    // #266 item 1 (SPEC §4.4:961) — same committability check `init` runs
+    // right after writing these two files (`main.ts`); `update` retrofits an
+    // already-installed repo, so a `.gitignore`d `.claude/` here is just as
+    // real a gap, whether this run just wrote the files or found them already
+    // in place. `advisories` is the channel this file already uses for a
+    // repo-config state `update` cannot fix unattended (see the `#319`
+    // comment on `RunUpdateResult.advisories` above) — `update` runs
+    // unattended in the self-update Action as often as it runs by hand, so
+    // this can only warn, never prompt.
+    const notCommittable = REGISTRATION_PATHS.filter((p) => !isRegistrationPathCommittable(cwd, p));
+    if (notCommittable.length > 0) {
+      advisories.push(
+        `${notCommittable.join(', ')}: attestation registration is NOT committable here; reviews ` +
+          'from this checkout cannot be certified as independently reviewed until it is committed (SPEC §4.4).',
+      );
     }
   }
 
@@ -230,11 +282,8 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
   //     review "is off unless asked for"). A repo on the pre-#276 commit-only
   //     surface therefore keeps it and gains nothing here — switching is an
   //     explicit `clud-bug init --hook-trigger push`.
-  const hooksDirResult = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd, encoding: 'utf8' });
-  if (hooksDirResult.status === 0) {
-    const prePushPath = join(cwd, hooksDirResult.stdout.trim(), PREPUSH_HOOK_FILE);
-    const priorPrePush = await readSafe(prePushPath);
-    if (priorPrePush && priorPrePush.includes(CLUD_BUG_PREPUSH_MARKER)) {
+  if (prePushPath) {
+    if (prePushIsOurs) {
       await maybeWrite(prePushPath, buildPrePushHookScript(), changed, unchanged, 'pre-push review hook');
       // A refresh must not silently drop the executable bit — git skips a
       // non-executable hook without a word, which is the silent-degradation

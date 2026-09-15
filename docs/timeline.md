@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (5 decisions)
+## 2026-09 (6 decisions)
 
-- **2026-09-15** — Wire the planted-defect benchmark (#270, SPEC §8.2): machine-readable answer keys, a pure scorer, a headless runner mirroring the shipped recipe, one-owner results file with render + drift gate, a weekly workflow — and publish the real score, honestly labelled *(feat/270-benchmark-wiring)* — [decisions-branches/feat__270-benchmark-wiring.md](decisions-branches/feat__270-benchmark-wiring.md)
-- *... 3 more decisions ...*
+- **2026-09-15** — Build harness attestation (#266 PR1, SPEC §4.4/§4.5/§8.1): the harness records which reviewing agents ran; the bundle carries the record; post-check-run re-derives it at the boundary *(feat/266-harness-attestation)* — [decisions-branches/feat__266-harness-attestation.md](decisions-branches/feat__266-harness-attestation.md)
+- *... 4 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)

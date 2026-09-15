@@ -91,8 +91,14 @@ test('#276: a bare init installs the PRE-PUSH hook + the slash command (SPEC §4
   assert.match(hook, /review-prompt --trigger push/);
   const mode = (await stat(prePushPath(dir))).mode & 0o111;
   assert.notEqual(mode, 0, 'the pre-push hook must be executable or git silently skips it');
-  // …and NOT the commit hook: §4.1 makes this one choice, not both.
-  assert.equal(await exists(join(dir, '.claude', 'settings.json')), false);
+  // …and NOT the commit hook: §4.1 makes this one choice, not both. Asserted on
+  // the hook's own marker, not on the absence of settings.json: since #266 that
+  // file also carries the harness-attestation registration, which §4.4:961
+  // requires of every repo with a local review surface and which is independent
+  // of WHICH trigger surfaces the recipe.
+  const settings = await readFile(join(dir, '.claude', 'settings.json'), 'utf8');
+  assert.equal(settings.includes('clud-bug-local-review'), false, 'no commit-review hook on the push surface');
+  assert.match(settings, /clud-bug-attest/);
 });
 
 test('#276: --hook-trigger commit restores the commit-review hook (and writes no pre-push hook)', async () => {

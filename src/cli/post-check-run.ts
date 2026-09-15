@@ -35,6 +35,7 @@ import {
   splitUnifiedDiff,
   notaryResponseIsRejection,
   readNotaryConfig,
+  readAttestation,
   type NotaryBundle,
   type DiffFile,
 } from '../core/index.js';
@@ -87,6 +88,25 @@ function loadDiffFiles(bundle: NotaryBundle): DiffFile[] {
     if (r.ok) raw = r.out;
   }
   return raw ? splitUnifiedDiff(raw) : [];
+}
+
+/**
+ * #266 — the boundary rule, SPEC §4.4:965: "A notary MUST read it from the
+ * check itself, and MUST NOT accept one handed over by the reviewing party."
+ *
+ * The bundle is assembled by the agent that produced the review, so ANY
+ * `attestation` it carries is the party under check reporting on itself. This
+ * discards whatever was in the artifact and re-derives the field from the
+ * harness's own store — re-derivation at the boundary, not trust in the file.
+ *
+ * What lands is the records and nothing else. The producer names no
+ * independence identifier: an empty record set is also what an absent or
+ * unreadable store produces, so nothing about who reviewed can be read off it
+ * here — that reading belongs to the consumer, from evidence it holds itself.
+ */
+async function deriveAttestation(bundle: NotaryBundle, cwd: string): Promise<void> {
+  delete bundle.attestation;
+  bundle.attestation = await readAttestation({ cwd, headSha: bundle.head_sha });
 }
 
 type NotaryOutcome = 'posted' | 'rejected' | 'fallback';
@@ -183,6 +203,7 @@ async function fetchChallenge(
 async function submitToNotary(
   notaryUrl: string,
   bundlePath: string,
+  cwd: string,
   warn: (m: string) => void,
 ): Promise<NotaryResult> {
   let bundle: NotaryBundle | null;
@@ -196,6 +217,11 @@ async function submitToNotary(
     warn(`the bundle at ${bundlePath} is malformed; not certifying (fix the review artifact).`);
     return { outcome: 'rejected', bundle: null };
   }
+
+  // #266 — before anything else is decided about this bundle, replace its
+  // attestation with the harness's own (§4.4:965). Nothing downstream — the
+  // local pre-check, the challenge, the submit — may see the artifact's copy.
+  await deriveAttestation(bundle, cwd);
 
   // Local pre-check: consistency is diff-free (always run); coverage + grounding
   // need the diff (run only when one is obtainable — else defer to the server).
@@ -291,7 +317,7 @@ export async function runPostCheckRun(args: PostCheckRunArgs): Promise<void> {
   // notary via its own HEAD manifest. Unset → local default-on precedence.
   const notaryUrl = readNotaryConfig(manifest, args.notary);
   if (notaryUrl && typeof args.bundle === 'string' && args.bundle && !args.dryRun) {
-    const { outcome, bundle } = await submitToNotary(notaryUrl, args.bundle, warn);
+    const { outcome, bundle } = await submitToNotary(notaryUrl, args.bundle, cwd, warn);
     if (outcome !== 'fallback') return;
     // Endpoint down → self-post below, derived from the ALREADY-VALIDATED bundle
     // (not the raw --verdict flags, which a bundle-only invocation never passes).

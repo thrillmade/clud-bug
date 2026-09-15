@@ -22,6 +22,7 @@ import { stdin as input, stdout as output } from 'node:process';
 
 import { detect, buildDescriptionLine, detectPackageTestScript } from '../core/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
+import { REGISTRATION_PATHS, isRegistrationPathCommittable } from '../core/attestation.js';
 import { reviewPrompt } from '../core/prompts.js';
 import { SPEC_VERSION, renderVersionDeclaration } from '../core/spec-version.js';
 import { SkillsClient, rankAndCap } from '../core/skills.js';
@@ -1520,10 +1521,22 @@ async function runInit(args) {
   const wantsCommitHook = args.withHooks && (hookTrigger === 'commit' || hookTrigger === 'both');
   const wantsPrePushHook = args.withHooks && (hookTrigger === 'push' || hookTrigger === 'both');
 
-  if (wantsCommitHook) {
-    const { mergeLocalReviewHook, buildCommitReviewCommand } = await import('./hooks.js');
-    // Floating @next pin (default) — the hook auto-fetches the latest recipe.
-    const hookCommand = buildCommitReviewCommand();
+  // The `.claude/settings.json` merge covers BOTH local surfaces, because the
+  // two things merged into it answer different questions. The commit-review
+  // entry belongs to `--hook-trigger commit|both`; the #266 attestation
+  // entries belong to any repo with a local review surface at all — SPEC 2.0
+  // §4.4 records WHICH REASONERS RAN, which is independent of the trigger that
+  // surfaced the recipe, and §4.4:961 requires that registration to be
+  // committed. `--no-hooks` installs neither: with no local surface, clud-bug
+  // dispatches nothing to attest to.
+  if (args.withHooks) {
+    const {
+      mergeLocalReviewHook,
+      mergeAttestationHooks,
+      buildCommitReviewCommand,
+      buildReviewerAgentFile,
+      REVIEWER_AGENT_PATH,
+    } = await import('./hooks.js');
     const settingsPath = join(cwd, '.claude', 'settings.json');
     await mkdir(dirname(settingsPath), { recursive: true });
     // Read-then-parse so we can tell "no file yet" (fresh merge) from "file
@@ -1545,11 +1558,45 @@ async function runInit(args) {
       }
     }
     if (proceed) {
-      const merged = mergeLocalReviewHook(existing, hookCommand);
+      const merged = wantsCommitHook
+        ? // Floating @next pin (default) — the hook auto-fetches the latest recipe.
+          mergeLocalReviewHook(existing, buildCommitReviewCommand())
+        : mergeAttestationHooks(existing);
       await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
-      log(`    wrote ${rel(cwd, settingsPath)} (commit-review hook)`);
+      log(
+        `    wrote ${rel(cwd, settingsPath)} (${wantsCommitHook ? 'commit-review hook + ' : ''}attestation hooks)`,
+      );
     }
 
+    // The subagent type the SubagentStop matcher filters on has to exist, or
+    // the filter matches nothing and no completion is ever recorded.
+    const agentPath = join(cwd, ...REVIEWER_AGENT_PATH);
+    await mkdir(dirname(agentPath), { recursive: true });
+    await writeFile(agentPath, buildReviewerAgentFile());
+    log(`    wrote ${rel(cwd, agentPath)} (reviewer subagent)`);
+
+    // #266 item 1 (SPEC §4.4:961): "Its registration MUST live in the
+    // repository's committed harness settings, never an operator-local
+    // override — a pull request that weakens attestation then shows up as a
+    // hunk in the diff being reviewed." A `.gitignore`d `.claude/` (or `cwd`
+    // not being inside a git repository at all) can never satisfy that: an
+    // operator override to either file above is then invisible to any
+    // reviewer, which is exactly what §8.1's tamper-evidence argument
+    // requires NOT be possible. Checked right after writing both files, with
+    // the same primitive `readAttestation` uses to stamp `registration` on
+    // the bundle at submit time (`core/attestation.ts`).
+    const notCommittable = REGISTRATION_PATHS.filter((p) => !isRegistrationPathCommittable(cwd, p));
+    if (notCommittable.length > 0) {
+      warn(
+        `${notCommittable.join(', ')}: attestation registration is NOT committable here; reviews ` +
+          'from this checkout cannot be certified as independently reviewed until it is committed (SPEC §4.4).',
+      );
+    } else {
+      log('    attestation registration must be committed with the next change (SPEC §4.4).');
+    }
+  }
+
+  if (wantsCommitHook) {
     // #240 vector 3 — seed the worktree-local HEAD-moved baseline NOW, at
     // install time, so an `init` immediately followed by a commit in the
     // SAME session still fires (the hook's cold-start behavior is to seed
