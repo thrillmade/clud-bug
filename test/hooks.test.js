@@ -95,10 +95,26 @@ describe('buildLocalReviewHook', () => {
 });
 
 describe('mergeLocalReviewHook', () => {
+  // #266 — `mergeLocalReviewHook` now merges THREE entries: the commit-review
+  // entry, and the two harness-attestation registrations SPEC 2.0 §4.4:961
+  // requires to live in the repository's COMMITTED settings. The assertions
+  // below therefore count OUR commit-review entry by its marker rather than
+  // counting the whole array, so an extra entry can never make a real
+  // duplicate-entry regression read as the new normal.
+  const reviewEntries = (s) =>
+    s.hooks.PostToolUse.filter((e) =>
+      e.hooks.some((h) => String(h.command ?? h.prompt ?? '').includes('clud-bug-local-review')),
+    );
+  const attestEntries = (s) =>
+    [...(s.hooks.PostToolUse ?? []), ...(s.hooks.SubagentStop ?? [])].filter((e) =>
+      e.hooks.some((h) => String(h.command ?? '').includes('clud-bug-attest')),
+    );
+
   it('adds the hook to empty / undefined settings', () => {
     const s = mergeLocalReviewHook(undefined, COMMIT_REVIEW_COMMAND);
-    expect(s.hooks.PostToolUse).toHaveLength(1);
-    expect(s.hooks.PostToolUse[0].hooks[0].type).toBe('command');
+    expect(reviewEntries(s)).toHaveLength(1);
+    expect(reviewEntries(s)[0].hooks[0].type).toBe('command');
+    expect(attestEntries(s)).toHaveLength(2); // PostToolUse(Agent) + SubagentStop
   });
 
   it('preserves unrelated settings and other hooks', () => {
@@ -112,14 +128,17 @@ describe('mergeLocalReviewHook', () => {
     const s = mergeLocalReviewHook(existing, COMMIT_REVIEW_COMMAND);
     expect(s.model).toBe('opus'); // unrelated top-level key preserved
     expect(s.hooks.PreToolUse).toHaveLength(1); // other event preserved
-    expect(s.hooks.PostToolUse).toHaveLength(2); // the user's Edit hook + ours
+    expect(s.hooks.PostToolUse).toHaveLength(3); // the user's Edit hook + ours + attestation
     expect(s.hooks.PostToolUse.some((e) => e.matcher === 'Edit')).toBe(true);
+    expect(reviewEntries(s)).toHaveLength(1);
   });
 
   it('is idempotent — re-running replaces ours, never duplicates', () => {
     const once = mergeLocalReviewHook(undefined, COMMIT_REVIEW_COMMAND);
     const twice = mergeLocalReviewHook(once, COMMIT_REVIEW_COMMAND);
-    expect(twice.hooks.PostToolUse).toHaveLength(1);
+    expect(reviewEntries(twice)).toHaveLength(1);
+    expect(twice.hooks.PostToolUse).toHaveLength(once.hooks.PostToolUse.length);
+    expect(attestEntries(twice)).toHaveLength(2);
   });
 
   it('replaces the OLD broken type:agent hook in place (upgrade path)', () => {
@@ -135,8 +154,8 @@ describe('mergeLocalReviewHook', () => {
       },
     };
     const s = mergeLocalReviewHook(old, COMMIT_REVIEW_COMMAND);
-    expect(s.hooks.PostToolUse).toHaveLength(1);
-    const h = s.hooks.PostToolUse[0].hooks[0];
+    expect(reviewEntries(s)).toHaveLength(1);
+    const h = reviewEntries(s)[0].hooks[0];
     expect(h.type).toBe('command'); // upgraded
     expect(h.prompt).toBeUndefined();
   });
@@ -162,13 +181,14 @@ describe('mergeLocalReviewHook', () => {
     const v1 = mergeLocalReviewHook(undefined, COMMIT_REVIEW_COMMAND);
     const v2command = COMMIT_REVIEW_COMMAND + '\n# bumped';
     const v2 = mergeLocalReviewHook(v1, v2command);
-    expect(v2.hooks.PostToolUse).toHaveLength(1);
-    expect(v2.hooks.PostToolUse[0].hooks[0].command).toBe(v2command);
+    expect(reviewEntries(v2)).toHaveLength(1);
+    expect(reviewEntries(v2)[0].hooks[0].command).toBe(v2command);
   });
 
   it('tolerates a non-object existing value', () => {
     const s = mergeLocalReviewHook('garbage', COMMIT_REVIEW_COMMAND);
-    expect(s.hooks.PostToolUse).toHaveLength(1);
+    expect(reviewEntries(s)).toHaveLength(1);
+    expect(attestEntries(s)).toHaveLength(2);
   });
 });
 

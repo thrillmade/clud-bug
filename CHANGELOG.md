@@ -11,6 +11,27 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ### Added
 
+- **Harness attestation — the evidence every independence claim rests on (#266).** Nothing produced evidence that a *different agent* reviewed a change, so SPEC 2.0 §4.4's independence identifiers were unsupported and §4.5's "A notary MUST NOT certify a `self-reviewed` review" bound nothing. `git grep -l SubagentStop origin/dev` returned **0 files** in this repo and in clud-bug-app (control probe `PostToolUse` → 11 files here, 1 there, so the search was live).
+
+  `clud-bug init` now merges **two** Claude Code hook registrations into the repository's committed `.claude/settings.json` — §4.4:961: "Its registration MUST live in the repository's committed harness settings, never an operator-local override — a pull request that weakens attestation then shows up as a hunk in the diff being reviewed":
+
+  - `PostToolUse` on `Agent` records the dispatch row: the harness's `agentId`, the role, the **resolved** model (`tool_response.resolvedModel`, never the requested alias), the effort level, `tool_use_id`, and a lens label;
+  - `SubagentStop` matched on `clud-bug-reviewer` records the completion row.
+
+  Two events because Claude Code splits the facts across them: `SubagentStop` carries no model at all, and `PostToolUse` on `Agent` fires at *dispatch* since subagents run in the background. An attestation is the **pair**, joined on `agent_id` — §4.4:967: "It records that a hook fired; an attestation records which reasoners ran."
+
+  Rows land in `<git-common-dir>/clud-bug-attest.jsonl`, keyed off `--git-common-dir` so a review dispatched from a linked worktree is readable from the primary checkout (#240 vector 1's rule). §4.4:963 forbids committing it. Neither hook makes a network call, both are `async` and always exit 0 (a `SubagentStop` hook *can* block the subagent it fires for), and **the prompt text is never recorded** — only a `sha256` digest, per §4.4:959.
+
+  `NOTARY_BUNDLE_VERSION` is bumped **1 → 2** and the bundle carries an `attestation` field. The bump is not about the added field: it is what lets a consumer tell *"this producer cannot report which reasoners ran"* (v1) from *"this producer reports none"* (v2, empty record set). `post-check-run --bundle` **deletes** whatever attestation the review artifact carried and re-derives it from the harness store before submitting — §4.4:965: "A notary MUST read it from the check itself, and MUST NOT accept one handed over by the reviewing party."
+
+  Also new: `.claude/agents/clud-bug-reviewer.md` (the subagent type the `SubagentStop` matcher filters on — putting the filter in committed settings rather than in CLI code an operator edits), and `review-prompt`'s multi-pass recipe now dispatches every pass as `subagent_type: clud-bug-reviewer` with a per-pass `description`. `clud-bug update` retrofits all of it onto an existing install, including a pre-push-only repo that had no `.claude/settings.json` at all.
+
+  The field carries the records and nothing else: **no independence identifier**. An empty record set is also what an absent or unreadable store produces, so it supports no claim about who reviewed — a bundle's `store` field (`read` / `absent` / `unreadable`, additive within `clud-bug/attestation@1`) now names which of those three it was, so a consumer isn't left guessing why `records` came back empty. Which identifier the records earn beyond that is the consumer's own reading, from evidence it holds itself (the committed registration at the base ref), and it ships with that consumer.
+
+  Not claimed: `adversarially-reviewed` (§4.4:969 requires per-lens hunk coverage, which this record does not carry), anything about the operator (§8.1:1505), and tamper-*proofness* — §8.1:1507 is explicit that the force is tamper-*evidence*. The notary-side predicate that consumes this field ships separately in clud-bug-app.
+
+  The tamper-evidence claim itself was unchecked: "the registration is committed" was asserted, never verified. `init`/`update` now run `git check-ignore` on both `.claude/settings.json` and `.claude/agents/clud-bug-reviewer.md` right after writing them; a `.gitignore`d `.claude/` (or a `cwd` outside any git repository) gets a loud warning naming the file and the consequence — a review from this checkout can't be certified as independently reviewed until the registration is committed — and the bundle's `attestation` also carries `registration: 'committable' | 'uncommittable'` (also additive within `clud-bug/attestation@1`), so the notary can see it even without the warning.
+
 - **A `pre-push` local review surface (#276).** There was none: `git grep -inE 'pre-push|prePush|pre_push' origin/main -- src/ templates/` returned **0 hits** (control probe `PostToolUse` → 2 files, so the search itself worked), while SPEC 2.0 §4.1 says "A reviewer MUST support both, and **push is the default**" and §6.7 names the mechanism: "Git allows one `pre-push` hook, so ownership follows what is installed."
 
   `clud-bug init` now writes a git `pre-push` hook (`hooks.ts:buildPrePushHookScript`, installed the way `mergeLocalReviewHook` installs the commit hook — pure builder, marker-based replace-in-place, never clobbers foreign content). In §6.7's fixed order it:

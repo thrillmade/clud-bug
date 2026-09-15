@@ -19,9 +19,24 @@
 
 import type { ReviewVerdict } from './check-verdict.js';
 import { SPEC_VERSION } from './spec-version.js';
+import { ATTESTATION_SCHEMA, parseAttestRecord, type BundleAttestation, type AttestationEntry } from './attestation.js';
 
-/** Bundle wire-format version. Bump on a breaking shape change. */
-export const NOTARY_BUNDLE_VERSION = 1;
+/**
+ * Bundle wire-format version. Bump on a breaking shape change.
+ *
+ * 1 → 2 (#266): carries the §4.4 harness attestation. The added field is
+ * additive and would not on its own require a bump — the bump is what lets a
+ * consumer tell *"this producer cannot report which reasoners ran at all"*
+ * (a v1 bundle) from *"this producer attempted to report, whatever it
+ * found"* (a v2 bundle, whose `attestation.records` may still be empty).
+ * That second case is itself not one fact but three — a v2 bundle's own
+ * `store` field (item 2, `core/attestation.ts`) is what then distinguishes
+ * "looked and found nothing" from "the store was absent" from "the store
+ * existed but couldn't be read" — bundle_version only draws the outer line.
+ * Collapsing any of these into "did not happen" is the not-recorded-means-
+ * did-not-happen error §4.4:953 forbids.
+ */
+export const NOTARY_BUNDLE_VERSION = 2;
 
 /**
  * The SPEC version the bundle attests under.
@@ -105,6 +120,20 @@ export interface NotaryBundle {
    * requires it before certifying (① replay-closure).
    */
   nonce?: string;
+  /**
+   * #266 — the harness's own record of which reasoners reviewed this head
+   * (SPEC §4.4). It rides here because §4.4:963 sends it "on the check's
+   * output alongside the audit artifact of §4.5 — one mechanism rather than
+   * two", and it is NOT written by the reviewing agent: `post-check-run`
+   * re-derives it from the harness store at submit time, because §4.4:965
+   * forbids a notary accepting one "handed over by the reviewing party".
+   *
+   * A notary re-derives nothing from it beyond what the committed registration
+   * independently supports: the field is fabricable (§8.1:1503), and the hook
+   * registration in the base ref's `.claude/settings.json` is the only part of
+   * this the notary can check without the producer's cooperation.
+   */
+  attestation?: BundleAttestation;
 }
 
 /** Assemble a bundle from a completed review, stamping the wire + protocol versions. */
@@ -117,6 +146,7 @@ export function buildBundle(input: {
   coverage: string[];
   recipeVersion: string;
   nonce?: string;
+  attestation?: BundleAttestation;
 }): NotaryBundle {
   return {
     bundle_version: NOTARY_BUNDLE_VERSION,
@@ -129,6 +159,7 @@ export function buildBundle(input: {
     recipe_version: input.recipeVersion,
     protocol_version: NOTARY_PROTOCOL_VERSION,
     ...(input.nonce !== undefined ? { nonce: input.nonce } : {}),
+    ...(input.attestation !== undefined ? { attestation: input.attestation } : {}),
   };
 }
 
@@ -210,5 +241,41 @@ export function parseBundle(raw: unknown): NotaryBundle | null {
   };
   if (typeof r['pr'] === 'number' && Number.isInteger(r['pr'])) bundle.pr = r['pr'];
   if (typeof r['nonce'] === 'string' && r['nonce']) bundle.nonce = r['nonce'];
+  const attestation = parseAttestation(r['attestation']);
+  if (attestation) bundle.attestation = attestation;
   return bundle;
+}
+
+/**
+ * Parse the attestation field. Unlike a finding, a malformed one degrades to
+ * ABSENT rather than nulling the whole bundle: the review still stands and
+ * still needs certifying; what it loses is the independence claim, which
+ * without a readable record is `independence-unestablished` — the honest weaker
+ * claim §4.4:953 requires, not a dropped review.
+ */
+function parseAttestation(raw: unknown): BundleAttestation | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a = raw as Record<string, unknown>;
+  if (a['schema'] !== ATTESTATION_SCHEMA) return null;
+  if (!Array.isArray(a['records'])) return null;
+  const records: AttestationEntry[] = [];
+  for (const row of a['records']) {
+    const rec = parseAttestRecord(row);
+    // Only a completed row is a record — see the join rule in attestation.ts.
+    if (!rec || rec.phase !== 'completed') continue;
+    const entry: AttestationEntry = { ...rec, phase: 'completed' };
+    if (row && typeof row === 'object') {
+      const ts = (row as Record<string, unknown>)['completed_ts'];
+      if (typeof ts === 'string' && ts) entry.completed_ts = ts.slice(0, 40);
+    }
+    records.push(entry);
+  }
+  // Copied by allowlist, like every parser here: an independence identifier the
+  // reviewing party wrote into the artifact is precisely what §4.4:965 keeps
+  // out, so no spelling of one survives this boundary.
+  return {
+    schema: ATTESTATION_SCHEMA,
+    records,
+    truncated: a['truncated'] === true,
+  };
 }
