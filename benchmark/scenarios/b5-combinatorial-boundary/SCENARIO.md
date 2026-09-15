@@ -4,6 +4,7 @@ class: combinatorial
 severity: MED-HIGH
 one_line_defect: consolidatePorts tracks the running group's coverage in a half-open `reach` (hi + 1) at init/reset but extends it with an inclusive `r.hi` on merge, so after a prior overlapping merge a following range that starts exactly at the shared boundary port is wrongly split off into its own range that still contains that boundary port.
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: No single line is wrong — init/reset correctly use `hi + 1`, the merge-extend `reach = Math.max(reach, r.hi)` is the canonical "extend the running max" idiom, and `r.lo < reach` is a correct strict overlap test; the defect is the half-open-vs-inclusive convention MISMATCH between the init/reset lines and the merge-extend line, which only bites when an exactly-adjacent pair and a prior-overlap ordering combine.
 correct_finding: Report that the pairwise-disjoint output invariant is broken because `reach` mixes conventions — seeded as half-open `hi + 1` but re-extended with inclusive `r.hi`, so after any merge it under-shoots the true first-free port by one and the boundary test `r.lo < reach` mis-fires at exact adjacency. Ground it either by running `node reproduce.mjs` (8000-8008 splits into 8000-8005 and 8005-8008, port 8005 in both) or by naming the invariant (outputs must be pairwise disjoint / cover the union; `reach` must equal cur.hi + 1 after every extend, which the merge branch violates).
 ---

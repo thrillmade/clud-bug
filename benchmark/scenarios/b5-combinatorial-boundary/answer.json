@@ -1,0 +1,12 @@
+{
+  "id": "b5-combinatorial-boundary",
+  "class": "combinatorial",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    44,
+    59
+  ],
+  "defect": "consolidatePorts tracks the running group's coverage in a half-open `reach` (hi + 1) at init/reset but extends it with an inclusive `r.hi` on merge, so after a prior overlapping merge a following range that starts exactly at the shared boundary port is wrongly split off into its own range that still contains that boundary port."
+}

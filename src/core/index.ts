@@ -393,6 +393,24 @@ export {
   type NotarySeverity,
   type GroundingKind,
 } from './notary-bundle.js';
+// #266 — SPEC §4.4 harness attestation: the reader half of the two committed
+// Claude Code hooks in `cli/hooks.ts`. `collectAttestation` is the one place
+// that decides what counts as a record (dispatch ⋈ completed, both at this
+// head); the notary's predicate is built on the field it returns.
+export {
+  parseAttestRecord,
+  parseAttestStore,
+  collectAttestation,
+  readAttestation,
+  resolveAttestStorePath,
+  ATTESTATION_SCHEMA,
+  ATTEST_STORE_FILE,
+  MAX_ATTESTATION_RECORDS,
+  type AttestationRecord,
+  type AttestationEntry,
+  type AttestationPhase,
+  type BundleAttestation,
+} from './attestation.js';
 // SPEC §7.3 — the version + areas this tool declares, and the renderer for
 // the two-line declaration `--version` prints.
 export {

@@ -1,0 +1,21 @@
+{
+  "id": "c3-clean-sort",
+  "class": "clean",
+  "severity": "none",
+  "expected": "clean",
+  "file": "module.mjs",
+  "lineRange": [
+    31,
+    34
+  ],
+  "acceptAlso": [
+    {
+      "file": "sort.mjs",
+      "lineRange": [
+        13,
+        26
+      ]
+    }
+  ],
+  "defect": "NONE — this code is correct"
+}

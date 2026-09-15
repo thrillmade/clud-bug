@@ -1,0 +1,21 @@
+{
+  "id": "b4-emergent-accumulator",
+  "class": "emergent",
+  "severity": "MAJOR",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    16,
+    25
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        32,
+        52
+      ]
+    }
+  ],
+  "defect": "rollUp seeds every actor's bucket from one module-level template via a shallow `{ ...EMPTY_SUMMARY }`, so all buckets alias the same nested `ids`/`tags` arrays and each actor accumulates every other actor's events (and later calls inherit earlier ones)."
+}

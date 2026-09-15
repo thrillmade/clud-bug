@@ -82,10 +82,90 @@
 //   identity unset, or the commit's author can't be read — because a false
 //   FIRE is noise but a false SKIP is an unreviewed commit, exactly the bug
 //   class #239/#240 exist to prevent.
+//
+// #312 (hook-freshness note): the recipe this hook FETCHES auto-updates on
+//   every fire (`npx clud-bug@next` re-resolves fresh each call); the hook's
+//   own TRIGGER/GATING script — the text you are reading right now — does
+//   not. It is a static string baked into `.claude/settings.json` at
+//   `init`/`update` time, so a fix to this file (like #240 vector 3's own
+//   fail-open gate, or #249's authorship filter) never reaches an
+//   already-installed repo until someone thinks to re-run `clud-bug update`
+//   — and the ONE nudge that already exists for that (`update-notifier.ts`)
+//   never fires here: it's gated on an interactive TTY, and this hook runs
+//   detached, from a non-interactive Bash tool call. So: tell the user from
+//   INSIDE the hook, using only two local file reads (never a network call
+//   of its own) — the version this repo's OWN manifest was last stamped
+//   with (by whichever `init`/`update` last ran), and the newest version
+//   update-notifier's existing once-a-day BACKGROUND refresh already
+//   cached, compared with the same prerelease-aware ORDERING
+//   `isNewerVersion` (update-notifier.ts) already implements — not plain
+//   inequality, which fires backwards whenever the installed version is
+//   already ahead of a cache that hasn't caught up yet (a routine race: the
+//   manifest is stamped immediately by `update`, the cache refreshes at most
+//   once a day). Either file missing (never run, or a repo old enough to
+//   predate the field) means "cannot tell" and stays silent — the same
+//   fail-open rule every other gate in this file follows.
+
+// #266 (harness attestation, SPEC 2.0 §4.4): a review may only claim
+//   independence where the HARNESS — not the operator and not the reviewing
+//   agent — recorded which reasoners ran. §4.4:961 puts the registration in
+//   THIS file's output: "Its registration MUST live in the repository's
+//   committed harness settings, never an operator-local override — a pull
+//   request that weakens attestation then shows up as a hunk in the diff being
+//   reviewed." That committed registration is the whole of §8.1's argument, so
+//   the two entries below are merged into the same `.claude/settings.json` the
+//   commit-review hook already lives in, and never into a user-local override.
+//
+//   COMMITTED is a claim about the checkout, not about this file — writing the
+//   entries here proves nothing if `.claude/` is itself `.gitignore`d (or `cwd`
+//   is outside a git repository altogether). `main.ts`'s `init` block and
+//   `update.ts` both check that, with `git check-ignore` via
+//   `core/attestation.ts`'s `registrationState`, right after writing this
+//   file's output AND the reviewer agent file below; an uncommittable result
+//   gets a loud warning and rides on the bundle as `attestation.registration:
+//   'uncommittable'` (item 1 of #266's follow-up), so a notary sees it even
+//   without the warning.
+//
+//   TWO entries, one attestation. §4.4:957 requires the RESOLVED model per
+//   reviewing agent, and Claude Code puts the two halves of that on different
+//   events: `SubagentStop` carries `agent_id`/`agent_type` but NO model at all
+//   (hooks docs: "Only SessionStart hooks can receive a `model` field"), while
+//   the model — `tool_response.resolvedModel` — is on the Agent tool's
+//   `PostToolUse`, which fires at DISPATCH because subagents run in the
+//   background by default (`status: "async_launched"`). So one row is written
+//   per event and the two are joined on `agent_id` in `core/attestation.ts`.
+//   Only the pair counts: §4.4:967 — "It records that a hook fired; an
+//   attestation records which reasoners ran."
+//
+//   The completion matcher is the reviewer AGENT TYPE, so the filter lives
+//   harness-side in the committed settings rather than in CLI code an operator
+//   edits — which is why `init`/`update` also write `.claude/agents/
+//   clud-bug-reviewer.md`, the subagent definition the recipe dispatches.
 
 /** Stable marker embedded in our hook so re-runs — and upgrades from the old,
  * broken `type: agent` hook — replace it in place. */
 export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
+
+/** #266 — stable marker embedded in BOTH attestation hook entries, so a
+ * re-install replaces ours in place and never touches a foreign hook on the
+ * same event. Deliberately distinct from `CLUD_BUG_HOOK_MARKER`: the two
+ * surfaces answer different questions (did a commit need review / which
+ * reasoners ran) and are merged independently. */
+export const ATTESTATION_HOOK_MARKER = 'clud-bug-attest';
+
+/** `.git/clud-bug-attest.jsonl` (relative to the git COMMON dir, #240 vector
+ * 1) — the harness's own record of which reasoners ran, one JSON object per
+ * line. §4.4:963 forbids committing it: "A record named for the commit it
+ * describes cannot exist inside that commit". Shared name with
+ * `src/core/attestation.ts`, which reads it. */
+export const ATTEST_FILE = 'clud-bug-attest.jsonl';
+
+/** The Claude Code subagent type reviewer passes are dispatched as — the
+ * `SubagentStop` matcher, the `.claude/agents/` filename, and the `role` a
+ * record carries. ONE type rather than one per role: `roles` is
+ * user-configurable (`review-plan.ts`), so per-role agent files would be a
+ * second copy of the role list that rots. */
+export const REVIEWER_AGENT_TYPE = 'clud-bug-reviewer';
 
 /** #276 — stable marker embedded in the git `pre-push` hook, so a re-install
  * (or `clud-bug update`) replaces OUR script in place and never clobbers a
@@ -116,6 +196,55 @@ export const PENDING_QUEUE_FILE = 'clud-bug-pending';
  * complete. `fired !== done` for the same sha means a review is still open. */
 export const HOOK_FIRED_FILE = 'clud-bug-hook-fired';
 export const REVIEW_DONE_FILE = 'clud-bug-review-done';
+
+/** #312 — parses `lastUpdateVersion` out of `.claude/skills/.clud-bug.json`
+ * on stdin: the clud-bug version that most recently wrote THIS repo's own
+ * config (whichever `init`/`update` ran last). A real parser, never an
+ * ad-hoc shell scrape of JSON — same convention as `TESTS_DECL_PARSER`
+ * below, single-quote-free so it embeds cleanly in `node -e '…'`. */
+const MANIFEST_VERSION_PARSER =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
+  'try{var j=JSON.parse(s);var v=j&&j.lastUpdateVersion;' +
+  'if(typeof v==="string")process.stdout.write(v.trim())}' +
+  'catch(e){}})';
+
+/** #312 — parses `latest` out of update-notifier's own cache file
+ * (`~/.cache/clud-bug/update-check.json`). That cache is refreshed at most
+ * once a day by a DETACHED background process (see `update-notifier.ts`) —
+ * reading it here is a plain local file read, never a network call of its
+ * own. Same shape as `MANIFEST_VERSION_PARSER` above. */
+const UPDATE_CACHE_LATEST_PARSER =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
+  'try{var j=JSON.parse(s);var v=j&&j.latest;' +
+  'if(typeof v==="string")process.stdout.write(v.trim())}' +
+  'catch(e){}})';
+
+/** #312 — decides whether the cached "latest" version (argv[2]) is actually
+ * NEWER than the installed version (argv[1]), for clud-bug's `X.Y.Z` /
+ * `X.Y.Z-rc.N` scheme; prints `1` when it is, nothing otherwise. A plain
+ * string-inequality check (`!=`) fires BACKWARDS whenever the installed
+ * version is already ahead of whatever update-notifier's once-a-day
+ * background poll last cached — a routine race, not a contrived one:
+ * `clud-bug update` stamps the manifest immediately, the cache catches up at
+ * most once a day. Ports the same numeric/prerelease ordering
+ * `isNewerVersion` already implements in update-notifier.ts (a stable build
+ * ranks above any prerelease of the same core) rather than reimplementing it
+ * as string equality — that function can't be imported here: this string is
+ * evaluated by a bare `node -e` inside a shell script baked into
+ * `.claude/settings.json`, with no access to this package's own modules.
+ * Single-quote-free, same convention as the parsers above; takes its inputs
+ * as argv (not stdin) since there is no file to read — both versions are
+ * already local shell variables by the time this runs. */
+const VERSION_IS_NEWER_PARSER =
+  'try{var parse=function(v){var s=String(v).split("-");' +
+  'var nums=(s[0]||"").split(".").map(function(n){return Number(n)||0});' +
+  'var pre=s[1];var preNum=pre?Number((pre.match(/\\d+/)||["0"])[0]):Infinity;' +
+  'return nums.concat([preNum])};' +
+  'var installed=parse(process.argv[1]||"");var cached=parse(process.argv[2]||"");' +
+  'var len=Math.max(cached.length,installed.length);var newer=false;' +
+  'for(var i=0;i<len;i++){var x=cached[i]||0,y=installed[i]||0;if(x!==y){newer=x>y;break}}' +
+  'if(newer)process.stdout.write("1")' +
+  '}catch(e){}';
 
 /**
  * Build the shell `command` of the commit-review hook. Pins to a FLOATING npm
@@ -171,6 +300,15 @@ export const REVIEW_DONE_FILE = 'clud-bug-review-done';
  *      surfaces) still `exit 2` with a one-line notice rather than going
  *      silent (#239) — the commit itself is never blocked either way (this
  *      hook runs `async` after the tool already ran).
+ *   8. #312 — before surfacing anything, check whether THIS SCRIPT (not the
+ *      recipe it just fetched) is itself behind: two local file reads, no
+ *      network call of their own, comparing the version this repo's own
+ *      manifest was last stamped with against the newest version
+ *      update-notifier's existing background refresh already cached — using
+ *      the same directional, prerelease-aware ordering as `isNewerVersion`,
+ *      not plain inequality (see VERSION_IS_NEWER_PARSER). Only when the
+ *      cache is actually AHEAD, prepend a one-line nudge to re-run
+ *      `clud-bug update`.
  */
 export function buildCommitReviewCommand(pin: string = 'next'): string {
   return [
@@ -273,6 +411,30 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     `  grep -qxF "$firedsha" "$pending" 2>/dev/null || printf '%s\\n' "$firedsha" >> "$pending" 2>/dev/null || true`,
     `  note="clud-bug: review deferred (usage limit) for $firedsha — run 'clud-bug review --pending' when capacity returns."`,
     `fi`,
+    // #312 — is THIS SCRIPT (not the recipe it fetches) behind? Two local
+    // reads, no network of their own: the version this repo's manifest was
+    // last stamped with, and the newest version update-notifier's existing
+    // background refresh already cached (see the file-header comment for
+    // the full rationale). Either missing means "cannot tell" — stay quiet.
+    `staleNote=`,
+    `toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || toplevel=`,
+    `installedver=`,
+    `if [ -n "$toplevel" ] && [ -f "$toplevel/.claude/skills/.clud-bug.json" ]; then`,
+    `  installedver=$(node -e '${MANIFEST_VERSION_PARSER}' < "$toplevel/.claude/skills/.clud-bug.json" 2>/dev/null) || installedver=`,
+    `fi`,
+    `if [ -n "$installedver" ] && [ -f "$HOME/.cache/clud-bug/update-check.json" ]; then`,
+    `  cachedlatest=$(node -e '${UPDATE_CACHE_LATEST_PARSER}' < "$HOME/.cache/clud-bug/update-check.json" 2>/dev/null) || cachedlatest=`,
+    // Directional, not `!=`: only nudge when the cache is actually AHEAD of
+    // what's installed. `!=` alone fires backwards when the installed
+    // version is already newer than a cache that hasn't caught up yet (see
+    // VERSION_IS_NEWER_PARSER's own comment for why that race is routine).
+    `  if [ -n "$cachedlatest" ]; then`,
+    `    isnewer=$(node -e '${VERSION_IS_NEWER_PARSER}' "$installedver" "$cachedlatest" 2>/dev/null) || isnewer=`,
+    `    if [ "$isnewer" = "1" ]; then`,
+    `      staleNote="clud-bug: this repo's hook trigger script was installed at v$installedver; clud-bug v$cachedlatest has been observed on this machine since — run 'clud-bug update' to refresh the trigger logic (the review recipe above already auto-updates on its own)."`,
+    `    fi`,
+    `  fi`,
+    `fi`,
     // #240 vector 2 — the hook SEES the Bash command line (it's the tool
     // input this hook fired on); a `--no-verify` commit bypasses whatever
     // git hooks this repo mandates. Flag it (never hard-deny — that could
@@ -298,6 +460,7 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     `  printf '%s' "$sha" > "$gitdir/clud-bug-review-skipped" 2>/dev/null || true`,
     `  grep -qxF "$sha" "$pending" 2>/dev/null || printf '%s\\n' "$sha" >> "$pending" 2>/dev/null || true`,
     `  [ -n "$note" ] && printf '%s\\n\\n' "$note"`,
+    `  [ -n "$staleNote" ] && printf '%s\\n\\n' "$staleNote"`,
     `  printf "clud-bug: review deferred (error: recipe fetch failed) for %s — run 'clud-bug review --pending' once resolved.\\n" "$sha"`,
     `  exit 2`,
     `fi`,
@@ -310,6 +473,7 @@ export function buildCommitReviewCommand(pin: string = 'next'): string {
     // actually confirmed; until then it stays enumerable and drainable.
     `grep -qxF "$sha" "$pending" 2>/dev/null || printf '%s\\n' "$sha" >> "$pending" 2>/dev/null || true`,
     `[ -n "$note" ] && printf '%s\\n\\n' "$note"`,
+    `[ -n "$staleNote" ] && printf '%s\\n\\n' "$staleNote"`,
     `printf '%s\\n\\n%s\\n' "clud-bug commit review (max mode — on this session's subscription): a commit was just made. Follow this recipe now — review that commit against the skills it names and surface any findings. When you finish, run: clud-bug review-done $sha (a killed session must never look like a completed review)." "$recipe"`,
     `exit 2`,
   ].join('\n');
@@ -348,47 +512,280 @@ export function buildLocalReviewHook(command: string): HookMatcherEntry {
   };
 }
 
-function isOurHook(h: Record<string, unknown> | undefined): boolean {
-  // Match our marker in `command` (current `type: command` hook) OR `prompt`
-  // (the old, broken `type: agent` hook) so a re-install / `clud-bug update`
-  // replaces either in place.
-  const field = h?.['command'] ?? h?.['prompt'];
-  return typeof field === 'string' && field.includes(CLUD_BUG_HOOK_MARKER);
+// ---------------------------------------------------------------------------
+// #266 — the two attestation hook commands (see the block above
+// CLUD_BUG_HOOK_MARKER for why there are two of them).
+
+/** Fields + helpers both writers share, and the `try` they both run inside.
+ * Single-quote-free, same convention as the parsers above: this is evaluated
+ * by a bare `node -e '…'` baked into `.claude/settings.json`, with no access to
+ * this package's own modules. `argv[1]` is the store path and `argv[2]` the
+ * head sha — both already resolved by the shell, so the writer does no git of
+ * its own. `effort` is the level in effect when the HOOK runs, which the docs
+ * do not promise is the subagent's own, hence the `effort_scope` tag rather
+ * than a claim it is the reviewer's (§4.4:957 asks for the resolved effort;
+ * over-labelling it would claim more than the evidence supports, §4.4:953). */
+const ATTEST_WRITER_PRELUDE =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){try{' +
+  'var e=JSON.parse(s);if(!e||typeof e!=="object")return;' +
+  'var txt=function(v,n){return typeof v==="string"?v.replace(/\\s+/g," ").trim().slice(0,n):""};' +
+  'var lvl=(e.effort&&typeof e.effort.level==="string")?e.effort.level:null;';
+
+/** Append the built `rec`, then compact past 1000 rows by keeping the newest
+ * 500. APPEND rather than read-modify-write: a panel's subagents complete
+ * concurrently, and a rewrite would lose whichever record lost the race.
+ * The bound is a LINE count, not a byte size: what the store holds is reviewer
+ * rows, and a byte threshold discards them at a point that moves with how long
+ * a lens label happened to be. */
+const ATTEST_WRITER_APPEND =
+  'var fs=require("fs");var p=process.argv[1];' +
+  'fs.appendFileSync(p,JSON.stringify(rec)+"\\n");' +
+  'var lines=fs.readFileSync(p,"utf8").split("\\n").filter(function(l){return l.trim()});' +
+  'if(lines.length>1000)fs.writeFileSync(p,lines.slice(-500).join("\\n")+"\\n");' +
+  '}catch(err){}})';
+
+/** The DISPATCH row, from `PostToolUse` on the `Agent` tool. This event is the
+ * only one carrying `tool_response.resolvedModel` — §4.4:957's "**resolved**
+ * model rather than a requested alias". `tool_input.model` (the alias) is
+ * deliberately never read: a missing resolved model is recorded as missing.
+ *
+ * The record is built from an explicit field allowlist, never by copying the
+ * event: §4.4:959 forbids recording the prompt text, and a backgrounded launch
+ * puts the full prompt on BOTH `tool_input.prompt` and `tool_response.prompt`.
+ * The digest is the only trace either leaves. */
+const ATTEST_DISPATCH_WRITER =
+  ATTEST_WRITER_PRELUDE +
+  'var ti=(e.tool_input&&typeof e.tool_input==="object")?e.tool_input:{};' +
+  'var tr=(e.tool_response&&typeof e.tool_response==="object")?e.tool_response:{};' +
+  'var id=txt(tr.agentId,64);if(!id)return;' +
+  'var model=txt(tr.resolvedModel,64);' +
+  'var rec={schema:"clud-bug/attestation@1",phase:"dispatch",agent_id:id,' +
+  'role:txt(ti.subagent_type,64),resolved_model:model||null,' +
+  'effort:lvl,effort_scope:"hook-context",' +
+  'dispatch_ref:txt(e.tool_use_id,80),session_id:txt(e.session_id,80),' +
+  'lens_label:txt(ti.description,120),' +
+  'head_sha:txt(process.argv[2],64),ts:new Date().toISOString()};' +
+  'if(!model)rec.resolved_model_source="unavailable";' +
+  'if(Array.isArray(tr.modelsUsed)){var mu=tr.modelsUsed.filter(function(m){' +
+  'return typeof m==="string"&&m}).slice(0,8).map(function(m){return m.slice(0,64)});' +
+  'if(mu.length)rec.models_used=mu}' +
+  'if(typeof ti.prompt==="string"&&ti.prompt)rec.lens_digest="sha256:"+' +
+  'require("crypto").createHash("sha256").update(ti.prompt).digest("hex").slice(0,32);' +
+  ATTEST_WRITER_APPEND;
+
+/** The COMPLETION row, from `SubagentStop`. Carries no model (the docs are
+ * explicit that only `SessionStart` receives one) — that half comes from the
+ * dispatch row via `agent_id`. `last_assistant_message` and
+ * `agent_transcript_path` are the subagent's own review text and are never
+ * read: both carry quoted source, which is what §4.4:959 exists to keep out. */
+const ATTEST_COMPLETION_WRITER =
+  ATTEST_WRITER_PRELUDE +
+  'var id=txt(e.agent_id,64);if(!id)return;' +
+  'var rec={schema:"clud-bug/attestation@1",phase:"completed",agent_id:id,' +
+  'role:txt(e.agent_type,64),effort:lvl,effort_scope:"hook-context",' +
+  'session_id:txt(e.session_id,80),head_sha:txt(process.argv[2],64),' +
+  'ts:new Date().toISOString()};' +
+  ATTEST_WRITER_APPEND;
+
+function buildAttestCommand(writer: string, phase: string): string {
+  return [
+    // Marker as a `#` comment, same reason as the commit hook's: free text
+    // under `:` would be an `sh` syntax error.
+    `# ${ATTESTATION_HOOK_MARKER} v1 — ${phase} row (SPEC 2.0 4.4 harness attestation)`,
+    // Every git call reads from /dev/null: the event JSON is piped to THIS
+    // script, and a child that inherited that stdin would eat the payload
+    // before node ever sees it.
+    `sha=$(git rev-parse HEAD 2>/dev/null </dev/null) || exit 0`,
+    `[ -n "$sha" ] || exit 0`,
+    // #240 vector 1's rule, verbatim: `--git-common-dir` is the ONE location
+    // every linked worktree of a repo shares, so a review dispatched from a
+    // worktree lands in the store the primary checkout reads.
+    `gitdir=$(git rev-parse --git-common-dir 2>/dev/null </dev/null) || exit 0`,
+    `gitdir=$(cd "$gitdir" 2>/dev/null && pwd) || exit 0`,
+    `node -e '${writer}' "$gitdir/${ATTEST_FILE}" "$sha" >/dev/null 2>&1`,
+    // ALWAYS 0. A SubagentStop hook can block the subagent it fires for, and an
+    // attestation that can wedge a review is worse than no attestation at all.
+    `exit 0`,
+  ].join('\n');
 }
 
-function isCludBugReviewEntry(entry: HookMatcherEntry | undefined): boolean {
-  return !!entry && Array.isArray(entry.hooks) && entry.hooks.some(isOurHook);
+/** The `PostToolUse` (Agent) command — writes the dispatch row. */
+export function buildAttestDispatchCommand(): string {
+  return buildAttestCommand(ATTEST_DISPATCH_WRITER, 'dispatch');
+}
+
+/** The `SubagentStop` command — writes the completion row. */
+export function buildAttestCompletionCommand(): string {
+  return buildAttestCommand(ATTEST_COMPLETION_WRITER, 'completion');
+}
+
+/** `async: true` (never `asyncRewake`): the attestation is bookkeeping, so it
+ * must neither delay the session nor say anything back into it. */
+const ATTEST_HOOK_BASE = { type: 'command', async: true, timeout: 10 } as const;
+
+export function buildAttestDispatchHook(): HookMatcherEntry {
+  // The tool matcher is the Agent tool itself; `tool_input.subagent_type` (the
+  // role) is recorded, not filtered on — the dispatch row is only half a record
+  // and the SubagentStop matcher below is what decides which pairs count.
+  return { matcher: 'Agent', hooks: [{ ...ATTEST_HOOK_BASE, command: buildAttestDispatchCommand() }] };
+}
+
+export function buildAttestCompletionHook(): HookMatcherEntry {
+  // Matching on the agent TYPE puts the filter in the committed settings, where
+  // weakening it is a hunk in the diff under review (§4.4:961). A `*` matcher
+  // plus a CLI-side allowlist would move that filter to where the operator
+  // writes it, and would count an unrelated subagent's completion as a review.
+  return {
+    matcher: REVIEWER_AGENT_TYPE,
+    hooks: [{ ...ATTEST_HOOK_BASE, command: buildAttestCompletionCommand() }],
+  };
+}
+
+/** Repo-relative path of the subagent definition the completion matcher names. */
+export const REVIEWER_AGENT_PATH = ['.claude', 'agents', `${REVIEWER_AGENT_TYPE}.md`];
+
+/** Version marker on the generated agent file. `update` refreshes a file
+ * carrying it and leaves a markerless (hand-owned) one alone — the same
+ * convention the local-review slash command already uses. */
+export const REVIEWER_AGENT_MARKER = '<!-- clud-bug-agent-version:';
+
+/**
+ * The `.claude/agents/clud-bug-reviewer.md` subagent definition. It exists so
+ * the type the `SubagentStop` matcher filters on actually resolves; it
+ * deliberately carries NO review instructions, because `review-prompt` is the
+ * single owner of the recipe and a second copy here would drift from it.
+ */
+export function buildReviewerAgentFile(): string {
+  return (
+    [
+      '---',
+      `name: ${REVIEWER_AGENT_TYPE}`,
+      'description: One clud-bug review pass. Dispatched by the clud-bug review recipe, which carries the diff, the lenses and the report shape.',
+      '---',
+      '',
+      `${REVIEWER_AGENT_MARKER} v1 -->`,
+      '',
+      'You are one **review pass** dispatched by clud-bug.',
+      '',
+      'Everything about WHAT to review — the diff, the lenses, the skills, the',
+      'evidence rule and the report shape — arrives in the prompt that dispatched',
+      'you. `clud-bug review-prompt` is the single owner of that recipe, and this',
+      'file deliberately does not restate it: a second copy would drift from the',
+      'one the CLI actually renders.',
+      '',
+      'Two things hold whatever the dispatching prompt says:',
+      '',
+      '- **Inspect, never execute.** SPEC 2.0 §4.7 bans reviewer execution. Read the',
+      '  diff and the repository; where you need evidence a read cannot give you,',
+      '  anchor the finding in a CI check the forge already ran.',
+      '- **Report to the dispatcher, publish nothing.** You do not comment on the',
+      '  pull request, write review files, or push. The thread that dispatched you',
+      '  aggregates the passes and owns every outward-facing surface.',
+      '',
+      'This file is also what lets the harness tell a clud-bug review pass apart',
+      'from every other subagent: the `SubagentStop` hook registered in',
+      '`.claude/settings.json` matches on this agent type, and that match decides',
+      'which completions become attestation records (SPEC 2.0 §4.4).',
+      '',
+      'Managed by clud-bug. Edits are replaced on the next `clud-bug init` /',
+      '`clud-bug update`; delete the version marker above to take ownership.',
+    ].join('\n') + '\n'
+  );
+}
+
+/** Does this hook carry `marker`? Checks `command` (a `type: command` hook)
+ * and `prompt` (the old, broken `type: agent` commit hook), so a re-install
+ * replaces either in place. */
+function hookCarriesMarker(h: Record<string, unknown> | undefined, marker: string): boolean {
+  const field = h?.['command'] ?? h?.['prompt'];
+  return typeof field === 'string' && field.includes(marker);
+}
+
+interface EventSplit {
+  /** Entries that are not ours — preserved verbatim, in order. */
+  others: HookMatcherEntry[];
+  /** Hooks the user co-located INSIDE our entry — preserved, re-attached. */
+  coLocated: Array<Record<string, unknown>>;
+}
+
+/** Split one event's entry list into "not ours" and "the user's hooks that were
+ * sitting inside ours", dropping only the hook(s) carrying `marker`. Never the
+ * whole entry: a user hook co-located in our matcher must survive the merge. */
+function splitOurEntries(prior: HookMatcherEntry[], marker: string): EventSplit {
+  const others: HookMatcherEntry[] = [];
+  const coLocated: Array<Record<string, unknown>> = [];
+  for (const entry of prior) {
+    const isOurs = !!entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => hookCarriesMarker(h, marker));
+    if (isOurs) {
+      for (const h of entry.hooks) if (!hookCarriesMarker(h, marker)) coLocated.push(h);
+    } else {
+      others.push(entry);
+    }
+  }
+  return { others, coLocated };
+}
+
+function withCoLocated(ours: HookMatcherEntry, coLocated: Array<Record<string, unknown>>): HookMatcherEntry {
+  return coLocated.length > 0 ? { ...ours, hooks: [...coLocated, ...ours.hooks] } : ours;
 }
 
 /**
- * Merges the clud-bug commit-review hook into an existing `.claude/settings.json`
- * object. **Idempotent** (replaces any prior clud-bug entry — including the old
- * `type: agent` one — rather than duplicating) and **non-clobbering** (preserves
- * every other top-level key, event, and hook). Tolerates a missing/malformed
- * `existing` value.
+ * Merges clud-bug's Claude Code hooks into an existing `.claude/settings.json`
+ * object: the commit-review entry, and (#266) the two harness-attestation
+ * entries §4.4:961 requires to live in the repository's committed settings.
+ * **Idempotent** (replaces any prior clud-bug entry — including the old
+ * `type: agent` one — rather than duplicating) and **non-clobbering**
+ * (preserves every other top-level key, event, and hook). Tolerates a
+ * missing/malformed `existing` value.
+ *
+ * Each marker is merged independently, and ours are appended in a FIXED order
+ * after everything preserved — so a second call reproduces the first call's
+ * output byte for byte rather than rotating our own entries past each other.
  */
 export function mergeLocalReviewHook(existing: unknown, command: string): ClaudeSettings {
+  return mergeSettingsHooks(existing, command);
+}
+
+/**
+ * The attestation half on its own — for a repo whose local surface is the
+ * `pre-push` hook, which installs no commit-review entry at all. §4.4 is about
+ * WHICH REASONERS RAN, not about which trigger surfaced the recipe, so the
+ * registration belongs to every repo with a local review surface, not only to
+ * the ones that chose `--hook-trigger commit`.
+ *
+ * A commit-review entry already in the file is left exactly where it is — this
+ * call owns only the attestation marker.
+ */
+export function mergeAttestationHooks(existing: unknown): ClaudeSettings {
+  return mergeSettingsHooks(existing, null);
+}
+
+function mergeSettingsHooks(existing: unknown, reviewCommand: string | null): ClaudeSettings {
   const base: ClaudeSettings =
     existing && typeof existing === 'object' ? { ...(existing as ClaudeSettings) } : {};
   const hooks: Record<string, HookMatcherEntry[]> = { ...(base.hooks ?? {}) };
-  const priorPost = Array.isArray(hooks.PostToolUse) ? hooks.PostToolUse : [];
 
-  // Preserve every non-clud-bug hook — including any the user co-located INSIDE
-  // our own matcher entry: drop only the hook(s) carrying our marker, never the
-  // whole entry.
-  const ours = buildLocalReviewHook(command);
-  const otherEntries: HookMatcherEntry[] = [];
-  const coLocatedUserHooks: Array<Record<string, unknown>> = [];
-  for (const entry of priorPost) {
-    if (isCludBugReviewEntry(entry)) {
-      for (const h of entry.hooks) if (!isOurHook(h)) coLocatedUserHooks.push(h);
-    } else {
-      otherEntries.push(entry);
-    }
-  }
-  const ourEntry: HookMatcherEntry =
-    coLocatedUserHooks.length > 0 ? { ...ours, hooks: [...coLocatedUserHooks, ...ours.hooks] } : ours;
-  hooks.PostToolUse = [...otherEntries, ourEntry];
+  // PostToolUse holds both the commit-review entry (matcher `Bash`) and the
+  // attestation dispatch entry (matcher `Agent`).
+  const priorPost = Array.isArray(hooks.PostToolUse) ? hooks.PostToolUse : [];
+  const review =
+    reviewCommand === null
+      ? { others: priorPost, coLocated: [] as Array<Record<string, unknown>> }
+      : splitOurEntries(priorPost, CLUD_BUG_HOOK_MARKER);
+  const dispatch = splitOurEntries(review.others, ATTESTATION_HOOK_MARKER);
+  hooks.PostToolUse = [
+    ...dispatch.others,
+    ...(reviewCommand === null ? [] : [withCoLocated(buildLocalReviewHook(reviewCommand), review.coLocated)]),
+    withCoLocated(buildAttestDispatchHook(), dispatch.coLocated),
+  ];
+
+  const priorStop = Array.isArray(hooks.SubagentStop) ? hooks.SubagentStop : [];
+  const completion = splitOurEntries(priorStop, ATTESTATION_HOOK_MARKER);
+  hooks.SubagentStop = [
+    ...completion.others,
+    withCoLocated(buildAttestCompletionHook(), completion.coLocated),
+  ];
+
   base.hooks = hooks;
   return base;
 }

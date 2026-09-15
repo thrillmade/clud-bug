@@ -26,6 +26,8 @@ import { spawnSync } from 'node:child_process';
 
 import {
   buildBundle,
+  readAttestation,
+  type BundleAttestation,
   type NotaryBundle,
   type NotaryFinding,
   type NotarySeverity,
@@ -63,7 +65,18 @@ function toNotaryFinding(f: ReviewFinding, severity: NotarySeverity): NotaryFind
  */
 export function reviewDataToBundle(
   data: Partial<ReviewData>,
-  meta: { repo: string; pr?: number; headSha: string; recipeVersion: string; coverage: string[] },
+  meta: {
+    repo: string;
+    pr?: number;
+    headSha: string;
+    recipeVersion: string;
+    coverage: string[];
+    /** #266 — the harness's record of which reasoners ran (SPEC §4.4), read
+     * from the store by the caller. Derived, never taken from `data`: the
+     * review's own structured output is the reviewing party's account of
+     * itself, which §4.4:965 says the notary may not accept. */
+    attestation?: BundleAttestation;
+  },
 ): NotaryBundle {
   // Guard against a malformed bucket: a null/non-object entry (a lying or
   // truncated structured_output) must be SKIPPED, not crash the transform.
@@ -91,6 +104,7 @@ export function reviewDataToBundle(
     findings,
     coverage: meta.coverage,
     recipeVersion: meta.recipeVersion,
+    ...(meta.attestation !== undefined ? { attestation: meta.attestation } : {}),
   });
 }
 
@@ -135,12 +149,18 @@ export async function runBuildBundle(args: BuildBundleArgs): Promise<void> {
   }
 
   const coverage = loadCoverage(pr as number);
+  // #266 — always present, even when empty: the difference between "no reviewer
+  // ran" and "this producer cannot report" is the whole reason `bundle_version`
+  // went to 2, and it is only readable if the empty case is actually emitted
+  // (§4.4:953 — MUST NOT go silent instead of claiming the weaker one).
+  const attestation = await readAttestation({ cwd: process.cwd(), headSha: sha });
   const bundle = reviewDataToBundle(data, {
     repo,
     ...(pr !== undefined ? { pr } : {}),
     headSha: sha,
     recipeVersion,
     coverage,
+    attestation,
   });
 
   process.stdout.write(JSON.stringify(bundle) + '\n');

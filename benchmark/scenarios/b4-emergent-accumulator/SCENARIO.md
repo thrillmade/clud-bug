@@ -4,6 +4,7 @@ class: emergent
 severity: MAJOR
 one_line_defect: rollUp seeds every actor's bucket from one module-level template via a shallow `{ ...EMPTY_SUMMARY }`, so all buckets alias the same nested `ids`/`tags` arrays and each actor accumulates every other actor's events (and later calls inherit earlier ones).
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: The frozen template, the `freshBucket()` factory, the shallow spread, the counter bump, and the `ids.push` are each individually correct; the leak only exists in their interaction — a shallow copy of an object whose nested arrays are shared, mutated in place, and never reset across iterations or calls.
 correct_finding: Report that per-actor buckets are not independent — `freshBucket` shallow-copies a shared template so every bucket's `ids`/`tags` point at the same array, breaking the "each actor holds only its own events / buckets are disjoint / calls are independent" invariant. Ground it by running `node reproduce.mjs` (alice/bob/carol all read back `[e1,e2,e3,e4]`, and a fresh call's `dave` inherits them) or by naming the aliasing: `{ ...EMPTY_SUMMARY }` copies the array *reference*, and `Object.freeze` is shallow so the nested arrays stay mutable and shared.
 ---

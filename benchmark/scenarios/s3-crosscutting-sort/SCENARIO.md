@@ -4,6 +4,7 @@ class: cross-cutting
 severity: MED-HIGH
 one_line_defect: Backfill hands full-timestamp rows to stableByDate(), which sorts by calendar day only, so each synthetic 09:00 snapshot loses its intended chronological position and sinks below the same day's real transactions.
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: Every line of the backfill diff is correct on its own — it stamps snapshots with full date+time and calls the existing "order chronologically" helper; the defect is the mismatch between what the diff assumes stableByDate does (order by time) and what it actually does (order by day), and that helper lives in sort.mjs, a file the diff only exposes, never changes.
 correct_finding: Report that backfill's chronological guarantee is broken because stableByDate (sort.mjs) keys on date-only (`ts.slice(0,10)`) and, being a stable sort, leaves same-day rows in array/insertion order — the appended snapshots therefore land after that day's transactions; ground it either by running `node reproduce.mjs` (09:00 snapshot appears after 10:00/14:00 txns) or by naming the violated invariant (stableByDate promises chronological order but compares only the day component, so intra-day time order is not honored).
 ---

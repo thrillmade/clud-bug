@@ -59,6 +59,10 @@ describe('renderReviewRecipe', () => {
     // names the role tiers (Beetle/Wasp/Mantis) so each pass binds a model
     expect(recipe).toMatch(/beetle/i);
     expect(recipe).toMatch(/wasp/i);
+    // …and the dispatch text NAMES that model per tier: nothing downstream pins
+    // one (the agent file carries no `model:`), so if this instruction goes, a
+    // 3-tier panel quietly collapses onto whatever model the session is on.
+    expect(recipe).toMatch(/bind each tier to a Claude Code model/i);
     // pr reviews the branch against its base (not a single commit)
     expect(recipe).toMatch(/gh pr diff|origin\//);
     // H3: a PR recipe posts the self-attested merge-gate check

@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reviewPrompt } from '../src/core/prompts.js';
 import { renderFile, templateLanguage } from '../src/core/render.js';
+import { DEFAULT_MAX_SKILL_BYTES } from '../src/core/prompt-builder.js';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(PKG_ROOT, 'templates');
@@ -133,12 +134,39 @@ test('rendered workflow.yml.tmpl sets the three budget env vars', async () => {
   });
   assert.match(out, /MAX_DIFF_BYTES: '5000000'/);
   assert.match(out, /MAX_COMMENT_BYTES: '20000'/);
-  assert.match(out, /MAX_SKILL_BYTES: '4000'/);
+  // clud-bug#301/#305: MAX_SKILL_BYTES must equal the library's own
+  // DEFAULT_MAX_SKILL_BYTES, not a second, independently-typed number — a
+  // template that goes back to hardcoding '4000' (or any value that isn't
+  // this constant) fails here.
+  assert.match(out, new RegExp(`MAX_SKILL_BYTES: '${DEFAULT_MAX_SKILL_BYTES}'`));
   // REPO_OWNER and REPO_NAME are needed by the comment-fetch pattern.
   assert.match(out, /REPO_OWNER: \$\{\{ github\.repository_owner \}\}/);
   assert.match(out, /REPO_NAME: \$\{\{ github\.event\.repository\.name \}\}/);
   // Bash(head:*) added to allowedTools so Claude can pipe through head.
   assert.match(out, /Bash\(head:\*\)/);
+});
+
+// clud-bug#301/#305: the three templates must stay in lockstep on the skill
+// byte budget — a fix landed in one and not the other two silently
+// reintroduces the mismatch this issue was filed against.
+test('MAX_SKILL_BYTES matches DEFAULT_MAX_SKILL_BYTES in every workflow template', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: templateLanguage(tmpl) }),
+    });
+    // Exactly one MAX_SKILL_BYTES env value, and it is the library constant —
+    // one owner for this fact, not a second number stated in prose.
+    const values = [...out.matchAll(/MAX_SKILL_BYTES: '(\d+)'/g)].map((m) => m[1]);
+    assert.deepEqual(values, [String(DEFAULT_MAX_SKILL_BYTES)], `${tmpl}: MAX_SKILL_BYTES value(s) found: ${values.join(', ') || '(none)'}`);
+
+    // The model reads a prose sentence explaining the cap ("default N
+    // bytes"), not just the env var — that sentence used to hardcode
+    // '4,000' after this constant moved to 8192, restating the fact with a
+    // second, silently-stale owner. It must state the same number, always.
+    const proseMatch = out.match(/SKILL\.md`\s*\n\s*per file \(default (\d+) bytes\)/);
+    assert.ok(proseMatch, `${tmpl}: skill-file prose sentence not found`);
+    assert.equal(proseMatch[1], String(DEFAULT_MAX_SKILL_BYTES), `${tmpl}: skill-file prose states ${proseMatch[1]}, not MAX_SKILL_BYTES (${DEFAULT_MAX_SKILL_BYTES})`);
+  }
 });
 
 // --- 0.A.4 (v0.6.5): stats header + severity-prefix comment format ---

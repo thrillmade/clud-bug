@@ -37,7 +37,7 @@
 //   the workflow template's matching env var). When core runs outside the
 //   App (e.g. in a future CLI port), the env var won't exist. Callers may
 //   supply `maxSkillBytes` explicitly via the `BuildReviewPromptInput`;
-//   the default falls back to 8192 (SPEC §1.10 recommended ceiling).
+//   the default falls back to 8192 (SPEC §2.1 recommended ceiling).
 
 import type { Finding } from './review-schema-zod.js';
 import { fenceUntrustedContext } from './review-context.js';
@@ -49,7 +49,7 @@ import { fenceUntrustedContext } from './review-context.js';
 export const MAX_PATCH_BYTES_PER_FILE = 16 * 1024; // 16 KiB
 
 /** Default skill-body byte cap when the caller doesn't supply one.
- * Matches SPEC §1.10 ceiling + the App's `MAX_SKILL_BYTES` env default
+ * Matches SPEC §2.1 ceiling + the App's `MAX_SKILL_BYTES` env default
  * (see clud-bug-app/lib/env.ts).
  */
 export const DEFAULT_MAX_SKILL_BYTES = 8192;
@@ -128,7 +128,7 @@ export interface BuildReviewPromptInput {
   skills: PromptLoadedSkill[];
   /**
    * Per-skill body byte cap. Defaults to `DEFAULT_MAX_SKILL_BYTES` (8192)
-   * matching SPEC §1.10 + the App's `MAX_SKILL_BYTES` env. Callers running
+   * matching SPEC §2.1 + the App's `MAX_SKILL_BYTES` env. Callers running
    * the App provide it from `getEnv().MAX_SKILL_BYTES`; callers outside
    * the App may omit it.
    */
@@ -288,7 +288,7 @@ function renderSkillsBlock(
       .filter(Boolean)
       .join('\n');
     // Bug 8 (2026-06-08): cap each skill body at maxSkillBytes. SPEC
-    // §1.10 recommends 8192 byte ceiling; the App's env-default and the
+    // §2.1 recommends 8192 byte ceiling; the App's env-default and the
     // CLI's MAX_SKILL_BYTES env both wire to the same number.
     // Truncated bodies still let the model use the skill but with bounded
     // input cost. Append a marker so the model knows the cut happened.
@@ -330,7 +330,7 @@ export function skillMatchesDiff(
 
 /**
  * Very small glob matcher supporting `**` (any path segment) and `*`
- * (any chars within a segment). Sufficient for the SPEC §1.10 examples
+ * (any chars within a segment). Sufficient for the SPEC §2.1 examples
  * (`src/**`, `*.ts`). Not a drop-in replacement for `minimatch`; if we
  * need negation / brace expansion later, swap to minimatch — but adding
  * a dependency for two characters of syntax isn't worth it yet.

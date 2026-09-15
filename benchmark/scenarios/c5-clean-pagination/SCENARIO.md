@@ -4,6 +4,7 @@ class: clean
 severity: none
 one_line_defect: NONE — this code is correct
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_correct: The offset/limit walk uses a STRICT `offset < total` guard, clamps the final window end with `Math.min(offset + limit, total)`, and advances the cursor to the span actually consumed, so consecutive windows abut with no gap or overlap and an exact-multiple total stops right after the last full window — every item is covered exactly once and no empty trailing batch is produced.
 correct_finding: NONE. A correct review reports no finding here; any critical/major flag is a FALSE POSITIVE.
 ---

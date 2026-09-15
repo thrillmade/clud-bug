@@ -16,6 +16,7 @@ clud-bug
 ├── .logmind
 │   └── config.yml
 ├── benchmark
+│   ├── results
 │   ├── scenarios
 │   ├── README.md
 │   └── RESULTS.md
@@ -34,10 +35,13 @@ clud-bug
 ├── fixtures
 │   └── reviews
 ├── scripts
+│   ├── check-benchmark-claims.mjs
 │   ├── check-version.mjs
 │   ├── fixture-check.mjs
 │   ├── gen-version.mjs
-│   └── render-ci.mjs
+│   ├── render-benchmark.mjs
+│   ├── render-ci.mjs
+│   └── run-benchmark.mjs
 ├── site
 │   ├── app
 │   ├── lib
@@ -63,7 +67,14 @@ clud-bug
 │   ├── core
 │   ├── golden
 │   ├── agents-md.test.js
+│   ├── attestation-hook.test.js
+│   ├── attestation-rederive.test.js
+│   ├── attestation.test.js
 │   ├── audit.test.js
+│   ├── base-ref-instruction-surface.test.js
+│   ├── benchmark-claims.test.js
+│   ├── benchmark-corpus.test.js
+│   ├── benchmark-runner.test.js
 │   ├── branch-protection.test.js
 │   ├── build-bundle.test.js
 │   ├── check-verdict.test.js
@@ -95,12 +106,15 @@ clud-bug
 │   ├── review-schema-zod.test.js
 │   ├── review-writeback.test.js
 │   ├── review.test.js
+│   ├── skill-authoring-docs.test.js
 │   ├── skill-usage-aggregation.test.js
 │   ├── skill-usage.test.js
 │   ├── skills-base-ref.test.js
 │   ├── skills-frontmatter.test.js
 │   ├── skills.test.js
 │   ├── spec-version.test.js
+│   ├── strict-mode-gate-base-ref.test.js
+│   ├── strict-mode-gate-ci-lint.test.js
 │   ├── strict-mode-gate-classifier.test.js
 │   ├── update-notifier.test.js
 │   ├── update-pre-push.test.js

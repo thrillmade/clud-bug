@@ -190,6 +190,27 @@ test('buildReviewPrompt: default maxSkillBytes = DEFAULT_MAX_SKILL_BYTES (8192)'
   assert.ok(prompt.includes(`truncated at ${DEFAULT_MAX_SKILL_BYTES} bytes`));
 });
 
+// clud-bug#305 — the reviewer reads a skill's SKILL.md body only; a
+// references/ subdirectory next to it is never inlined into the prompt.
+// `PromptLoadedSkill` (the shape a caller must supply) has no `references`
+// field, so this test attaches one anyway (a caller could always pass an
+// object with extra properties) and asserts its content never reaches the
+// prompt the model sees — the bounded-prompt property holds even against a
+// caller that tries to smuggle reference content in.
+test('buildReviewPrompt: a skill\'s references/ content never reaches the prompt', () => {
+  const skillWithReferences = {
+    slug: 'race-conditions',
+    frontmatter: SKILL_RACE.frontmatter,
+    body: SKILL_RACE.body,
+    // Not part of PromptLoadedSkill — simulates a caller that read
+    // references/*.md off disk and attached it anyway.
+    references: ['REFERENCE-ONLY-MARKER-7f2a: this must never be reviewed'],
+  };
+  const { prompt } = buildReviewPrompt({ ...INPUT_TS, skills: [skillWithReferences] });
+  assert.ok(prompt.includes(SKILL_RACE.body), 'the SKILL.md body itself should still be included');
+  assert.ok(!prompt.includes('REFERENCE-ONLY-MARKER-7f2a'), 'references/ content leaked into the prompt');
+});
+
 // ---------------------------------------------------------------------------
 // buildCrossCheckPrompt
 // ---------------------------------------------------------------------------

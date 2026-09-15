@@ -179,24 +179,133 @@ export async function detectSkillRelPath(cwd: string): Promise<string> {
   return consumerPath;
 }
 
+// #253 follow-up — a naive scan for START_MARKER/END_MARKER fires on marker
+// TEXT quoted as a documentation example, not just the live block: AGENTS.md
+// legitimately shows the marker syntax (e.g. "here's what our block looks
+// like:" followed by a ```-fenced sample containing the literal markers).
+// liveBlockSpans below consults this to skip a marker pair that sits inside
+// a fence, rather than splice a rendered block into someone's
+// example. A heuristic (doesn't track fence indentation/info-string
+// subtleties precisely), not a full markdown parser — good enough to keep
+// matching off a quoted example, the one case this guards against.
+const FENCE_LINE_RE = /^[ \t]{0,3}(`{3,}|~{3,})/;
+
+/** Character-offset ranges `[start, end)` covered by fenced code blocks
+ * (``` or ~~~, GFM-style) in `content`. Computed once per scan so each
+ * marker occurrence can be checked cheaply against "is this inside a
+ * fence?" without re-scanning. Tracks actual line-ending width (LF vs CRLF)
+ * so offsets stay correct on a CRLF file — a fixed `+1` per line would drift
+ * the ranges on every line and silently mis-scope later markers.
+ *
+ * A pair only closes per CommonMark's own rule: the closer must use the
+ * SAME fence character as its opener, in a run at least as long. A fence
+ * line that fails either test (wrong character, or a shorter run) is not a
+ * closer and not a new nested opener either — it's just content of the
+ * still-open fence, exactly as a real markdown renderer treats it. Two
+ * regressions this fixes, both found by the same missing check:
+ *   - an UNTERMINATED opener (no matching closer at all, so the fence count
+ *     for that character/length ends up odd) used to be treated as
+ *     extending to EOF. That made ANY unrelated unclosed ``` earlier in the
+ *     file swallow every marker after it, including the live block — so
+ *     upsertBlock could never find it again and appended a duplicate on
+ *     every run (#253 follow-up regression). Ignoring the dangling opener
+ *     entirely — never extending a range for it — is what the two
+ *     `while (open)`/end-of-loop paths below do differently from before.
+ *   - pairing the first fence-looking line with the NEXT one regardless of
+ *     character let a stray `~~~` (or a run too short to close) masquerade
+ *     as the closer for an unrelated ``` opener, which could mis-scope a
+ *     real live block as "inside a fence" (or the reverse: leave an
+ *     actually-fenced doc example unprotected).
+ */
+function fenceRanges(content: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  // Alternating [line, separator, line, separator, ...] — the separator
+  // capture is what lets us track CRLF vs LF exactly rather than assuming `\n`.
+  const parts = content.split(/(\r?\n)/);
+  let offset = 0;
+  // The currently open fence, if any: where it started, and the character/
+  // run-length a closer must match. `null` when we're not inside one.
+  let open: { start: number; char: string; len: number } | null = null;
+  for (let i = 0; i < parts.length; i += 2) {
+    const line = parts[i] ?? '';
+    const sep = parts[i + 1] ?? '';
+    const m = FENCE_LINE_RE.exec(line);
+    if (m) {
+      const run = m[1] as string;
+      if (open === null) {
+        open = { start: offset, char: run[0] as string, len: run.length };
+      } else if (run[0] === open.char && run.length >= open.len) {
+        ranges.push([open.start, offset + line.length]);
+        open = null;
+      }
+      // else: wrong character, or too short a run to close — fenced
+      // CONTENT, not a closer and not a fresh opener. Leave `open` as is.
+    }
+    offset += line.length + sep.length;
+  }
+  // `open !== null` here means the fence count for that opener never
+  // balanced (an unterminated trailing fence). Per the rule above, that
+  // opener is ignored for marker detection rather than assumed to run to
+  // EOF — so no range is added for it.
+  return ranges;
+}
+
+function isInsideFence(ranges: Array<[number, number]>, index: number): boolean {
+  return ranges.some(([s, e]) => index >= s && index < e);
+}
+
+/** Character-offset spans `[start, end)` of every LIVE clud-bug block in
+ * `content`: each `START_MARKER ... END_MARKER` run whose two markers are
+ * both outside any fenced code block. The single place either function
+ * below decides what "a block" is — upsertBlock takes the first span,
+ * removeBlock takes all of them — so the two can never disagree about which
+ * bytes are ours.
+ *
+ * Each span runs from START_MARKER through the FIRST END_MARKER after it.
+ * The `*?` is NON-greedy on purpose: content following the end marker (a
+ * second block, a hand-written footer) must survive untouched. The comment
+ * here used to say "greedy", which was wrong about its own regex — test
+ * 'preserves content after the end marker' pins the truth.
+ */
+function liveBlockSpans(content: string): Array<[number, number]> {
+  const re = new RegExp(`${escapeRe(START_MARKER)}[\\s\\S]*?${escapeRe(END_MARKER)}`, 'g');
+  const fences = fenceRanges(content);
+  const spans: Array<[number, number]> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    const startIdx = m.index;
+    const endIdx = m.index + m[0].length - END_MARKER.length;
+    if (!isInsideFence(fences, startIdx) && !isInsideFence(fences, endIdx)) {
+      spans.push([startIdx, startIdx + m[0].length]);
+      continue; // `lastIndex` sits past OUR end marker, which is where the next span can start
+    }
+    // Quoted inside a fence — not a live block. Resume from just past the
+    // QUOTED start marker rather than from where the engine left `lastIndex`:
+    // `*?` stops at the first end marker anywhere after its start marker, and
+    // a fenced example may quote a LONE start marker (README.md writes one in
+    // prose today), in which case the end marker this match consumed belongs
+    // to the LIVE block below it. Resuming past that end marker skips the live
+    // pair entirely — upsertBlock then appends a duplicate on every run, and
+    // removeBlock strips nothing.
+    re.lastIndex = startIdx + START_MARKER.length;
+  }
+  return spans;
+}
+
 // Replace an existing clud-bug block in `content`, OR append if absent.
 // Idempotent: running multiple times leaves a single block.
 //
 // Used for AGENTS.md ONLY. Per-tool files go through redirectContentFor()
 // instead — see §1.1/§1.2 above.
 export function upsertBlock(content: string, block: string): string {
-  const startRe = new RegExp(escapeRe(START_MARKER));
-  const endRe   = new RegExp(escapeRe(END_MARKER));
-  if (startRe.test(content) && endRe.test(content)) {
-    // Replace from START_MARKER through the FIRST END_MARKER after it. The
-    // `*?` is NON-greedy on purpose: content following the end marker (a
-    // second block, a hand-written footer) must survive untouched. The
-    // comment here used to say "greedy", which was wrong about its own
-    // regex — test 'preserves content after the end marker' pins the truth.
-    const re = new RegExp(`${escapeRe(START_MARKER)}[\\s\\S]*?${escapeRe(END_MARKER)}`);
-    return content.replace(re, block);
+  const [live] = liveBlockSpans(content);
+  if (live) {
+    // Splice only the first live span; everything else — a fenced example, a
+    // second block, hand-written prose — survives untouched.
+    return content.slice(0, live[0]) + block + content.slice(live[1]);
   }
-  // Append with a separating blank line, no trailing newline duplication.
+  // No live pair found — append with a separating blank line, no trailing
+  // newline duplication.
   const sep = content.endsWith('\n') ? '\n' : '\n\n';
   return `${content}${sep}${block}\n`;
 }
@@ -220,44 +329,52 @@ export function hasAgentsMdImport(content: unknown): boolean {
 // Returns the cleaned content. If no block exists, returns content
 // unchanged. Idempotent.
 //
-// #265: the regex is now GLOBAL. Non-greedy still bounds each match to its
-// own end marker (so text between two blocks survives), but a file that
-// somehow accrued two copies — a bad merge of two branches that each ran
+// #265: EVERY live span goes, not just the first. Each span is still bounded
+// by its own end marker (so text between two blocks survives), but a file
+// that somehow accrued two copies — a bad merge of two branches that each ran
 // init — must end up with zero, not one. "MUST NOT carry a copy" is not
 // satisfied by removing only the first.
 export function removeBlock(content: string): string {
   if (typeof content !== 'string') return content;
-  // Consume the line breaks on BOTH sides of the block along with it, so no
-  // dent is left where it sat. Both runs are greedy AND CRLF-aware, so the
-  // match owns ALL the line
-  // breaks around the block and the replacement below decides the separator
-  // outright. Two bugs this closes:
-  //   - the old trailing `\n?` consumed one newline, so a block with a blank
-  //     line on each side left a doubled blank line behind;
-  //   - `\n*` on a CRLF file matched the `\n` halves only, stranding the
-  //     `\r`s as extra blank lines: a Windows .cursorrules came back as
-  //     '# my rules\r\n\r\n\n\r\n\r\ntrailing' — three blank lines of dent.
-  const re = new RegExp(
-    `(?:\\r?\\n)*${escapeRe(START_MARKER)}[\\s\\S]*?${escapeRe(END_MARKER)}(?:\\r?\\n)*`,
-    'g',
-  );
+  const spans = liveBlockSpans(content);
+  if (spans.length === 0) return content;
   // Emit the line ending the file already uses, rather than forcing LF into
   // a CRLF file (which shows up as a whole-file diff in a Windows checkout).
   const nl = content.includes('\r\n') ? '\r\n' : '\n';
-  // #265: what replaces the match depends on where the block sat.
-  //
-  // Replacing with '' unconditionally — what this did before — was safe only
-  // while the block was guaranteed to be the LAST thing in the file, which it
-  // was: the old code always appended it. Now that we strip blocks out of
-  // hand-edited per-tool files, a block can have user content on both sides,
-  // and '' welds those two lines together: 'HEAD\n\n<block>\nMIDDLE' became
-  // the single line 'HEADMIDDLE'. That is user content damage, silent and
-  // unrecoverable. Restore the separation instead.
-  return content.replace(re, (match: string, offset: number) => {
-    if (offset === 0) return '';                                // nothing above to separate from
-    if (offset + match.length >= content.length) return nl;     // last thing in the file: keep it newline-terminated
-    return nl + nl;                                             // keep the lines that surrounded it apart
-  });
+  let out = '';
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    // Take the line breaks on BOTH sides of the block along with it, so no
+    // dent is left where it sat, then decide the separator outright below.
+    // Both runs are greedy AND CRLF-aware. Two bugs that closes:
+    //   - a trailing `\n?` consumed one newline, so a block with a blank line
+    //     on each side left a doubled blank line behind;
+    //   - `\n*` on a CRLF file matched the `\n` halves only, stranding the
+    //     `\r`s as extra blank lines: a Windows .cursorrules came back as
+    //     '# my rules\r\n\r\n\n\r\n\r\ntrailing' — three blank lines of dent.
+    // Slicing the leading run from `cursor` rather than from 0 also stops it
+    // reaching back into bytes the previous span already accounted for.
+    const from = start - (/(?:\r?\n)*$/.exec(content.slice(cursor, start))?.[0].length ?? 0);
+    const to = end + (/^(?:\r?\n)*/.exec(content.slice(end))?.[0].length ?? 0);
+    out += content.slice(cursor, from);
+    // #265: what replaces the span depends on where the block sat.
+    //
+    // Replacing with '' unconditionally — what this did before — was safe only
+    // while the block was guaranteed to be the LAST thing in the file, which it
+    // was: the old code always appended it. Now that we strip blocks out of
+    // hand-edited per-tool files, a block can have user content on both sides,
+    // and '' welds those two lines together: 'HEAD\n\n<block>\nMIDDLE' became
+    // the single line 'HEADMIDDLE'. That is user content damage, silent and
+    // unrecoverable. Restore the separation instead.
+    // `from === 0` — nothing above to separate from, so no separator at all.
+    if (from > 0) {
+      out += to >= content.length
+        ? nl                                            // last thing in the file: keep it newline-terminated
+        : nl + nl;                                      // keep the lines that surrounded it apart
+    }
+    cursor = to;
+  }
+  return out + content.slice(cursor);
 }
 
 function escapeRe(s: string): string {

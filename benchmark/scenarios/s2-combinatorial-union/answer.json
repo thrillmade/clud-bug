@@ -1,0 +1,12 @@
+{
+  "id": "s2-combinatorial-union",
+  "class": "combinatorial",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    16,
+    25
+  ],
+  "defect": "mergeKeyed emits a duplicate key when an organic collision's generated `-N` suffix equals a pre-existing literal `-N` key in the input."
+}

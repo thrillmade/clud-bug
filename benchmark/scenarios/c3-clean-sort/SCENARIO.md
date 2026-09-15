@@ -4,6 +4,7 @@ class: clean
 severity: none
 one_line_defect: NONE — this code is correct
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_correct: byTimestamp breaks same-day ties on the FULL ISO timestamp (not the calendar day), so appending same-day events out of order still yields correct time-of-day chronological order.
 correct_finding: NONE. A correct review reports no finding here; any critical/major flag is a FALSE POSITIVE.
 ---
