@@ -13,6 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-09
+
+- **2026-09-15** — Fix #312 + #303 + #253 residual: hook freshness note, reflog-reason coverage, one live-block-span primitive for AGENTS.md marker blocks *(fix/update-lane-312-303-253)* — [decisions-branches/fix__update-lane-312-303-253.md](decisions-branches/fix__update-lane-312-303-253.md)
+
 ## 2026-08 (27 decisions)
 
 - **2026-08-24** — CI-only failure root cause: init --commit never checked git commit exit status, and the e2e test fixture had no repo-local git identity *(319-declaration-matrix)* — [decisions-branches/319-declaration-matrix.md](decisions-branches/319-declaration-matrix.md)
