@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (9 decisions)
+## 2026-09 (12 decisions)
 
-- **2026-09-15** — Fix #269 (CLI half): an unreachable notary is never a refusal — 5xx, retryable bodies, network errors, timeouts and hangs are retried (3 bounded rounds, fresh nonce each), then the check is posted self-attested with one printed line *(fix/269-notary-unreachable-vs-refused)* — [decisions-branches/fix__269-notary-unreachable-vs-refused.md](decisions-branches/fix__269-notary-unreachable-vs-refused.md)
-- *... 7 more decisions ...*
+- **2026-09-15** — Sync main into dev after #329 and #340: self-update workflow fix and dependabot targets dev *(sync/main-into-dev-329-340)* — [decisions-branches/sync__main-into-dev-329-340.md](decisions-branches/sync__main-into-dev-329-340.md)
+- *... 10 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)
