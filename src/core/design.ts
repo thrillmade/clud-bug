@@ -35,23 +35,62 @@ export const BUILTIN_DESIGN_CONFIG: DesignConfig = {
   viewports: ['desktop'],
 };
 
+export interface ReadDesignConfigOptions {
+  /**
+   * The manifest as it stands on the pull request's BASE ref, where the
+   * consumer has it. `gate` — and only `gate` — is then read from there.
+   *
+   * SPEC §6.3: "Anything that decides whether a change may merge … MUST be
+   * read from the pull request's base ref. Never from the head ref, and never
+   * from a workspace populated with the pull request's content." §4.8 makes
+   * this field one of those: "because it changes whether something blocks, it
+   * is a person's to set, never an agent's."
+   *
+   * Omit it where there is no base ref to read (a local `commit`/`push`
+   * review), and resolution is unchanged.
+   */
+  baseRefManifest?: unknown;
+}
+
 /**
  * Read + normalize the `design` block from a parsed `.clud-bug.json` manifest.
  * Tolerant: a missing/malformed block resolves to the off-by-default builtin,
  * so a typo can never silently *enable* the (cost-bearing) pass.
+ *
+ * `themes` and `viewports` always come from the manifest passed first: they
+ * decide what a run renders, not whether anything blocks, so the working
+ * tree is allowed to say. `enabled` normally comes from there too — it is a
+ * cost knob, §4.8's agent-owned half — EXCEPT once `gate` has resolved
+ * `strict`: from that point the pass running at all is what the strict gate
+ * has to block on, so `enabled` switches to the same trusted source as
+ * `gate` (§6.3). Without that, a head-ref `enabled: false` would silently
+ * defeat a base-ref `gate: strict` by starving it of anything to find —
+ * disabling the pass is exactly as effective as disabling the gate, and the
+ * head ref MUST NOT be able to do either once the base ref has gone strict.
  */
-export function readDesignConfig(manifest: unknown): DesignConfig {
-  const raw = (manifest as { design?: unknown } | null | undefined)?.design;
-  if (!raw || typeof raw !== 'object') return { ...BUILTIN_DESIGN_CONFIG };
-  const d = raw as Record<string, unknown>;
+export function readDesignConfig(
+  manifest: unknown,
+  options: ReadDesignConfigOptions = {},
+): DesignConfig {
+  const gateSource = 'baseRefManifest' in options ? options.baseRefManifest : manifest;
+  const gateBlock = readDesignBlock(gateSource);
+  const gate: DesignGate = gateBlock?.['gate'] === 'strict' ? 'strict' : 'advisory';
+
+  const raw = readDesignBlock(manifest);
+  if (!raw) return { ...BUILTIN_DESIGN_CONFIG, gate };
   const strArr = (v: unknown, fallback: string[]): string[] =>
     Array.isArray(v) && v.length > 0 ? v.map(String) : [...fallback];
   return {
-    enabled: d['enabled'] === true,
-    gate: d['gate'] === 'strict' ? 'strict' : 'advisory',
-    themes: strArr(d['themes'], BUILTIN_DESIGN_CONFIG.themes),
-    viewports: strArr(d['viewports'], BUILTIN_DESIGN_CONFIG.viewports),
+    enabled: gate === 'strict' ? gateBlock?.['enabled'] === true : raw['enabled'] === true,
+    gate,
+    themes: strArr(raw['themes'], BUILTIN_DESIGN_CONFIG.themes),
+    viewports: strArr(raw['viewports'], BUILTIN_DESIGN_CONFIG.viewports),
   };
+}
+
+function readDesignBlock(manifest: unknown): Record<string, unknown> | null {
+  const raw = (manifest as { design?: unknown } | null | undefined)?.design;
+  return raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
 }
 
 /**

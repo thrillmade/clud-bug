@@ -508,3 +508,71 @@ describe('anyMultiPass / totalPassCount', () => {
     ).toBe(6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #271 — `review.passes`'s blocking marker (SPEC §1.6's table: "Marking a pass
+// blocking is humans-only"; §4.8: "A repository MAY opt a design critical into
+// blocking, by marking that pass blocking in `review.passes`"). §6.3 puts the
+// read on the base ref, so the change being judged cannot mark its own pass.
+// ---------------------------------------------------------------------------
+
+describe('readReviewPassesConfig blocking', () => {
+  it('reads the blocking list when no base ref is supplied', () => {
+    const config = readReviewPassesConfig({
+      reviewPasses: { count: 2, blocking: ['design'] },
+    });
+    expect(config.blocking).toEqual(['design']);
+    expect(config.count).toBe(2);
+  });
+
+  it('drops non-string and blank entries', () => {
+    const config = readReviewPassesConfig({
+      reviewPasses: { blocking: ['design', 42, '', null, 'security'] },
+    });
+    expect(config.blocking).toEqual(['design', 'security']);
+  });
+
+  it('omits blocking entirely when the key is absent or malformed', () => {
+    expect(readReviewPassesConfig({ reviewPasses: { count: 2 } }).blocking).toBeUndefined();
+    expect(
+      readReviewPassesConfig({ reviewPasses: { blocking: 'design' } }).blocking,
+    ).toBeUndefined();
+  });
+
+  it('takes blocking from the base ref when one is supplied, never from the tree', () => {
+    const head = { reviewPasses: { count: 2, blocking: ['design'] } };
+    const base = { reviewPasses: { blocking: ['security'] } };
+    const config = readReviewPassesConfig(head, { baseRefManifest: base });
+    expect(config.blocking).toEqual(['security']);
+    // Everything that is not a blocking decision still reads from the tree.
+    expect(config.count).toBe(2);
+  });
+
+  it('does not honour a tree-only blocking marker when a base ref is supplied', () => {
+    const head = { reviewPasses: { blocking: ['design'] } };
+    expect(readReviewPassesConfig(head, { baseRefManifest: {} }).blocking).toBeUndefined();
+    expect(
+      readReviewPassesConfig(head, { baseRefManifest: { reviewPasses: {} } }).blocking,
+    ).toBeUndefined();
+  });
+
+  // The other direction of the same rule, and the one that matters for every
+  // repository that never customized `review.passes`: the head cannot UNMARK a
+  // pass either, whether by deleting the block, by writing a non-object over
+  // it, or by simply never having had one.
+  it('keeps the base-ref blocking marker when the tree has no reviewPasses at all', () => {
+    const base = { reviewPasses: { blocking: ['design'] } };
+    expect(
+      readReviewPassesConfig({ version: 1, installed: [] }, { baseRefManifest: base }).blocking,
+    ).toEqual(['design']);
+    expect(
+      readReviewPassesConfig({ reviewPasses: 'not an object' }, { baseRefManifest: base }).blocking,
+    ).toEqual(['design']);
+    expect(readReviewPassesConfig(null, { baseRefManifest: base }).blocking).toEqual(['design']);
+  });
+
+  it('still reads as unconfigured when neither ref says anything', () => {
+    expect(readReviewPassesConfig({ version: 1 }, { baseRefManifest: {} })).toBeNull();
+    expect(readReviewPassesConfig(null)).toBeNull();
+  });
+});

@@ -99,6 +99,88 @@ export async function detectPackageTestScript(root: string): Promise<string | nu
   return trimmed;
 }
 
+/**
+ * §6.7 suite detection, signal 1 — the same expression `buildPrePushHookScript`
+ * greps `git ls-tree` with at push time (TEST_FILE_PATTERN, src/cli/hooks.ts).
+ * That copy is embedded in shell and cannot import this one; the two are pinned
+ * equal by test/config-parity.test.js, because a command that refuses a
+ * declaration on a narrower rule than the gate hands back a `"none"` the very
+ * next push blocks.
+ */
+export const TEST_FILE_PATTERN =
+  '(^|/)(tests?|__tests__|spec)/|\\.(test|spec)\\.[cm]?[jt]sx?$|' +
+  '(^|/)test_[^/]+\\.py$|_test\\.py$|_test\\.go$|_spec\\.rb$';
+
+// `grep -Eiq` in the hook, so case-insensitive here too.
+const TEST_FILE_RE = new RegExp(TEST_FILE_PATTERN, 'i');
+
+// The hook greps every path in the tree; this walk is bounded instead, because
+// it runs on a working tree that may hold anything (a vendored monorepo, a
+// build output somebody kept). A suite deeper than this reads as undetected,
+// which is the direction that only ever relaxes the refusal — never one that
+// invents a suite that is not there.
+const TEST_WALK_MAX_DEPTH = 6;
+
+/**
+ * The first FILE under `root` whose path matches a test-file convention,
+ * relative and `/`-separated, or `null`. Files only, which is what the hook
+ * sees too: `git ls-tree -r --name-only` lists blobs, so an empty `tests/`
+ * directory is a suite to neither of us. Directories the histogram walk skips
+ * are skipped here for the same reason — a suite inside `node_modules` is not
+ * this repository's.
+ */
+export async function detectTestFiles(root: string): Promise<string | null> {
+  async function walk(dir: string, prefix: string, depth: number): Promise<string | null> {
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return null; }
+    const subdirs: Array<{ full: string; rel: string }> = [];
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' ||
+          entry.name === 'dist' || entry.name === 'build' ||
+          entry.name === '__pycache__' || entry.name === 'target') continue;
+      const rel = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) {
+        if (depth < TEST_WALK_MAX_DEPTH) subdirs.push({ full: join(dir, entry.name), rel });
+      } else if (TEST_FILE_RE.test(rel)) {
+        return rel;
+      }
+    }
+    for (const sub of subdirs) {
+      const hit = await walk(sub.full, `${sub.rel}/`, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  return walk(root, '', 0);
+}
+
+/** What answered §6.7's "suite detected?", and what it saw. */
+export interface DetectedTestSuite {
+  signal: 'package-script' | 'test-files';
+  /** The script's command, or the path that matched. */
+  evidence: string;
+  /** The command that runs the suite, where the signal knows one. */
+  command: string | null;
+}
+
+/**
+ * §6.7's "a repository the detector can see has tests", answered from the
+ * WORKING TREE. Both of the hook's signals, in the order that puts a real
+ * command first: a `package.json` `scripts.test` names the command to declare,
+ * a matching filename only proves there is one to name.
+ *
+ * Never for gating a push — §6.3 requires the gate to read the base ref, which
+ * is what the hook does. This is for `clud-bug config set tests`, where the
+ * working tree is the thing the person is looking at.
+ */
+export async function detectTestSuite(root: string): Promise<DetectedTestSuite | null> {
+  const script = await detectPackageTestScript(root);
+  if (script) return { signal: 'package-script', evidence: script, command: script };
+  const path = await detectTestFiles(root);
+  if (path) return { signal: 'test-files', evidence: path, command: null };
+  return null;
+}
+
 async function fileExists(path: string): Promise<boolean> {
   try {
     await stat(path);

@@ -308,6 +308,65 @@ test('readManifest returns empty when file missing', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+// #271 — the tolerant read is right for every READER (SPEC §1.6:243: an
+// unrecognised key, or a file a tool cannot make sense of, must not fail a
+// review). It is wrong for a WRITER: `readManifest` swallowing a parse error
+// and returning a fresh empty manifest means the next `writeManifest` deletes
+// the repository's whole configuration on a stray comma.
+test('readManifest tolerates a malformed file by default (readers never fail)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-malformed-'));
+  try {
+    await writeFile(join(dir, '.clud-bug.json'), '{ "strictMode": true,, }');
+    const m = await readManifest(dir);
+    assert.equal(m.installed.length, 0);
+    assert.equal(m.version, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('readManifest({ strict: true }) throws on a malformed file rather than returning an empty one', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-malformed-strict-'));
+  try {
+    await writeFile(join(dir, '.clud-bug.json'), '{ "strictMode": true,, }');
+    await assert.rejects(
+      () => readManifest(dir, { strict: true }),
+      (err) => {
+        assert.match(err.message, /\.clud-bug\.json/);
+        return true;
+      },
+    );
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('readManifest({ strict: true }) still returns the empty manifest when the file is simply absent', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-absent-strict-'));
+  try {
+    const m = await readManifest(dir, { strict: true });
+    assert.equal(m.installed.length, 0);
+    assert.equal(m.version, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// The other half of the same bug: a read that FAILS is not a file that is
+// absent. EACCES / EIO / a path that is not a file all used to read as "no
+// manifest yet", which a write path then persists — the same total loss as the
+// swallowed parse error, from a file nobody could even see.
+test('readManifest({ strict: true }) throws when the file exists but cannot be read', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clud-bug-unreadable-strict-'));
+  try {
+    // A directory at the manifest path: readFile fails with EISDIR on every
+    // platform and for every user, unlike a permission bit root ignores.
+    await mkdir(join(dir, '.clud-bug.json'), { recursive: true });
+    await assert.rejects(
+      () => readManifest(dir, { strict: true }),
+      (err) => {
+        assert.match(err.message, /\.clud-bug\.json/);
+        assert.match(err.message, /Nothing was written/);
+        return true;
+      },
+    );
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('mergeManifest replaces by key, never duplicates', () => {
   const existing = { installed: [
     { slug: 'a', source: 'x', name: 'a', kind: 'remote' },
