@@ -598,6 +598,397 @@ test('upsertBlock: preserves content after the end marker (non-greedy)', () => {
   assert.match(after, /TAIL/, 'content after the end marker was eaten');
 });
 
+test('upsertBlock: does not splice a rendered block into a FENCED marker example', () => {
+  // #253 follow-up: AGENTS.md legitimately documents the marker syntax by
+  // showing it (a fenced code sample). A naive first-START-to-nearest-END
+  // scan can't tell that from a live block and overwrites the example.
+  const before = [
+    '# AGENTS.md',
+    '',
+    "Example of what our marker block looks like:",
+    '',
+    '```',
+    '<!-- clud-bug-start -->',
+    'EXAMPLE TEXT DO NOT TOUCH',
+    '<!-- clud-bug-end -->',
+    '```',
+    '',
+  ].join('\n');
+  const after = upsertBlock(before, '<!-- clud-bug-start -->\nNEW\n<!-- clud-bug-end -->');
+  assert.match(after, /EXAMPLE TEXT DO NOT TOUCH/, 'the fenced example was overwritten');
+  assert.match(after, /NEW/, 'the live block was never added');
+  // Two pairs now: the untouched fenced example, plus the appended live one.
+  assert.equal(after.match(/<!-- clud-bug-start -->/g).length, 2);
+});
+
+test('removeBlock: leaves a FENCED marker example untouched', () => {
+  const before = [
+    '# CLAUDE.md',
+    '',
+    "Example of what our marker block looks like:",
+    '',
+    '```',
+    '<!-- clud-bug-start -->',
+    'EXAMPLE TEXT DO NOT TOUCH',
+    '<!-- clud-bug-end -->',
+    '```',
+    '',
+  ].join('\n');
+  assert.equal(removeBlock(before), before);
+});
+
+// --- #253 follow-up round 2: fence PAIRING, not just fence PRESENCE --------
+//
+// fenceRanges() used to (a) treat an UNTERMINATED opener as extending to
+// EOF, and (b) pair the first fence-looking line with whatever fence-looking
+// line came next, regardless of character or run length. Both are
+// CommonMark violations: a closer must use the SAME character as its
+// opener, in a run at least as long, or it isn't a closer at all — and an
+// opener that never gets one stays unterminated, it does not swallow the
+// rest of the file. These two tests pin the FILE BYTES the real update path
+// produces, not fenceRanges' own internal return value.
+
+test('applyToRepo: an UNRELATED unterminated fence earlier in the file must not swallow the live block, even across repeated runs', async () => {
+  // Reviewer-confirmed regression, reproduced via tsx against this tree: a
+  // ``` opened for some other doc purpose and never closed made fenceRanges
+  // treat EVERYTHING after it — including a real live block — as "inside a
+  // fence". upsertBlock then couldn't find the live block to update, so it
+  // appended a fresh one instead; running update again saw the same
+  // dangling opener and appended ANOTHER one. 4 runs produced 5 blocks.
+  const before = [
+    '# AGENTS.md',
+    '',
+    'Unrelated doc text, followed by an example fence that is never closed:',
+    '',
+    '```',
+    'this fence is never closed, on purpose',
+    '',
+    '<!-- clud-bug-start -->',
+    'OLD BLOCK CONTENT',
+    '<!-- clud-bug-end -->',
+    '',
+    'trailing hand-written text',
+    '',
+  ].join('\n');
+  const prefix = before.slice(0, before.indexOf('<!-- clud-bug-start -->'));
+  const suffix = before.slice(before.indexOf('<!-- clud-bug-end -->') + '<!-- clud-bug-end -->'.length);
+  const dir = await makeRepo({ 'AGENTS.md': before });
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const after1 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.equal(after1.match(/<!-- clud-bug-start -->/g).length, 1, 'run 1: exactly one block, not appended alongside the old one');
+    assert.doesNotMatch(after1, /OLD BLOCK CONTENT/, 'run 1: the live block was updated in place, not left behind');
+    assert.match(after1, /clud-bug v0\.7\.0/, 'run 1: the live block now carries the new content');
+    assert.ok(after1.startsWith(prefix), 'run 1: bytes before the live block (including the unterminated fence) must survive untouched');
+    assert.ok(after1.endsWith(suffix), 'run 1: bytes after the live block (the trailing hand-written text) must survive untouched');
+
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const after2 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.equal(after2.match(/<!-- clud-bug-start -->/g).length, 1, 'run 2: still exactly one block — not a second duplicate');
+    assert.equal(after2, after1, 'run 2: byte-identical to run 1 — updating in place is idempotent');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('upsertBlock: a mismatched-character fence line must not act as a closer, so a real live block is updated and a properly-fenced doc example survives untouched', () => {
+  // A ``` opened for one purpose is never closed by backticks anywhere in
+  // this file — only by two LATER, unrelated `~~~` lines that themselves
+  // form a properly-matched pair around a doc example quoting the markers.
+  // Pairing "the next fence-looking line, whatever character it uses" (the
+  // old bug) treated that first `~~~` as if it closed the dangling ```,
+  // mis-scoping the real live block sitting between them as "inside a
+  // fence" — so upsertBlock skipped it and clobbered the quoted example
+  // instead. A closer must match the opener's OWN character.
+  const before = [
+    '# AGENTS.md',
+    '',
+    '```',
+    '',
+    '<!-- clud-bug-start -->',
+    'OLD LIVE BLOCK',
+    '<!-- clud-bug-end -->',
+    '',
+    'Example of the marker syntax, shown below:',
+    '',
+    '~~~',
+    '<!-- clud-bug-start -->',
+    'EXAMPLE TEXT DO NOT TOUCH',
+    '<!-- clud-bug-end -->',
+    '~~~',
+    '',
+  ].join('\n');
+  const fencedExample = [
+    '~~~',
+    '<!-- clud-bug-start -->',
+    'EXAMPLE TEXT DO NOT TOUCH',
+    '<!-- clud-bug-end -->',
+    '~~~',
+  ].join('\n');
+  const after = upsertBlock(before, '<!-- clud-bug-start -->\nNEW LIVE BLOCK\n<!-- clud-bug-end -->');
+  assert.equal(after.match(/<!-- clud-bug-start -->/g).length, 2, 'exactly two pairs: the updated live block + the untouched example');
+  assert.match(after, /NEW LIVE BLOCK/, 'the real live block must be the one that gets updated');
+  assert.doesNotMatch(after, /OLD LIVE BLOCK/);
+  assert.ok(after.includes(fencedExample), 'the properly-fenced doc example must survive byte-for-byte');
+});
+
+// --- #253 follow-up round 3: a fenced example quoting a LONE start marker ---
+//
+// The non-greedy `[\s\S]*?` run stops at the first end marker ANYWHERE after
+// its start marker — it does not care whose. So a fenced example that quotes
+// only `<!-- clud-bug-start -->` (README.md:43 writes exactly that shape in
+// prose) matches all the way down to the LIVE block's end marker. Rejecting
+// that match as fenced is right; resuming the scan from where the regex
+// engine left off is not, because the live pair is now behind the cursor.
+// Both functions have to resume from just past the QUOTED start marker
+// instead, which is why they now share one span-finding primitive rather
+// than each walking the markers their own way.
+
+test('upsertBlock: a fenced example quoting a LONE start marker must not hide the live block below it', () => {
+  const before = [
+    '# AGENTS.md',
+    '',
+    'Our generated section opens with this line:',
+    '',
+    '```md',
+    '<!-- clud-bug-start -->',
+    '```',
+    '',
+    '<!-- clud-bug-start -->',
+    'OLD LIVE BLOCK',
+    '<!-- clud-bug-end -->',
+    '',
+    'trailing hand-written text',
+    '',
+  ].join('\n');
+  const quotedExample = '```md\n<!-- clud-bug-start -->\n```';
+  const after = upsertBlock(before, '<!-- clud-bug-start -->\nNEW LIVE BLOCK\n<!-- clud-bug-end -->');
+  assert.match(after, /NEW LIVE BLOCK/, 'the live block was never found — a duplicate got appended instead');
+  assert.doesNotMatch(after, /OLD LIVE BLOCK/, 'the live block was left stale below the appended copy');
+  assert.equal(after.match(/<!-- clud-bug-start -->/g).length, 2, 'exactly two start markers: the quoted one + the updated live block');
+  assert.ok(after.includes(quotedExample), 'the quoted example must survive byte-for-byte');
+  assert.match(after, /trailing hand-written text/);
+});
+
+test('applyToRepo: a fenced LONE start marker must not make update append a fresh block on every run', async () => {
+  // The end-to-end shape of the same defect, pinned on the file bytes: three
+  // runs used to leave three start markers below the quoted one, each run's
+  // content stale under the next.
+  const before = [
+    '# AGENTS.md',
+    '',
+    'Our generated section opens with this line:',
+    '',
+    '```md',
+    '<!-- clud-bug-start -->',
+    '```',
+    '',
+    '<!-- clud-bug-start -->',
+    'OLD BLOCK CONTENT',
+    '<!-- clud-bug-end -->',
+    '',
+    'trailing hand-written text',
+    '',
+  ].join('\n');
+  const prefix = before.slice(0, before.lastIndexOf('<!-- clud-bug-start -->'));
+  const suffix = before.slice(before.indexOf('<!-- clud-bug-end -->') + '<!-- clud-bug-end -->'.length);
+  const dir = await makeRepo({ 'AGENTS.md': before });
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const after1 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.equal(after1.match(/<!-- clud-bug-start -->/g).length, 2, 'run 1: the quoted marker + one live block, nothing appended');
+    assert.doesNotMatch(after1, /OLD BLOCK CONTENT/, 'run 1: the live block was updated in place, not left behind');
+    assert.match(after1, /clud-bug v0\.7\.0/, 'run 1: the live block carries the new content');
+    assert.ok(after1.startsWith(prefix), 'run 1: bytes before the live block (including the quoted example) must survive untouched');
+    assert.ok(after1.endsWith(suffix), 'run 1: bytes after the live block must survive untouched');
+
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const after2 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.equal(after2, after1, 'run 2: byte-identical to run 1');
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const after3 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.equal(after3, after1, 'run 3: byte-identical to run 1');
+    assert.equal(after3.match(/<!-- clud-bug-start -->/g).length, 2, 'run 3: still two start markers, not four');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('removeBlock: a fenced LONE start marker must not stop the live block below it from being removed', () => {
+  const before = [
+    '# CLAUDE.md',
+    '',
+    'Our generated section opens with this line:',
+    '',
+    '```md',
+    '<!-- clud-bug-start -->',
+    '```',
+    '',
+    '<!-- clud-bug-start -->',
+    'COPIED BLOCK BODY',
+    '<!-- clud-bug-end -->',
+    '',
+    'trailing hand-written text',
+    '',
+  ].join('\n');
+  const after = removeBlock(before);
+  assert.doesNotMatch(after, /COPIED BLOCK BODY/, 'the live block survived the strip');
+  assert.doesNotMatch(after, /<!-- clud-bug-end -->/, 'the live end marker survived the strip');
+  assert.equal(after.match(/<!-- clud-bug-start -->/g).length, 1, 'only the quoted start marker may remain');
+  assert.ok(after.includes('```md\n<!-- clud-bug-start -->\n```'), 'the quoted example must survive byte-for-byte');
+  assert.match(after, /trailing hand-written text/);
+  assert.equal(removeBlock(after), after, 'idempotent');
+});
+
+test('applyToRepo: a per-tool file below a fenced LONE start marker still ends up with no block copy (§1.2)', async () => {
+  const claude = [
+    '# CLAUDE.md',
+    '',
+    'Our generated section opens with this line:',
+    '',
+    '```md',
+    '<!-- clud-bug-start -->',
+    '```',
+    '',
+    '<!-- clud-bug-start -->',
+    'COPIED BLOCK BODY',
+    '<!-- clud-bug-end -->',
+    '',
+    'my own notes',
+    '',
+  ].join('\n');
+  const dir = await makeRepo({ 'AGENTS.md': '# AGENTS.md\n', 'CLAUDE.md': claude });
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const out = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
+    assert.doesNotMatch(out, /COPIED BLOCK BODY/, '§1.2: the per-tool file kept a copy of the block');
+    assert.doesNotMatch(out, /<!-- clud-bug-end -->/);
+    assert.match(out, /<!-- clud-bug-stub:/, 'the redirect stub was not added');
+    assert.ok(out.includes('```md\n<!-- clud-bug-start -->\n```'), 'the quoted example must survive byte-for-byte');
+    assert.match(out, /my own notes/);
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    assert.equal(await readFile(join(dir, 'CLAUDE.md'), 'utf8'), out, 'second run is byte-identical');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// --- #253 round 3: the last two shapes, pinned on FILE BYTES ---------------
+//
+// Helper-level twins for both shapes exist above, but a helper return value is
+// not what a user's repo ends up holding. These run the same two shapes
+// through applyToRepo — and, for the per-tool file, through the
+// redirectContentFor path it writes with.
+//
+// In the first one the fenced example sits ABOVE the live block on purpose:
+// upsertBlock splices the FIRST live span, so with the example below it the
+// file comes out right whether or not the markers inside the fence are
+// rejected at all. Above it, rejecting BOTH of the quoted markers is the only
+// thing keeping the example off the head of the span list.
+
+test('applyToRepo: a full marker pair inside a closed fence stays byte-identical while the live block below it is updated', async () => {
+  const before = [
+    '# AGENTS.md',
+    '',
+    'Example of what our marker block looks like:',
+    '',
+    '```',
+    '<!-- clud-bug-start -->',
+    'EXAMPLE TEXT DO NOT TOUCH',
+    '<!-- clud-bug-end -->',
+    '```',
+    '',
+    '<!-- clud-bug-start -->',
+    'OLD LIVE BLOCK',
+    '<!-- clud-bug-end -->',
+    '',
+    'trailing hand-written text',
+    '',
+  ].join('\n');
+  const prefix = before.slice(0, before.lastIndexOf('<!-- clud-bug-start -->'));
+  const suffix = before.slice(before.lastIndexOf('<!-- clud-bug-end -->') + '<!-- clud-bug-end -->'.length);
+  const dir = await makeRepo({ 'AGENTS.md': before });
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const after1 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(after1, /EXAMPLE TEXT DO NOT TOUCH/, 'run 1: the fenced example was overwritten');
+    assert.doesNotMatch(after1, /OLD LIVE BLOCK/, 'run 1: the real live block was left stale');
+    assert.match(after1, /clud-bug v0\.7\.0/, 'run 1: the live block carries the new content');
+    assert.equal(after1.match(/<!-- clud-bug-start -->/g).length, 2, 'run 1: the quoted pair + one live block, nothing appended');
+    assert.ok(after1.startsWith(prefix), 'run 1: every byte above the live block — the whole fenced example — must survive');
+    assert.ok(after1.endsWith(suffix), 'run 1: bytes after the live block must survive untouched');
+
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    assert.equal(await readFile(join(dir, 'AGENTS.md'), 'utf8'), after1, 'run 2: byte-identical to run 1');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('applyToRepo: with two live blocks in AGENTS.md the FIRST is refreshed and the rest are left alone, stably', async () => {
+  // The documented contract, on the bytes: upsertBlock owns the first span and
+  // nothing else, so a file that already carried two blocks keeps the second
+  // one as the user's problem rather than growing a third on every run.
+  // Healing such a file is a separate decision (#253 does not ask for it).
+  const before = [
+    'HEAD',
+    '',
+    '<!-- clud-bug-start -->',
+    'OLD FIRST BLOCK',
+    '<!-- clud-bug-end -->',
+    '',
+    'MIDDLE',
+    '',
+    '<!-- clud-bug-start -->',
+    'OLD SECOND BLOCK',
+    '<!-- clud-bug-end -->',
+    '',
+    'TAIL',
+    '',
+  ].join('\n');
+  const dir = await makeRepo({ 'AGENTS.md': before });
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const after1 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
+    assert.doesNotMatch(after1, /OLD FIRST BLOCK/, 'run 1: the first block was not the one updated');
+    assert.match(after1, /clud-bug v0\.7\.0/, 'run 1: the first block carries the new content');
+    assert.match(after1, /OLD SECOND BLOCK/, 'run 1: the second block is not ours to rewrite');
+    assert.equal(after1.match(/<!-- clud-bug-start -->/g).length, 2, 'run 1: still two blocks — no third appended');
+    assert.ok(after1.startsWith('HEAD\n\n'), 'run 1: content above the first block must survive');
+    assert.match(after1, /\nMIDDLE\n/, 'run 1: content between the two blocks must survive');
+    assert.ok(after1.endsWith('\nTAIL\n'), 'run 1: content after the second block must survive');
+
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    assert.equal(await readFile(join(dir, 'AGENTS.md'), 'utf8'), after1, 'run 2: byte-identical to run 1');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('applyToRepo: a per-tool file carrying TWO block copies ends up with none (§1.2)', async () => {
+  // The other half of the same contract: removeBlock takes EVERY span, so the
+  // per-tool file a bad merge left with two copies comes back with zero — and
+  // with the lines they sat between still apart.
+  const claude = [
+    'HEAD',
+    '',
+    '<!-- clud-bug-start -->',
+    'FIRST COPIED BODY',
+    '<!-- clud-bug-end -->',
+    '',
+    'MIDDLE',
+    '',
+    '<!-- clud-bug-start -->',
+    'SECOND COPIED BODY',
+    '<!-- clud-bug-end -->',
+    '',
+    'TAIL',
+    '',
+  ].join('\n');
+  const dir = await makeRepo({ 'AGENTS.md': '# AGENTS.md\n', 'CLAUDE.md': claude });
+  try {
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const out = await readFile(join(dir, 'CLAUDE.md'), 'utf8');
+    assert.doesNotMatch(out, /FIRST COPIED BODY/, '§1.2: the first copy survived');
+    assert.doesNotMatch(out, /SECOND COPIED BODY/, '§1.2: the second copy survived');
+    assert.doesNotMatch(out, /<!-- clud-bug-start -->/, '§1.2: a block marker survived');
+    assert.match(out, /<!-- clud-bug-stub:/, 'the redirect stub was not added');
+    assert.ok(out.endsWith('HEAD\n\nMIDDLE\n\nTAIL\n'), `the user's own lines were mangled: ${JSON.stringify(out)}`);
+    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    assert.equal(await readFile(join(dir, 'CLAUDE.md'), 'utf8'), out, 'second run is byte-identical');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('removeBlock: strips EVERY block, not just the first', () => {
   // A bad merge of two branches that each ran init can leave two copies.
   // "MUST NOT carry a copy" is not satisfied by removing one of them.
