@@ -13,6 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-09
+
+- **2026-09-15** — Dependabot targets dev, not main: dependency bumps ride the normal dev→main promotion *(chore/dependabot-target-dev)* — [decisions-branches/chore__dependabot-target-dev.md](decisions-branches/chore__dependabot-target-dev.md)
+
 ## 2026-08 (23 decisions)
 
 - **2026-08-24** — Fix #296 critical: bare `clud-bug init` re-run preserves the already-installed hook-trigger surface *(fix/276-pre-push-surface)* — [decisions-branches/fix__276-pre-push-surface.md](decisions-branches/fix__276-pre-push-surface.md)
