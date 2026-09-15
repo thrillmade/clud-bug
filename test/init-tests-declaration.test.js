@@ -106,6 +106,26 @@ test('init ignores the npm-init placeholder test script — same as no script at
   assert.match(r.stderr, /No test suite auto-detected/);
 });
 
+// #271 ruling 2 — init used to detect a suite with `detectPackageTestScript`
+// alone, the narrower of the two signals `detectTestSuite` combines (the
+// same detector `config set tests`'s own honesty check uses). A repo with
+// test FILES but no `package.json` script has no command to suggest, so
+// --accept-all still honestly declares "none" — but the detector DID see a
+// suite, so the "nothing auto-detected" warning must not fire; it would tell
+// the user something false that `config set tests none` in the same repo
+// would itself refuse to say.
+test('init --accept-all with test FILES but no package.json script declares "none" without claiming nothing was detected', async () => {
+  const dir = await makeRepoDir('clud-bug-tests-filesonly-');
+  await mkdir(join(dir, 'test'), { recursive: true });
+  await writeFile(join(dir, 'test', 'example.test.js'), 'test("x", () => {});\n');
+  const r = runInit(dir, []);
+  assert.equal(r.status, 0, r.stderr);
+
+  const manifest = await readManifest(dir);
+  assert.equal(manifest.tests, 'none');
+  assert.doesNotMatch(r.stderr, /No test suite auto-detected/);
+});
+
 test('init --no-hooks never asks — there is no mechanical gate to declare for', async () => {
   const dir = await makeRepoDir('clud-bug-tests-nohooks-');
   const r = runInit(dir, ['--no-hooks']);

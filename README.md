@@ -84,10 +84,15 @@ a different problem, and §6.7 treats it as one.
 Declare your test command on your **default branch** (it is read from there, not from your
 working tree — so editing it locally changes nothing until it's merged and reviewed):
 
-```jsonc
-// .claude/skills/.clud-bug.json
-{ "tests": "npm test", ... }   // or "none" if the repo genuinely has no suite
+```bash
+clud-bug config set tests "npm test"   # or: clud-bug config set tests none
 ```
+
+That writes `{ "tests": "npm test" }` into `.claude/skills/.clud-bug.json`. `none` is refused
+when the command can see a suite in your working tree — a `package.json` test script, or a file
+matching the same patterns the hook greps the base ref for (`tests/`, `*.test.ts`, `test_*.py`,
+`*_test.go`, `*_spec.rb`, …). That look is a bounded walk, not a proof: it can still miss a
+suite the hook finds, and then the push is what blocks.
 
 A push whose only change is adding or fixing that declaration is always allowed, regardless
 of the state it replaces — otherwise the fix could never be pushed. Choosing a surface:
@@ -125,6 +130,57 @@ npx clud-bug init [options]
   --help,-h             Show help.
 ```
 
+## Configuration
+
+Every setting has a name and a command. Nobody needs to open the JSON.
+
+```bash
+clud-bug config list                       # every setting, its value, and where that came from
+clud-bug config get <key>                  # one value; --json for the whole record
+clud-bug config set <key> <value>          # refuses a value the setting cannot take
+clud-bug config unset <key>                # back to the documented default
+```
+
+```bash
+clud-bug config set review.ci_checks '["build","typecheck"]'
+clud-bug config set tests "npm test"
+```
+
+The same command in a terminal and in a workflow — nothing here reads a TTY, `CI`, or any
+agent marker. Exit codes are the contract: `0` done · `1` a file that could not be read or
+written (left exactly as it was) · `2` no such setting, with a did-you-mean · `3` a value
+outside the domain, with what it can take · `4` refused.
+
+`clud-bug config list` prints the full table. The settings, in short:
+
+| Setting | On disk | Governs |
+|---|---|---|
+| `review.strict_mode` **humans only** | `strictMode` | whether a critical blocks the merge |
+| `review.ci_checks` | `ciChecks` | which CI checks a review reads as evidence |
+| `review.trigger` | `reviewTrigger` | local review after a commit, or before a push |
+| `review.auto_fix` **humans only** | `autoFix` | whether a reviewer may push a fix, and how many rounds — read by the hosted App; the CLI does not push fixes |
+| `review.auto_resolve` | `autoResolve` | whether the reviewer resolves a thread it verified fixed |
+| `review.passes` | `reviewPasses` | which passes run, how skills group, which model |
+| `review.passes.blocking` **humans only** | `reviewPasses.blocking` | which passes turn the check red |
+| `tests` | `tests` | the command run before every push, or `none` |
+| `review_context` | `reviewContext` | trusted standing instructions for every review |
+| `review.cost_cap_usd` | `perPrCapUsd` | cumulative USD ceiling per PR; unset means none — **not enforced yet** |
+| `review.strict_skills` **humans only** | `strictSkills` | skills that get their own required check |
+| `review.notary` | `notary` | certify through the notary, or self-attest |
+| `design.enabled` · `design.themes` · `design.viewports` | `design.*` | the visual pass and what it renders |
+| `design.gate` **humans only** | `design.gate` | whether a design critical blocks the merge |
+| `pin_version` | `pinVersion` | pin clud-bug and stop the self-update PRs |
+| `excluded_baselines` | `excludedBaselines` | baseline skills you removed and don't want back |
+
+**Humans only.** A setting that decides whether something *blocks* is a person's to change,
+never an agent's (SPEC §1.6). Asked to set one, `clud-bug config` exits `4`, names the section,
+and points at the edit a person makes on the default branch. What that buys, exactly:
+
+> This refusal only stops a tool that asks. Nothing stops an agent that writes the file directly — no local check can. What holds instead is the pair SPEC §1.6 names: a gate reads its settings from the pull request's base ref (§6.3), so an edit inside a pull request has no effect on the gate judging it, and the edit is a hunk in a diff a review reads like any other.
+
+Everything else an agent may set — registering a skill it just wrote, declaring the test
+command, narrowing a noisy check. That is legitimate work.
+
 ## Staying up to date
 
 `clud-bug init` ships a third workflow: `clud-bug-self-update.yml`. Once a week (Mondays 12:00 UTC), it checks npm for a newer `clud-bug` version. If one exists, it runs `clud-bug update` and opens a PR titled `🐛 Clud Bug self-update: vX.Y.Z → vA.B.C`. Custom and skills.sh-installed specimens are never touched — only baseline specimens and the workflow templates get refreshed.
@@ -135,10 +191,10 @@ You can also run the update manually:
 clud-bug update
 ```
 
-To pin a specific version and stop receiving update PRs, add `pinVersion` to `.claude/skills/.clud-bug.json`:
+To pin a specific version and stop receiving update PRs:
 
-```json
-{ "pinVersion": "0.3.0", ... }
+```bash
+clud-bug config set pin_version 0.3.0
 ```
 
 ## Auditing the whole repo
@@ -168,7 +224,7 @@ Clud Bug runs in **strict mode by default** for new installs. The workflow check
 
 The toggle takes effect on PRs opened *after* the new value lands on the base branch (the gate reads the manifest from the base ref so PRs can't disable strict on themselves).
 
-**Existing installs upgrading to v0.4.0:** the new default only fires on fresh installs (manifests that have never been touched by `init` or `update`). Existing repos — including v0.3.x advisory installs that never set `strictMode` — keep their prior behavior on re-init. To enable strict mode in an existing repo, add `"strictMode": true` to `.claude/skills/.clud-bug.json` manually.
+**Existing installs upgrading to v0.4.0:** the new default only fires on fresh installs (manifests that have never been touched by `init` or `update`). Existing repos — including v0.3.x advisory installs that never set `strictMode` — keep their prior behavior on re-init. To enable strict mode in an existing repo, set `"strictMode": true` in `.claude/skills/.clud-bug.json` by hand: `clud-bug config set review.strict_mode` refuses, because whether a critical blocks the merge is a person's call, not a tool's.
 
 ## Notary (default-on since Phase ZP2)
 
@@ -182,7 +238,7 @@ clud-bug post-check-run --sha "$(git rev-parse HEAD)" --bundle bundle.json
 
 Clud Bug re-checks the bundle locally (coverage, grounding, internal consistency), then the notary independently re-validates it against GitHub's ground truth before issuing the `clud-bug-review` check — so the check reflects what actually happened, not just what the agent claims happened.
 
-**Opting out:** add `"notary": false` to `.claude/skills/.clud-bug.json` and local max mode falls back to a labeled **self-attested** check (a local signal, not independent verification) via:
+**Opting out:** run `clud-bug config set review.notary false` and local max mode falls back to a labeled **self-attested** check (a local signal, not independent verification) via:
 
 ```bash
 clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical|unverified> --critical-count <N> --source local

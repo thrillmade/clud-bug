@@ -71,7 +71,10 @@ export async function runUpdate(opts: RunUpdateOptions): Promise<RunUpdateResult
     throw new Error('runUpdate requires cwd, templatesDir, baselineDir, ourVersion');
   }
   const skillsDir = join(cwd, '.claude', 'skills');
-  const manifest = await readManifest(skillsDir);
+  // #271 — a WRITE path: the stamp at the end writes this object back, so a
+  // manifest we could not read must stop the run rather than be replaced by a
+  // fresh empty one. The throw reaches the CLI, which exits non-zero.
+  const manifest = await readManifest(skillsDir, { strict: true });
   if (manifest.installed.length === 0 && !(await pathExists(join(cwd, '.github/workflows/clud-bug-review.yml')))) {
     return { changed: [], unchanged: [], missing: 'init' };
   }
