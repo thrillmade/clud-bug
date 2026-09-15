@@ -167,16 +167,10 @@ const SEVERITIES: ReadonlySet<string> = new Set(['critical', 'minor', 'preexisti
 const GROUNDING_KINDS: ReadonlySet<string> = new Set(['quote', 'reproduction', 'invariant']);
 const VERDICTS: ReadonlySet<string> = new Set(['clean', 'critical', 'failed', 'unverified']);
 
-/**
- * Classify a notary `/notarize` HTTP response for the submit path. A definitive
- * client error (4xx) is the server AUTHORITATIVELY refusing to certify this
- * bundle → terminal (post NO check). A 5xx or a network error is the endpoint
- * being DOWN, not a verdict → the caller may fall back to the self-attested
- * check. Conflating the two would let a server "no" be overridden by a local green.
- */
-export function notaryResponseIsRejection(status: number): boolean {
-  return status >= 400 && status < 500;
-}
+// #269 — classifying a notary HTTP response (terminal decline vs. transient
+// failure-to-answer, SPEC §6.5) is an HTTP-CLIENT concern, not a wire-shape
+// one; it now lives in `./notary-client` (`classifyNotaryAttempt`), the single
+// place both `/notarize/challenge` and `/notarize` call sites go through.
 
 function parseFinding(raw: unknown): NotaryFinding | null {
   if (!raw || typeof raw !== 'object') return null;

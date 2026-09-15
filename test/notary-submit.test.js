@@ -197,7 +197,7 @@ describe('post-check-run notary submit: /challenge handshake', () => {
     }
   });
 
-  it('5xx on /challenge → fallback (endpoint down), never calls /notarize', async () => {
+  it('5xx on /challenge → retried up to the bound, then fallback (endpoint down), never calls /notarize', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'cb-notary-'));
     try {
       const bundlePath = await makeBundle(dir);
@@ -212,13 +212,23 @@ describe('post-check-run notary submit: /challenge handshake', () => {
           }
         },
         async (url, requests) => {
+          // clud-bug#269 — a persistently-transient endpoint gets retried up
+          // to NOTARY_MAX_ATTEMPTS (3) times, never fewer (a bug that gives
+          // up early looks identical to one that never retried) and never
+          // more (unbounded retry is its own failure mode) — zero backoff so
+          // the test doesn't pay the real delay.
           const r = await run(dir, ['post-check-run', '--sha', 'deadbeefcafefeed0000', '--bundle', bundlePath], {
             CLUD_BUG_NOTARY_URL: url,
+            CLUD_BUG_NOTARY_RETRY_MS: '0,0',
           });
           expect(r.status).toBe(0);
           expect(r.stderr).toMatch(/notary challenge endpoint unavailable/);
           expect(r.stderr).toMatch(/falling back to the self-attested check/);
           expect(r.stderr).not.toMatch(/NOT notarized/);
+          // Exactly one printed line about it — not one per attempt (a retry
+          // loop that warns on every try is not "print ONE line").
+          expect(r.stderr.match(/falling back to the self-attested check/g)).toHaveLength(1);
+          expect(requests.filter((x) => x.url === '/notarize/challenge')).toHaveLength(3);
           expect(requests.some((x) => x.url === '/notarize')).toBe(false);
         },
       );
@@ -235,10 +245,136 @@ describe('post-check-run notary submit: /challenge handshake', () => {
         // Port 1 is (almost certainly) not listening → ECONNREFUSED, same
         // unreachable-host idiom cli.test.js uses for skills.sh.
         CLUD_BUG_NOTARY_URL: 'http://127.0.0.1:1',
+        CLUD_BUG_NOTARY_RETRY_MS: '0,0',
       });
       expect(r.status).toBe(0);
       expect(r.stderr).toMatch(/notary challenge endpoint unreachable/);
       expect(r.stderr).toMatch(/falling back to the self-attested check/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('clud-bug#269 — a notary that ACCEPTS the connection but never answers (a hang, not a refusal) still degrades: bounded per-request timeout, retried, then fallback', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cb-notary-'));
+    try {
+      const bundlePath = await makeBundle(dir);
+      // A raw server that accepts every connection and responds to NONE of
+      // them — no `res.end()`, ever. Distinct from ECONNREFUSED (instant) and
+      // from an explicit HTTP status: `fetch()` alone never times out, so
+      // without a bounded per-request timeout this attempt (and thus the
+      // whole CLI invocation) would hang forever instead of falling back.
+      await withServer(
+        () => {
+          // Never respond.
+        },
+        async (url, requests) => {
+          const r = await run(dir, ['post-check-run', '--sha', 'deadbeefcafefeed0000', '--bundle', bundlePath], {
+            CLUD_BUG_NOTARY_URL: url,
+            CLUD_BUG_NOTARY_RETRY_MS: '0,0',
+            CLUD_BUG_NOTARY_TIMEOUT_MS: '50',
+          });
+          expect(r.status).toBe(0);
+          expect(r.signal).toBe(null);
+          expect(r.stderr).toMatch(/notary challenge endpoint unreachable/);
+          expect(r.stderr).toMatch(/falling back to the self-attested check/);
+          expect(r.stderr.match(/falling back to the self-attested check/g)).toHaveLength(1);
+          // Bounded — one aborted attempt per retry, never fewer, never more.
+          expect(requests.filter((x) => x.url === '/notarize/challenge')).toHaveLength(3);
+          expect(requests.some((x) => x.url === '/notarize')).toBe(false);
+        },
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('503 { retryable: true } on /notarize (clud-bug-app#133 ground-truth-unreachable) → retried with a FRESH nonce each round, then fallback', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cb-notary-'));
+    try {
+      const bundlePath = await makeBundle(dir);
+      let challengeCalls = 0;
+      await withServer(
+        (req, res) => {
+          if (req.method === 'POST' && req.url === '/notarize/challenge') {
+            challengeCalls += 1;
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ nonce: `nonce-${challengeCalls}` }));
+          } else if (req.method === 'POST' && req.url === '/notarize') {
+            res.writeHead(503, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: 'notary-unavailable', retryable: true, reason: 'ground_truth_unreachable' }));
+          } else {
+            res.writeHead(404);
+            res.end();
+          }
+        },
+        async (url, requests) => {
+          const r = await run(dir, ['post-check-run', '--sha', 'deadbeefcafefeed0000', '--bundle', bundlePath], {
+            CLUD_BUG_NOTARY_URL: url,
+            CLUD_BUG_NOTARY_RETRY_MS: '0,0',
+          });
+          expect(r.status).toBe(0);
+          expect(r.stderr).toMatch(/notary unavailable \(HTTP 503\)/);
+          expect(r.stderr).toMatch(/falling back to the self-attested check/);
+          expect(r.stderr.match(/falling back to the self-attested check/g)).toHaveLength(1);
+          expect(r.stdout).not.toMatch(/notarized/);
+
+          const challengeReqs = requests.filter((x) => x.url === '/notarize/challenge');
+          const notarizeReqs = requests.filter((x) => x.url === '/notarize');
+          expect(challengeReqs).toHaveLength(3);
+          expect(notarizeReqs).toHaveLength(3);
+          // Every round minted its OWN nonce — never the same one twice. A
+          // stale-nonce retry would reuse round 1's nonce and the App would
+          // answer 401 (spent), not a second honest 503.
+          const nonces = notarizeReqs.map((x) => x.body.nonce);
+          expect(new Set(nonces).size).toBe(3);
+        },
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('503 on /notarize recovers on a later attempt → posted, with the nonce from THAT attempt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cb-notary-'));
+    try {
+      const bundlePath = await makeBundle(dir);
+      let challengeCalls = 0;
+      let notarizeCalls = 0;
+      await withServer(
+        (req, res) => {
+          if (req.method === 'POST' && req.url === '/notarize/challenge') {
+            challengeCalls += 1;
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ nonce: `nonce-${challengeCalls}` }));
+          } else if (req.method === 'POST' && req.url === '/notarize') {
+            notarizeCalls += 1;
+            if (notarizeCalls < 2) {
+              res.writeHead(503, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ error: 'notary-unavailable', retryable: true, reason: 'ground_truth_unreachable' }));
+            } else {
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ ok: true }));
+            }
+          } else {
+            res.writeHead(404);
+            res.end();
+          }
+        },
+        async (url, requests) => {
+          const r = await run(dir, ['post-check-run', '--sha', 'deadbeefcafefeed0000', '--bundle', bundlePath], {
+            CLUD_BUG_NOTARY_URL: url,
+            CLUD_BUG_NOTARY_RETRY_MS: '0,0',
+          });
+          expect(r.status).toBe(0);
+          expect(r.stdout).toMatch(/notarized o\/r@deadbeefcafe\b/);
+          expect(r.stderr).not.toMatch(/falling back/);
+
+          const notarizeReqs = requests.filter((x) => x.url === '/notarize');
+          expect(notarizeReqs).toHaveLength(2);
+          expect(notarizeReqs[1].body.nonce).toBe('nonce-2');
+        },
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -271,6 +407,41 @@ describe('post-check-run notary submit: /challenge handshake', () => {
           const notarizeReq = requests.find((x) => x.url === '/notarize');
           expect(notarizeReq).toBeTruthy();
           expect(notarizeReq.body.nonce).toBe('nonce-456');
+        },
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('409 head_moved on /notarize (clud-bug-app#133 — a REAL refusal, distinct from unreachable) → terminal rejected, not retried', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cb-notary-'));
+    try {
+      const bundlePath = await makeBundle(dir);
+      await withServer(
+        (req, res) => {
+          if (req.method === 'POST' && req.url === '/notarize/challenge') {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ nonce: 'nonce-789' }));
+          } else if (req.method === 'POST' && req.url === '/notarize') {
+            res.writeHead(409, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: 'the PR head has moved since this bundle was built', reason: 'head_moved' }));
+          } else {
+            res.writeHead(404);
+            res.end();
+          }
+        },
+        async (url, requests) => {
+          const r = await run(dir, ['post-check-run', '--sha', 'deadbeefcafefeed0000', '--bundle', bundlePath], {
+            CLUD_BUG_NOTARY_URL: url,
+            CLUD_BUG_NOTARY_RETRY_MS: '0,0',
+          });
+          expect(r.status).toBe(0);
+          expect(r.stderr).toMatch(/notary declined the bundle \(HTTP 409\)/);
+          expect(r.stderr).not.toMatch(/falling back/);
+          expect(r.stdout).not.toMatch(/notarized/);
+          // A real refusal is never retried — exactly one round.
+          expect(requests.filter((x) => x.url === '/notarize')).toHaveLength(1);
         },
       );
     } finally {
