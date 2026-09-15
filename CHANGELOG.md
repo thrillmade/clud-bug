@@ -30,6 +30,8 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ### Fixed
 
+- **`logmind-self-update.yml` shipped no failure notification, so six weeks of red went unnoticed (#333, follow-up to #284).** The workflow now ports `agent-skills`' `Notify on failure` step (`if: failure()`): it dedupes on an HTML-comment marker via `gh issue list --search`, commenting on the existing open tracker issue instead of re-filing one every week, and filters candidates to `github-actions`-authored issues only — `--search` matches any issue whose body carries the marker, and without the author filter an outsider could redirect every future failure notice onto an issue they control. `permissions:` gains `issues: write`, scoped to this workflow.
+
 - **🔴 `review-prompt --trigger push` instructed a §4.3 violation (#276).** `push` fell through to the pull-request branch of the recipe, whose surface step says to "post or edit … the clud-bug summary comment". SPEC 2.0 §4.3: "A review run locally has no pull request to comment on — it writes its findings to the terminal … and **MUST NOT post anything or write a file**." The push trigger now renders a terminal-only surface.
 
 - **A skill with an unrecognised `kind` was applied with the *highest* authority, not the lowest
