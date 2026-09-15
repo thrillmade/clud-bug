@@ -29,6 +29,7 @@
     "dist",
     "src",
     "templates",
+    "fixtures",
     "README.md",
     "LICENSE"
   ],
