@@ -1,0 +1,21 @@
+{
+  "id": "b14-emergent-mutation-shared-default",
+  "class": "emergent",
+  "severity": "MAJOR",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    37,
+    45
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        16,
+        29
+      ]
+    }
+  ],
+  "defect": "record(event, options = DEFAULT_OPTIONS) uses a single module-level object as the omitted-options default, and stamp() mutates that object in place, so every caller that omits options shares one object across calls and accumulates every prior call's ids (and its lastId)."
+}

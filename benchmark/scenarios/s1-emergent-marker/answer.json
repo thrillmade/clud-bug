@@ -1,0 +1,21 @@
+{
+  "id": "s1-emergent-marker",
+  "class": "emergent",
+  "severity": "MAJOR",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    19,
+    27
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        34,
+        58
+      ]
+    }
+  ],
+  "defect": "serializeEntries writes entry content verbatim, so a body line that looks like a col-0 `<!-- entry-start/end:... -->` marker forges a delimiter and the reader mis-frames entries (phantom entry appears, real entry evicted)."
+}

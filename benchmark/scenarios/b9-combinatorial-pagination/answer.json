@@ -1,0 +1,21 @@
+{
+  "id": "b9-combinatorial-pagination",
+  "class": "combinatorial",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    45,
+    49
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        29,
+        37
+      ]
+    }
+  ],
+  "defect": "The offset/limit paginator applies \"orphan control\" in `pageCount` (returns one fewer page when `total % pageSize === 1`) but `pageWindow` is the plain clamp window that still hands the last page only `pageSize` items, so the merged orphan is never emitted and exactly one item is dropped whenever `total % pageSize === 1` and `total > pageSize`."
+}

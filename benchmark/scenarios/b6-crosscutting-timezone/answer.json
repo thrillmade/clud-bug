@@ -1,0 +1,21 @@
+{
+  "id": "b6-crosscutting-timezone",
+  "class": "cross-cutting",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "daycalc.mjs",
+  "lineRange": [
+    12,
+    18
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        18,
+        26
+      ]
+    }
+  ],
+  "defect": "The bucketing PR groups UTC event timestamps via the pre-existing dayKey() helper, which derives the calendar day from LOCAL time, so in any non-UTC timezone a just-past-midnight-UTC event is filed under the wrong day."
+}
