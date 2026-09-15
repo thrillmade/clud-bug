@@ -1,0 +1,14 @@
+← back to [docs/timeline.md](../timeline.md)
+
+## 2026-09-15 15:21 - Fix #271: clud-bug config — one schema owns every setting; humans-only gate keys are refused with the honest guarantee; a manifest that cannot be parsed is never clobbered
+
+**Reasoning:** SPEC 2.0 §1.6: every named setting MUST be settable by a command whose non-interactive form is scriptable; review.strict_mode and review.auto_fix MUST NOT be written by an agent, and marking a pass blocking is humans-only. src/core/config-schema.ts CONFIG_KEYS is the single owner: SPEC name → flat on-disk key → domain → default → owner → citation (review.strict_mode, review.auto_fix → autoFix [read by the App; the CLI pushes no fixes], review.auto_resolve → autoResolve, review.passes + its humans-only blocking marker, review.trigger, review.ci_checks, review.context capped by the one owner of that number, review.cost_cap_usd [validated, not yet read — the docs say so], review.strict_skills, review.notary, design.*, tests, pin_version, excluded_baselines). clud-bug config list|get|set|unset: exit 0 ok / 1 I/O or malformed file left byte-identical / 2 unknown key with did-you-mean and unknown flags refused / 3 value outside the domain naming what it takes / 4 humans-only refusal quoting §1.6 and printing the human path — identical bytes under CI/CLAUDE_CODE env, no TTY sniffing. init stamps every setting through the same guardWrite (writer: setup may create a human key only at its stronger value); writes are serialized by a lock and land by rename; tests: none is refused when the working tree shows a suite by either signal the pre-push hook uses (package.json script or test files — bounded walk, stated as such); design.enabled follows the gate source when the gate is strict; the config docs page is generated from CONFIG_KEYS; readManifest gained a strict mode used on every write path (the tolerant reader had returned an empty manifest on a parse error, so the next write deleted the user config). Deferred to the update-lane follow-up: hook wiring of the two-file tests resolver, init writing review.trigger + update reconciling hooks, update.ts advisory text. Three refute rounds; every guard mutation-proven in private copies; 60 files / 1341+ tests green in the lane tree.
+
+**Alternatives considered:** Refuse humans-only keys by env markers or TTY (rejected: spoofable and it violates §1.6:260 — the same command must behave the same in a terminal and a workflow), Rename on-disk keys to snake_case (rejected: customer repos carry them and the deployed App reads them; the schema owns the mapping instead)
+
+**Implications:**
+- The refusal stops an agent that asks; it stops nothing that edits the JSON — the base-ref re-read (#288/#343) and the diff hunk are the real guard, and the docs say so
+- The App should read repository config through CONFIG_KEYS at its next pin bump and re-derive every owner:human key from the base ref (app issue filed)
+
+---
+
