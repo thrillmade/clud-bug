@@ -13,6 +13,12 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
+## 2026-09 (3 decisions)
+
+- **2026-09-15** — Ship fixtures/reviews in the npm package so every producer can run the SPEC §4.3 corpus test (#256) *(chore/ship-fixtures)* — [decisions-branches/chore__ship-fixtures.md](decisions-branches/chore__ship-fixtures.md)
+- *... 1 more decision ...*
+- **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
+
 ## 2026-08 (27 decisions)
 
 - **2026-08-24** — CI-only failure root cause: init --commit never checked git commit exit status, and the e2e test fixture had no repo-local git identity *(319-declaration-matrix)* — [decisions-branches/319-declaration-matrix.md](decisions-branches/319-declaration-matrix.md)

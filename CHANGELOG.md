@@ -3,6 +3,11 @@
 All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **The shared review fixture corpus now ships in the npm package** (`fixtures/reviews/**` added to `files`), so every producer — including the hosted App, which pins the package — can render it as the SPEC 2.0 §4.3 release test instead of only this repo testing itself (#256).
+- **Bundled `respect-existing-conventions` SKILL.md refreshed** from `thrillmade/agent-skills@1bec314`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+- **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@1bec314`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+- **Bundled `critical-issues-only` SKILL.md refreshed** from `thrillmade/agent-skills@1bec314`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+- **Bundled `evidence-based-review` SKILL.md refreshed** from `thrillmade/agent-skills@1bec314`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 
 ### Added
 
