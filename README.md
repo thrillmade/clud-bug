@@ -247,6 +247,12 @@ Rules go here. Be specific, cite examples, explain the why.
 
 This is how you encode your team's PR-review discipline (e.g. "always check for SQL injection in `db/queries/`", "API responses must include error codes from `lib/errors.ts`").
 
+### Size and scope
+
+The reviewer reads a skill's `SKILL.md` body — and only `SKILL.md`. A `references/` subdirectory alongside it is never read into the review prompt (clud-bug#305), so moving prose there defers it from your own reading, not from the reviewer's: anything the review must act on belongs directly in `SKILL.md`.
+
+The body is capped at `DEFAULT_MAX_SKILL_BYTES` (8192 bytes — `src/core/prompt-builder.ts`), matching the [protocol SPEC's](https://github.com/thrillmade/protocol) 8 KiB recommendation. That's the one number: the workflow templates render their `MAX_SKILL_BYTES` env var from this same constant rather than stating an independent figure (clud-bug#301), so a skill sized against the documented cap is sized against what the templates actually ship. A skill over the cap is truncated with a marker the model sees, not silently dropped.
+
 ## Why this works (and why the original `claude-code-action` install often doesn't)
 
 `anthropics/claude-code-action@v1` is the underlying engine — clud-bug just configures it correctly. Two things people commonly miss when wiring it themselves:

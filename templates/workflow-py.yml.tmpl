@@ -198,13 +198,27 @@ jobs:
       # degrades to a skill-less baseline review, never to the PR's skills.
       # Full design notes in workflow.yml.tmpl.
       - name: Pin review skills to the base ref
+        # Declared, not inherited: the body needs bash (arrays, process
+        # substitution), and it needs the `-e` the runner's default shell
+        # also sets — every delete that can fail is guarded for it.
+        shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -uo pipefail
 
+          # Removes $1 if it IS a symlink, and does nothing otherwise. `rm -f`
+          # on a link unlinks the link; every other delete in this step
+          # resolves an intermediate segment through it. A PR that commits
+          # `.claude` as a link to anywhere else turns the fail-closed delete
+          # below into a delete of whatever it points at.
+          unlink_symlink() {
+            if [ -L "$1" ]; then rm -f -- "$1"; fi
+          }
+
           # Delete first — this line is what makes the step fail closed.
+          unlink_symlink .claude
           rm -rf .claude/skills
 
           # `origin/<base_ref>` is the primary: the exact expression the
@@ -219,22 +233,306 @@ jobs:
           fi
 
           if [ -z "$PIN" ]; then
-            echo "::warning title=Clud Bug 🐛::Could not resolve the base ref (origin/${BASE_REF} or ${BASE_SHA}); reviewing with NO repo skills. A PR must never supply the skills that judge it — the baseline discipline still applies."
+            echo "::warning title=Clud Bug 🐛::Could not resolve the base ref (origin/${BASE_REF} or ${BASE_SHA}); reviewing with NO repo skills and NO pinned instruction files. A PR must never supply the skills or instructions that judge it — the baseline discipline still applies."
             exit 0
           fi
 
-          if ! git cat-file -e "${PIN}:.claude/skills" 2>/dev/null; then
-            echo "::notice title=Clud Bug 🐛::Base ref ${BASE_REF} (${PIN}) declares no .claude/skills — reviewing against the baseline discipline."
-            exit 0
-          fi
-
-          if git archive "$PIN" -- .claude/skills | tar -xf -; then
-            SKILL_COUNT=$(find .claude/skills -name 'SKILL.md' -type f | wc -l | tr -d ' ')
-            echo "::notice title=Clud Bug 🐛::Pinned ${SKILL_COUNT} review skill(s) to base ref ${BASE_REF} (${PIN}). Skills this PR adds or edits are reviewed, never obeyed."
+          # Skills are restored independently of the instruction-file class
+          # below — neither's absence in the base ref should skip the other.
+          if git cat-file -e "${PIN}:.claude/skills" 2>/dev/null; then
+            if git archive "$PIN" -- .claude/skills | tar -xf -; then
+              SKILL_COUNT=$(find .claude/skills -name 'SKILL.md' -type f | wc -l | tr -d ' ')
+              echo "::notice title=Clud Bug 🐛::Pinned ${SKILL_COUNT} review skill(s) to base ref ${BASE_REF} (${PIN}). Skills this PR adds or edits are reviewed, never obeyed."
+            else
+              unlink_symlink .claude
+              rm -rf .claude/skills
+              echo "::warning title=Clud Bug 🐛::Could not restore .claude/skills from ${PIN}; reviewing with NO repo skills rather than the PR's own."
+            fi
           else
-            rm -rf .claude/skills
-            echo "::warning title=Clud Bug 🐛::Could not restore .claude/skills from ${PIN}; reviewing with NO repo skills rather than the PR's own."
+            echo "::notice title=Clud Bug 🐛::Base ref ${BASE_REF} (${PIN}) declares no .claude/skills — reviewing against the baseline discipline."
           fi
+
+          # clud-bug#291 — ONE loop for the whole CLI-auto-loaded
+          # instruction-file class (see the SECURITY comment on this step for
+          # the design and for the three things it deliberately leaves open).
+          #
+          # The launch roots, from Claude Code's memory docs: project
+          # instructions live in "./CLAUDE.md or ./.claude/CLAUDE.md", local
+          # instructions in "./CLAUDE.local.md". AGENTS.md is not one of
+          # them — Claude Code reaches it only through CLAUDE.md's
+          # `@AGENTS.md` import — but it is seeded anyway, because the other
+          # agents AGENTS.md addresses read it directly and a repo can carry
+          # one with no CLAUDE.md at all. Every root is seeded into BOTH the
+          # set and the frontier: seeding a root into the set alone would let
+          # the membership test below swallow it and drop its own imports.
+          ROOTS=(CLAUDE.md .claude/CLAUDE.md CLAUDE.local.md AGENTS.md)
+          IMPORT_SET=("${ROOTS[@]}")
+          FRONTIER=("${ROOTS[@]}")
+
+          # True (0) if $1 is already in IMPORT_SET. Linear scan, not an
+          # associative array: the set stays tiny (single digits), and a
+          # plain indexed array works on every bash this step might run
+          # under (associative arrays are bash 4+ only; ubuntu-latest ships
+          # 5.x, but this loop doesn't need to assume that).
+          in_import_set() {
+            local needle="$1" seen
+            for seen in "${IMPORT_SET[@]}"; do
+              [ "$seen" = "$needle" ] && return 0
+            done
+            return 1
+          }
+
+          # Prints, one per line, every raw "@<path>" target THE BASE REF's
+          # copy of $1 declares. Reading $PIN and nothing else is what keeps
+          # every entry in IMPORT_SET off the pull request's keyboard.
+          #
+          # Two rules, both straight from Claude Code's memory docs:
+          #
+          #   1. An import is "@<path>" at the start of a line or after
+          #      whitespace, running to the next whitespace. The docs say to
+          #      "reference them with @ syntax anywhere in your CLAUDE.md"
+          #      and show inline forms — "See @README for project overview",
+          #      "- git workflow @docs/git-instructions.md". A whole-line
+          #      pattern silently drops all of those, and the pull request
+          #      then supplies those instruction files.
+          #
+          #   2. "Import parsing
+          #      skips Markdown code spans and fenced code blocks."
+          #      Backticked text is blanked before scanning and ```/~~~
+          #      fenced regions are skipped, so a path a CLAUDE.md only
+          #      MENTIONS is not pinned — pinning it would hand the reviewer
+          #      base bytes for a file the PR legitimately changed.
+          import_candidates() {
+            git cat-file -p "${PIN}:$1" 2>/dev/null | awk '
+              /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
+              fence { next }
+              {
+                gsub(/`[^`]*`/, " ")
+                rest = " " $0
+                while (match(rest, /[[:space:]]@[^[:space:]]+/)) {
+                  hit = substr(rest, RSTART, RLENGTH)
+                  sub(/^[[:space:]]+@/, "", hit)
+                  print hit
+                  rest = substr(rest, RSTART + RLENGTH)
+                }
+              }
+            ' | sort -u
+          }
+
+          # Sets NORMALISED to the lexical normal form of workspace-relative
+          # path $1 — empty and "." segments dropped, ".." popping the segment
+          # before it — and returns 1 when that form is not a path inside the
+          # checkout. Lexical, like the resolver it shadows: Claude Code joins
+          # the import onto the importing file's directory, and a segment that
+          # is itself a symlink is pin_to_base's problem, not this function's.
+          NORMALISED=''
+          normalise_path() {
+            local seg out=''
+            while IFS= read -r seg; do
+              case "$seg" in
+                ''|.) continue ;;
+                ..)
+                  case "$out" in
+                    '') return 1 ;;
+                    */*) out="${out%/*}" ;;
+                    *) out='' ;;
+                  esac ;;
+                *) out="${out:+${out}/}${seg}" ;;
+              esac
+            done < <(printf '%s\n' "$1" | tr '/' '\n')
+            [ -z "$out" ] && return 1
+            NORMALISED="$out"
+          }
+
+          # Sets RESOLVED to the workspace-relative path raw target $2, found
+          # in file $1, refers to. Claude Code resolves a relative import
+          # "relative to the file containing the import, not the working
+          # directory", so `@b.md` inside docs/a.md means docs/b.md — resolve
+          # it against the working directory instead and the pin both misses
+          # the real target and acts on an unrelated file. Returns 1, having
+          # said why, for an import this step refuses to follow.
+          #
+          # A ".." is not one of those refusals unless it climbs OUT of the
+          # checkout. Per the memory docs an import is "external when its path
+          # resolves outside your working directory", and only an external one
+          # meets the approval dialog — so `@../docs/policy.md` in
+          # .claude/CLAUDE.md is an ordinary import the CLI loads with no
+          # question asked, and refusing to pin it leaves the pull request
+          # supplying those instructions. Normalising rather than string-testing
+          # is also what keeps the delete and the restore addressing the same
+          # object: `rm -f` removes "docs/./b.md" and `git cat-file` cannot
+          # address it, so the raw form deleted base content and restored none.
+          RESOLVED=''
+          resolve_import() {
+            local from="$1" raw="$2" dir cand
+            case "$raw" in
+              /*|~*)
+                echo "::notice title=Clud Bug 🐛::Rejected import \"@${raw}\" in ${from} — absolute or home-relative paths are never pinned or read."
+                return 1 ;;
+            esac
+            dir=$(dirname -- "$from")
+            if [ "$dir" = "." ]; then cand="$raw"; else cand="${dir}/${raw}"; fi
+            if ! normalise_path "$cand"; then
+              echo "::notice title=Clud Bug 🐛::Rejected import \"@${raw}\" in ${from} — it resolves outside the checkout."
+              return 1
+            fi
+            RESOLVED="$NORMALISED"
+          }
+
+          # The one place this step touches the filesystem for an instruction
+          # file: replace the workspace copy of $1 with the base ref's, or
+          # remove it when the base ref has none.
+          #
+          # `.git` is denied outright, first, before any shape check: a path
+          # under it is never an instruction file, and deleting `.git/HEAD` or
+          # `.git/index` breaks the strict-mode gate's
+          # `git show origin/<base>:…`, which exits 0 when it cannot read its
+          # own config — the same fail-open this step exists to close, reached
+          # this time by one benign base-ref sentence naming `@.git/HEAD`.
+          # Bare `.git` survives the checks below only because it happens to
+          # be a directory; `.git/HEAD` is a file, and nothing else stops it.
+          #
+          # Normalisation above is lexical, and a lexical normal form cannot
+          # see a ".." that lives inside a symlink the pull request committed:
+          # with `docs` linked out of the checkout, "docs/victim.md" contains
+          # no "..", and the delete lands outside the repository. So every
+          # leading segment is checked against the filesystem as well. A
+          # symlinked segment is UNLINKED rather than treated as a reason to
+          # give up on the path: the link's own target may be a directory the
+          # PR committed, which resolves inside the checkout, so Claude Code
+          # asks no approval question and loads the PR's bytes as project
+          # instructions — refusing there is fail-OPEN, not fail-visible.
+          # Unlinking never follows the link, and the base blob is then
+          # restored into a real directory.
+          #
+          # The leaf is never a directory — in this workspace OR in the base ref
+          # — the delete is never recursive, and only a BLOB is restored: an
+          # import naming a tree cannot get one extracted over the workspace,
+          # and must not have its workspace path deleted either, because "the
+          # base ref declares no <path>" would be a lie about a directory that
+          # is right there in it.
+          pin_to_base() {
+            local target="$1" probe='' seg had=0 base_type
+            case "/${target}/" in
+              */.git/*)
+                echo "::notice title=Clud Bug 🐛::Refused to pin ${target} — the git directory is never an instruction file."
+                return 0 ;;
+            esac
+            base_type=$(git cat-file -t "${PIN}:${target}" 2>/dev/null || true)
+            if [ "$base_type" = tree ]; then
+              echo "::notice title=Clud Bug 🐛::Refused to pin ${target} — the base ref carries a directory there, and an instruction file never is."
+              return 0
+            fi
+            if [ -e "$target" ] || [ -L "$target" ]; then had=1; fi
+            while IFS= read -r seg; do
+              [ -z "$seg" ] && continue
+              [ "$seg" = "." ] && continue
+              probe="${probe:+${probe}/}${seg}"
+              if [ -L "$probe" ]; then
+                unlink_symlink "$probe"
+                echo "::warning title=Clud Bug 🐛::Removed the symlink \"${probe}\" while pinning ${target} — a pinned path has to be a real directory inside the checkout. The link itself was unlinked, never followed."
+              fi
+              if [ -e "$probe" ] && [ ! -d "$probe" ]; then
+                echo "::warning title=Clud Bug 🐛::Refused to pin ${target} — \"${probe}\" is not a directory in this workspace."
+                return 0
+              fi
+            done < <(dirname -- "$target" | tr '/' '\n')
+
+            if [ -d "$target" ] && [ ! -L "$target" ]; then
+              echo "::warning title=Clud Bug 🐛::Refused to pin ${target} — it is a directory in this workspace, and an instruction file never is."
+              return 0
+            fi
+            # A delete this step cannot do is one target refused, announced —
+            # never the end of the loop. The checks above intercept every shape
+            # a pull request can commit, so what reaches this line and fails is
+            # the workspace's own doing — an unwritable parent directory, a
+            # read-only mount, a leaf that changed shape after the check above
+            # read it. The step runs under `bash -e`, so an unguarded `rm` that
+            # fails ends the STEP, leaving every LATER import still carrying the
+            # pull request's own bytes: one unlucky path would unpin all of them.
+            rm -f -- "$target" || {
+              echo "::warning title=Clud Bug 🐛::Refused to pin ${target} — its workspace copy could not be removed, so it keeps the PR's bytes. Every other import is still pinned."
+              return 0
+            }
+
+            if [ "$base_type" = blob ]; then
+              if git archive "$PIN" -- "$target" | tar -xf -; then
+                echo "::notice title=Clud Bug 🐛::Pinned ${target} to base ref ${BASE_REF} (${PIN})."
+              else
+                echo "::warning title=Clud Bug 🐛::Could not restore ${target} from ${PIN}; reviewing with it ABSENT rather than the PR's own."
+              fi
+            elif [ "$had" = 1 ]; then
+              echo "::notice title=Clud Bug 🐛::Base ref ${BASE_REF} (${PIN}) declares no ${target} — removed the PR's copy; reviewing with it absent."
+            fi
+            # A root absent from BOTH the base ref and the workspace says
+            # nothing worth an annotation: most repositories carry no
+            # .claude/CLAUDE.md or CLAUDE.local.md, and four notices per
+            # review for files that were never there is noise, not evidence.
+          }
+
+          # Four hops, matching the resolver this is shadowing exactly — the
+          # memory docs' own "Imported files can recursively import other
+          # files, with a maximum depth of four hops". A chain this loop stops
+          # short of is one the CLI would still walk; one it runs past pins a
+          # file the CLI never loads to base bytes the PR legitimately changed.
+          # shellcheck disable=SC2034  # DEPTH is a bounded-iteration counter, never read in the loop body
+          for DEPTH in 1 2 3 4; do
+            NEXT_FRONTIER=()
+            for FROM in "${FRONTIER[@]}"; do
+              while IFS= read -r RAW_IMPORT; do
+                [ -z "$RAW_IMPORT" ] && continue
+                resolve_import "$FROM" "$RAW_IMPORT" || continue
+                if ! in_import_set "$RESOLVED"; then
+                  IMPORT_SET+=("$RESOLVED")
+                  NEXT_FRONTIER+=("$RESOLVED")
+                fi
+              done < <(import_candidates "$FROM")
+            done
+            FRONTIER=(${NEXT_FRONTIER[@]+"${NEXT_FRONTIER[@]}"})
+            [ ${#FRONTIER[@]} -eq 0 ] && break
+          done
+
+          for TARGET in "${IMPORT_SET[@]}"; do
+            pin_to_base "$TARGET"
+          done
+
+      # ── SECURITY — clud-bug#291: the rest of the CLI-auto-loaded
+      # instruction surface ────────────────────────────────────────────────
+      # Full design notes in workflow.yml.tmpl. Short version: even though
+      # anthropics/claude-code-action@{{CCA_VERSION}}'s own
+      # `restoreConfigFromBase` already restores CLAUDE.md/.claude/** from
+      # the base branch before its CLI runs, the "Pin review skills to the
+      # base ref" step above ALSO pins Claude Code's documented launch roots
+      # — CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md, plus AGENTS.md
+      # because this repo's CLAUDE.md `@`-imports it — and every file they
+      # transitively import, to the same maximum that resolver has
+      # ("Imported files can recursively import other files, with a maximum
+      # depth of four hops").
+      # One loop, no per-file special case. DISCOVERY READS THE BASE REF AND
+      # NOTHING ELSE: every path found becomes an argument to a delete, and
+      # reading the merge-ref workspace let a PR `CLAUDE.md` saying `@.git`
+      # delete the git directory, which makes the strict-mode gate fail open.
+      # The parser follows the imports the CLI follows — inline `@path`
+      # anywhere on a line, never inside a code span or fence — and every
+      # path is resolved relative to the file that declared it, normalised,
+      # and touched only through one primitive that refuses `.git` outright,
+      # refuses a path the base ref carries as a directory, unlinks (and
+      # never follows) a symlinked leading segment, never deletes
+      # recursively, and restores only a blob. A `..` is normalised, not
+      # refused: the memory docs put only an import whose "path resolves
+      # outside your working directory" behind an approval dialog, so one
+      # that normalises back inside is loaded by the CLI with no question
+      # and refusing to pin it would be fail-open. RESIDUALS, named
+      # rather than left for this comment to overclaim: (a) this workflow
+      # file itself, read from the PR's merge ref on `pull_request` — no read
+      # inside the job can fix that (SPEC §6.3); (b) nested CLAUDE.md /
+      # CLAUDE.local.md files elsewhere in the tree, loaded on demand when
+      # the session reads a file in that subdirectory, and the imports of
+      # `.claude/rules/**.md` — covered by neither claude-code-action's
+      # SENSITIVE_PATHS (root-level names only) nor this loop; (c) an import
+      # this step refuses (absolute, `~`, or one that normalises out of the
+      # checkout) is announced and left alone, which is fail-visible, not
+      # fail-closed.
 
       # Three-way guard — see workflow.yml.tmpl for full design notes.
       - name: Guard — require ANTHROPIC_API_KEY
@@ -298,7 +596,9 @@ jobs:
           # Per-section byte budgets — see workflow.yml.tmpl for design notes.
           MAX_DIFF_BYTES: '5000000'
           MAX_COMMENT_BYTES: '20000'
-          MAX_SKILL_BYTES: '4000'
+          # clud-bug#301/#305: rendered from the library's DEFAULT_MAX_SKILL_BYTES
+          # (src/core/prompt-builder.ts) — see workflow.yml.tmpl for design notes.
+          MAX_SKILL_BYTES: '{{MAX_SKILL_BYTES}}'
           # Thinking-budget cap (v0.6.8) — see workflow.yml.tmpl for design notes.
           MAX_THINKING_TOKENS: '8000'
           # Stable prefix → CLI auto-cached system layer (10% cost on hits).

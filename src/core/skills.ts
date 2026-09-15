@@ -299,7 +299,7 @@ export function appliesToPr(skillContent: unknown, prPaths: unknown): boolean {
 // loader pass. Skills with NO `applies_to` block at all also return
 // `true` (the existing v0.5.0 unconditional-load behavior).
 //
-// Strict-AND composition per SPEC §1.10.1: when a skill sets BOTH
+// Strict-AND composition per SPEC §1.10.1 v0.5.1+: when a skill sets BOTH
 // `applies_to.author` AND `paths`/`extensions`, callers MUST call BOTH
 // filters and AND the results. This helper only checks the author leg;
 // the caller composes.
@@ -637,10 +637,10 @@ export function classifyPerSkillOutcome(outcomeLine: unknown): 'failure' | 'succ
 // The App's `loadSkillsFromBaseRef` Octokit fetcher stays App-side (depends
 // on Octokit). The PURE parser belongs in core so both the App and any
 // future CLI runtime that wants to read SKILL.md frontmatter without an
-// Octokit dependency can use it. SPEC §1.10 is the frontmatter contract.
+// Octokit dependency can use it. SPEC 2.0 §2.1 is the frontmatter contract.
 // ---------------------------------------------------------------------------
 
-/** Source provenance for an installed skill (see SPEC §1.10). */
+/** Source provenance for an installed skill (see SPEC 2.0 §2.1). */
 export type SkillSource =
   | 'manual'
   | 'logmind-derived'
@@ -753,7 +753,7 @@ export interface SkillFrontmatter {
  * Throws on malformed input; the App's `loadSkillsFromBaseRef` catches
  * and skips the skill (a bad SKILL.md doesn't take down the whole review).
  *
- * Deliberately NOT a general-purpose YAML parser — SPEC §1.10 fixes the
+ * Deliberately NOT a general-purpose YAML parser — SPEC 2.0 §2.1 fixes the
  * frontmatter schema to a handful of fields. If the schema grows beyond
  * what this hand-rolled parser handles, swap to `js-yaml` — the boundary
  * is this function.
