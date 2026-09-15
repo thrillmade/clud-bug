@@ -67,6 +67,9 @@ clud-bug
 │   ├── core
 │   ├── golden
 │   ├── agents-md.test.js
+│   ├── attestation-hook.test.js
+│   ├── attestation-rederive.test.js
+│   ├── attestation.test.js
 │   ├── audit.test.js
 │   ├── benchmark-claims.test.js
 │   ├── benchmark-corpus.test.js
