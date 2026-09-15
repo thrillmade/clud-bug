@@ -19,6 +19,8 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 - **Bundled `clud-bug-collaboration` SKILL.md refreshed** from `thrillmade/agent-skills@1bec314`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `critical-issues-only` SKILL.md refreshed** from `thrillmade/agent-skills@1bec314`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
 - **Bundled `evidence-based-review` SKILL.md refreshed** from `thrillmade/agent-skills@1bec314`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+- **`site/` now has a CI gate (#337).** A new `site` job in `.github/workflows/ci.yml` runs `npm --prefix site ci`, `npm --prefix site run typecheck` (new `tsc --noEmit` script), and `npm --prefix site run build` on the same triggers and Node version as `test` — a broken import under `site/app/` now fails the PR instead of surfacing only at Vercel-deploy time.
+- **Bumped transitive `baseline-browser-mapping` to 2.11.24 in `site/package-lock.json`, clearing the moderate `npm audit` finding GHSA-w5vr-8v7q-w6rv (#334).** Lockfile-only (`npm --prefix site update baseline-browser-mapping --package-lock-only`); no direct dependency version changed.
 
 ### Fixed
 

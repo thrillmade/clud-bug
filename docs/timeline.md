@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (12 decisions)
+## 2026-09 (13 decisions)
 
-- **2026-09-15** — Sync main into dev after #329 and #340: self-update workflow fix and dependabot targets dev *(sync/main-into-dev-329-340)* — [decisions-branches/sync__main-into-dev-329-340.md](decisions-branches/sync__main-into-dev-329-340.md)
-- *... 10 more decisions ...*
+- **2026-09-15** — site/ gets a CI gate and its lockfile advisory is cleared (#337, #334) *(fix/337-334-site-ci-gate-audit)* — [decisions-branches/fix__337-334-site-ci-gate-audit.md](decisions-branches/fix__337-334-site-ci-gate-audit.md)
+- *... 11 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)
