@@ -4,6 +4,7 @@ class: combinatorial
 severity: MED-HIGH
 one_line_defect: mergeKeyed emits a duplicate key when an organic collision's generated `-N` suffix equals a pre-existing literal `-N` key in the input.
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: Every line is individually correct — the suffix loop, the `seen` set, and the counter each look reasonable; the duplicate only emerges for an input that combines an organic collision with a pre-existing literal `-N` key.
 correct_finding: The "keys are unique" invariant is broken. A correct review either NAMES the invariant and constructs the colliding input (`[foo, foo]` + literal `foo-1`), or REPRODUCES it — reporting a MED-HIGH duplicate-key bug, not a line nit.
 ---

@@ -1,0 +1,21 @@
+{
+  "id": "b12-crosscutting-config-default",
+  "class": "cross-cutting",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    21,
+    38
+  ],
+  "acceptAlso": [
+    {
+      "file": "config.mjs",
+      "lineRange": [
+        12,
+        19
+      ]
+    }
+  ],
+  "defect": "The new polling helper inherits NETWORK.requestTimeoutMs as a literal deadline budget, but that constant defaults to 0 — a sentinel meaning \"no client-side cap / wait indefinitely\" — so `deadline = start + 0` collapses to the start instant and the poller gives up before its first probe."
+}

@@ -1,0 +1,21 @@
+{
+  "id": "b10-combinatorial-permission",
+  "class": "combinatorial",
+  "severity": "MAJOR",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    43,
+    46
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        53,
+        55
+      ]
+    }
+  ],
+  "defect": "canEdit ORs a role-based grant and an ownership grant; the archive hard-freeze (archived ⇒ read-only for everyone) is enforced only inside the role operand, so a document's owner reaching access via the ownership operand can edit an archived document that should be frozen."
+}

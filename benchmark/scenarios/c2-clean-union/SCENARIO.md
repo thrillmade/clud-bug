@@ -4,6 +4,7 @@ class: clean
 severity: none
 one_line_defect: NONE — this code is correct
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_correct: Collisions are resolved against the set of ALREADY-EMITTED keys (originals plus generated suffixes) and the suffix is probed forward until genuinely free, so a generated `-N` can never coincide with a pre-existing literal `-N` key.
 correct_finding: NONE. A correct review reports no finding here; any critical/major flag is a FALSE POSITIVE.
 ---

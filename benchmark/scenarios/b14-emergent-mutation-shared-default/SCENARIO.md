@@ -4,6 +4,7 @@ class: emergent
 severity: MAJOR
 one_line_defect: record(event, options = DEFAULT_OPTIONS) uses a single module-level object as the omitted-options default, and stamp() mutates that object in place, so every caller that omits options shares one object across calls and accumulates every prior call's ids (and its lastId).
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: Each line is individually correct — a module-level baseline object, an in-place `stamp` helper (mutating a passed-in arg is a legitimate contract), a default parameter, and straight-line reads. The leak exists only in their interaction: `= DEFAULT_OPTIONS` re-binds the SAME module object on every omitted-options call (default expressions read the identifier, they do not clone it), and `stamp`'s `audit.push` / `lastId =` write through that shared reference, so state survives across independent invocations. No single statement is wrong in isolation.
 correct_finding: Report that independent `record()` calls that omit `options` are not independent — the default `options = DEFAULT_OPTIONS` aliases one shared module object that `stamp` mutates in place, so each call inherits the previous calls' `audit` ids and `lastId`. Ground it by running `node reproduce.mjs` (the first call reads `trailLength 1`, the second `2`, the third `3`, instead of all `1`) or by naming the invariant: a default parameter that points at a mutable module-level object shares that object across every call that relies on the default, so any in-place mutation leaks forward.
 ---

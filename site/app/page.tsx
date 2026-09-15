@@ -1,3 +1,4 @@
+import { BENCHMARK } from '../lib/benchmark-score';
 import { getLatestPublicReview } from '../lib/data';
 
 const APP_INSTALL_URL = 'https://github.com/apps/clud-bug/installations/new';
@@ -281,17 +282,22 @@ export default async function Home() {
               diff merely exposes, like a date-only sort read from a module the
               change never touched.
             </p>
+            {/* BEGIN benchmark-score */}
             <p>
-              <strong>The measurement.</strong> On a seeded corpus of 20
-              scenarios &mdash; 14 planted defects across those three classes plus
-              6 clean look-alikes as precision controls, each scored by three
-              independent reviewers &mdash; the hardened recipe caught every bug
-              and false-flagged none: 100% recall, 100% precision, every catch
-              grounded by a reproduction the reviewer wrote and ran &mdash;
-              measured under the execution-grounded Phase R recipe, since
-              superseded by the CI-evidence model above; a fresh run against
-              the new recipe is pending.
+              <strong>The measurement.</strong> On a committed corpus of{' '}
+              {BENCHMARK.scenarios} scenarios &mdash; {BENCHMARK.corpusPlanted}{' '}
+              planted defects across those three classes plus{' '}
+              {BENCHMARK.corpusDecoys} clean look-alikes as precision controls,
+              each scored by {BENCHMARK.reviewersPhrase} &mdash; the
+              recipe caught {BENCHMARK.caught} of {BENCHMARK.planted} (
+              {BENCHMARK.recallPct}% recall) and false-flagged{' '}
+              {BENCHMARK.falsePositives} of {BENCHMARK.decoys} decoys.{' '}
+              {BENCHMARK.unverifiedClause} Run {BENCHMARK.runDate},{' '}
+              {BENCHMARK.invocation}. The corpus is public
+              and fixed, so the reviewer may have seen it &mdash; it measures
+              regression, not liveness. {BENCHMARK.caveat}
             </p>
+            {/* END benchmark-score */}
           </div>
         </div>
       </section>

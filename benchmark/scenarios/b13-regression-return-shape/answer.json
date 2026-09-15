@@ -1,0 +1,21 @@
+{
+  "id": "b13-regression-return-shape",
+  "class": "combinatorial",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    45,
+    50
+  ],
+  "acceptAlso": [
+    {
+      "file": "module.mjs",
+      "lineRange": [
+        25,
+        27
+      ]
+    }
+  ],
+  "defect": "A DRY refactor routes expandRule's return through a shared `collapse` helper that unwraps a one-item list into a bare element, so for the specific input of a rule with exactly one known channel expandRule returns a single spec object instead of a one-element array, breaking every caller that iterates its result."
+}
