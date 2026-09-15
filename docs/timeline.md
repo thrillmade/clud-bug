@@ -13,9 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09
+## 2026-09 (4 decisions)
 
-- **2026-09-15** — Refresh the four bundled baseline skills from agent-skills@1bec314 (folds PRs #308 #309 #310 #311) *(chore/skills-refresh-1bec314)* — [decisions-branches/chore__skills-refresh-1bec314.md](decisions-branches/chore__skills-refresh-1bec314.md)
+- **2026-09-15** — Fix #312 + #303 + #253 residual: hook freshness note, reflog-reason coverage, one live-block-span primitive for AGENTS.md marker blocks *(fix/update-lane-312-303-253)* — [decisions-branches/fix__update-lane-312-303-253.md](decisions-branches/fix__update-lane-312-303-253.md)
+- *... 2 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)
