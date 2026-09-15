@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 
+import { BENCHMARK } from '../../../lib/benchmark-score';
+
 const REPO_URL = 'https://github.com/thrillmade/clud-bug';
 
 export const metadata: Metadata = {
@@ -190,12 +192,15 @@ export default function DocsMultiPass() {
           </p>
 
           <h2>4. What the benchmark found</h2>
+          {/* BEGIN benchmark-score */}
           <p>
-            The grounding rule was measured against a seeded corpus of{' '}
-            <strong>20 scenarios</strong> — 14 planted bugs across the emergent,
-            combinatorial, and cross-cutting classes, plus 6 clean decoys: correct
-            code wearing a bug-prone shape. Each was scored by three independent
-            reviewers.
+            The grounding rule was measured against a committed corpus of{' '}
+            <strong>{BENCHMARK.scenarios} scenarios</strong> —{' '}
+            {BENCHMARK.corpusPlanted} planted bugs across the emergent,
+            combinatorial, and cross-cutting classes, plus{' '}
+            {BENCHMARK.corpusDecoys} clean decoys: correct code wearing a
+            bug-prone shape. Each was scored by {BENCHMARK.reviewersPhrase} on{' '}
+            {BENCHMARK.runDate} ({BENCHMARK.invocation}).
           </p>
           <table className="doc-table">
             <thead>
@@ -206,32 +211,36 @@ export default function DocsMultiPass() {
             </thead>
             <tbody>
               <tr>
-                <td>Recall — buggy scenarios caught</td>
-                <td>100% (every planted bug, all reviewers)</td>
+                <td>Recall — planted defects caught</td>
+                <td>
+                  {BENCHMARK.caught}/{BENCHMARK.planted} ({BENCHMARK.recallPct}%)
+                </td>
               </tr>
               <tr>
-                <td>Precision — clean scenarios not flagged</td>
-                <td>100% (zero false positives)</td>
+                <td>Precision — clean decoys not flagged</td>
+                <td>
+                  {BENCHMARK.decoysClean}/{BENCHMARK.decoys} (
+                  {BENCHMARK.falsePositives} false-flagged)
+                </td>
               </tr>
               <tr>
-                <td>Grounding</td>
-                <td>Every catch grounded by a reproduction the reviewer ran</td>
+                <td>Scenarios left unverified</td>
+                <td>{BENCHMARK.unverified}</td>
               </tr>
             </tbody>
           </table>
           <p>
-            The decoys are the interesting half. Reviewers reproduced the tricky
-            input, confirmed the invariant <em>held</em>, and reported nothing —
-            the same discipline that catches the emergent bug keeps the reviewer
-            quiet on code that merely looks dangerous. The full corpus and per-bug
-            notes are in{' '}
+            The decoys are the interesting half — the same discipline that catches
+            the emergent bug has to keep the reviewer quiet on code that merely
+            looks dangerous. The corpus is public and fixed, so the reviewer may
+            have seen it: this measures regression, not liveness.{' '}
+            {BENCHMARK.caveat} The full corpus and per-defect verdicts are in{' '}
             <a href={`${REPO_URL}/blob/main/benchmark/RESULTS.md`} rel="noopener">
               benchmark/RESULTS.md
             </a>
-            . Measured under the execution-grounded Phase R recipe, since
-            superseded by the CI-evidence model above; a fresh run against the
-            new recipe is pending.
+            .
           </p>
+          {/* END benchmark-score */}
           <p>
             The <code>ciChecks</code> key is how you carry this discipline into
             your own repo — narrowing which checks a review reads as evidence,

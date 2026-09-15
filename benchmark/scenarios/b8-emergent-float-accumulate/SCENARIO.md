@@ -4,6 +4,7 @@ class: emergent
 severity: MED-HIGH
 one_line_defect: applyPayment carries money as binary-float dollars and draws a running balance down invoice by invoice, so accumulated rounding error makes the running balance drift a sub-cent below the true cents balance — a payment equal to the exact total trips the "can I cover this?" guard on the last invoice and strands it, leaving a phantom balance.
 reproduction: node reproduce.mjs
+answer_key: answer.json
 why_no_single_line: Each `remaining -= inv.amount` is an individually correct subtraction, the `remaining < inv.amount` coverage guard is a correct business rule, and the payment equals the exact total — the shortfall exists only in the drift accumulated across the whole allocation of float dollars, never on any one changed line.
 correct_finding: Report that money is represented as binary floating-point dollars and accumulated across the allocation, so the running balance diverges from the true integer-cents balance; a payment equal to the exact total therefore fails the invariant "an exact payment settles every invoice and leaves a zero balance." Ground it by running `node reproduce.mjs` (14/15 invoices clear on an exact $37.95 payment, `inv-15` stranded with a phantom $1.49 balance, while the integer-cents reference clears all 15 to $0.00) or by naming the invariant: the float allocation must equal the exact integer-cents allocation. The fix is to represent and accumulate money as integer cents, not to slap an epsilon on the final comparison.
 ---

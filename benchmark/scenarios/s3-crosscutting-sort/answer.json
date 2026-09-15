@@ -1,0 +1,21 @@
+{
+  "id": "s3-crosscutting-sort",
+  "class": "cross-cutting",
+  "severity": "MED-HIGH",
+  "expected": "finding",
+  "file": "module.mjs",
+  "lineRange": [
+    41,
+    45
+  ],
+  "acceptAlso": [
+    {
+      "file": "sort.mjs",
+      "lineRange": [
+        13,
+        27
+      ]
+    }
+  ],
+  "defect": "Backfill hands full-timestamp rows to stableByDate(), which sorts by calendar day only, so each synthetic 09:00 snapshot loses its intended chronological position and sinks below the same day's real transactions."
+}

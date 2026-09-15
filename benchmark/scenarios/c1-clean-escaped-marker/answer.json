@@ -1,0 +1,12 @@
+{
+  "id": "c1-clean-escaped-marker",
+  "class": "clean",
+  "severity": "none",
+  "expected": "clean",
+  "file": "module.mjs",
+  "lineRange": [
+    43,
+    59
+  ],
+  "defect": "NONE — this code is correct"
+}

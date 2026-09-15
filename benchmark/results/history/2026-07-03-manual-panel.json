@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "runId": "2026-07-03-manual-panel",
+  "startedAt": "2026-07-03T00:00:00Z",
+  "trigger": "manual",
+  "note": "Scored by hand, not by scripts/run-benchmark.mjs: the 3-reviewer panel recorded in benchmark/RESULTS.md (#219, commit 7e10ad82d6cb2394f6329108be68f9dadbbd5f80) under the Phase R recipe SPEC 2.0 §4.7 has since superseded. It is carried here so the published wording renders from a real measurement rather than a fabricated automated one; the per-reviewer transcripts were not retained, so the config fields that would identify the reviewer are null rather than guessed. The first automated run replaces this file.",
+  "config": {
+    "gitSha": "7e10ad82d6cb2394f6329108be68f9dadbbd5f80",
+    "cludBugVersion": null,
+    "recipeSha256": null,
+    "reviewerModel": null,
+    "reviewerEffort": null,
+    "invocation": "manual panel (pre-automation)",
+    "reviewersPerScenario": 3,
+    "suite": "all"
+  },
+  "cost": {
+    "capUsd": null,
+    "spentUsd": null,
+    "spendEstimated": false,
+    "stoppedForCost": false,
+    "stopReason": null
+  },
+  "totals": {
+    "caught": 14,
+    "total": 14,
+    "decoysClean": 6,
+    "decoysTotal": 6,
+    "falsePositives": 0,
+    "unverified": 0,
+    "recallPct": 100,
+    "precisionPct": 100
+  },
+  "scenarios": [
+    {
+      "id": "b10-combinatorial-permission",
+      "class": "combinatorial",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b11-crosscutting-error-contract",
+      "class": "cross-cutting",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b12-crosscutting-config-default",
+      "class": "cross-cutting",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b13-regression-return-shape",
+      "class": "combinatorial",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b14-emergent-mutation-shared-default",
+      "class": "emergent",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b4-emergent-accumulator",
+      "class": "emergent",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b5-combinatorial-boundary",
+      "class": "combinatorial",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b6-crosscutting-timezone",
+      "class": "cross-cutting",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b7-emergent-async-race",
+      "class": "emergent",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b8-emergent-float-accumulate",
+      "class": "emergent",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "b9-combinatorial-pagination",
+      "class": "combinatorial",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "c1-clean-escaped-marker",
+      "class": "clean",
+      "expected": "clean",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "c2-clean-union",
+      "class": "clean",
+      "expected": "clean",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "c3-clean-sort",
+      "class": "clean",
+      "expected": "clean",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "c4-clean-async-sequenced",
+      "class": "clean",
+      "expected": "clean",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "c5-clean-pagination",
+      "class": "clean",
+      "expected": "clean",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "c6-clean-permission",
+      "class": "clean",
+      "expected": "clean",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "s1-emergent-marker",
+      "class": "emergent",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "s2-combinatorial-union",
+      "class": "combinatorial",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    },
+    {
+      "id": "s3-crosscutting-sort",
+      "class": "cross-cutting",
+      "expected": "finding",
+      "verdict": "caught",
+      "reviews": 3,
+      "matched": null
+    }
+  ]
+}
