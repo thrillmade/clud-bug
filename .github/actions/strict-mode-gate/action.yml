@@ -16,7 +16,9 @@
 #      editing its own manifest — requires fetch-depth: 0). If strictMode
 #      is true AND the latest clud-bug[bot] review comment's FIRST LINE
 #      starts with "## 🐛 Clud Bug review — critical findings", fail
-#      the check.
+#      the check. A base ref that will not RESOLVE fails the check too: a
+#      repo with no manifest has opted out, a repo this gate cannot read
+#      has not, and only the first of those is a green check (#291).
 #
 #   2. Per-skill check-runs (v0.5.10+, Stream BB.3): for each skill in the
 #      base manifest's `strictSkills` array, emit a separate check-run via
@@ -68,12 +70,51 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         BOT_LOGIN: ${{ inputs.bot-login }}
       run: |
-        # Loud failure if the base manifest can't be read — silently falling
-        # back to advisory would silently disable strict mode for every
-        # opted-in repo. (Requires fetch-depth: 0 on the checkout step.)
-        BASE_MANIFEST=$(git show "origin/${{ github.base_ref }}:.claude/skills/.clud-bug.json" 2>&1) || {
-          echo "::warning::Base manifest not found on ${{ github.base_ref }} — strict mode disabled for this run."
+        # "The base ref has no manifest" and "the base ref could not be read"
+        # are different facts, and only the first one means strict mode is
+        # off. Collapsing them into one `exit 0` is the fail-open the #291
+        # pin step's own SECURITY comment cites as its reason to deny `.git`
+        # outright: make `git show origin/<base>:…` fail — a shallow clone, a
+        # missing fetch-depth: 0, a deleted .git — and a repository whose base
+        # ref says `strictMode: true` gets "strict mode disabled for this run"
+        # and a green check. So the ref is resolved first, and a ref that will
+        # not resolve fails the check rather than reporting an opt-out.
+        BASE_COMMIT=$(git rev-parse --verify --quiet "origin/${{ github.base_ref }}^{commit}" || true)
+        if [ -z "$BASE_COMMIT" ]; then
+          echo "::error title=Clud Bug 🐛::Could not resolve origin/${{ github.base_ref }} — the strict-mode gate cannot read the base ref's manifest."
+          echo "::error::Check out with fetch-depth: 0 so the base ref is present. Falling back to advisory here would disable strict mode for a repository that opted in — failing the check instead."
+          exit 1
+        fi
+
+        # Absent manifest: strict mode is opt-in, so this is an ordinary
+        # repository, not a failure. Anything else — an unreadable object, a
+        # broken index — is not something to shrug at, so the question asked
+        # here is "does the base ref DECLARE this path", not "is its content
+        # in the object store". `rev-parse <commit>:<path>` was tried here
+        # first and rejected: it walks the same trees as `ls-tree`, but a
+        # TREE it cannot open (not just the leaf blob) makes rev-parse fail
+        # exactly like a path that was never committed at all — the same
+        # fail-open one layer up from `cat-file -e`, this time on a corrupt
+        # `.claude/skills` tree object rather than the manifest blob. `git
+        # ls-tree <commit> -- <path>` tells the two apart: empty stdout and
+        # exit 0 mean the path genuinely isn't declared; a nonzero exit means
+        # a tree along the way couldn't be read, and that fails the check
+        # instead of reporting an opt-out. A manifest that IS declared
+        # (nonempty ls-tree output) falls through to the read below, which is
+        # where an unreadable blob is allowed to fail.
+        MANIFEST_ENTRY=$(git ls-tree "${BASE_COMMIT}" -- .claude/skills/.clud-bug.json 2>&1) || {
+          echo "::error title=Clud Bug 🐛::Could not read the base ref's tree at .claude/skills/.clud-bug.json: $MANIFEST_ENTRY"
+          echo "::error::Failing the check — a base ref this gate cannot walk is not a base ref that says strict mode is off."
+          exit 1
+        }
+        if [ -z "$MANIFEST_ENTRY" ]; then
+          echo "::notice title=Clud Bug 🐛::Base ref ${{ github.base_ref }} declares no .claude/skills/.clud-bug.json — strict mode is not configured on this repository."
           exit 0
+        fi
+        BASE_MANIFEST=$(git show "${BASE_COMMIT}:.claude/skills/.clud-bug.json" 2>&1) || {
+          echo "::error title=Clud Bug 🐛::Base ref ${{ github.base_ref }} declares .claude/skills/.clud-bug.json but it could not be read: $BASE_MANIFEST"
+          echo "::error::Failing the check — a manifest this gate cannot read is not a manifest that says strict mode is off."
+          exit 1
         }
         STRICT=$(echo "$BASE_MANIFEST" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(s).strictMode===true)}catch(e){console.log('false')}})")
         [ "$STRICT" = "true" ] || exit 0
@@ -155,11 +196,35 @@ runs:
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         BOT_LOGIN: ${{ inputs.bot-login }}
       run: |
-        # Re-read base manifest. (Step boundary means we can't share the
-        # variable from the gate step; one extra git-show is cheap.)
-        BASE_MANIFEST=$(git show "origin/${{ github.base_ref }}:.claude/skills/.clud-bug.json" 2>/dev/null) || {
-          echo "::warning::Per-skill check-runs disabled — base manifest not found on ${{ github.base_ref }}."
+        # Re-read base manifest, telling the two cases apart the same way the
+        # gate step does: strictSkills a repo never configured is an opt-out,
+        # a base ref this step cannot read is not. This step runs on
+        # `if: always()`, so it reports its own read failure rather than
+        # relying on the gate step above having already failed the job.
+        BASE_COMMIT=$(git rev-parse --verify --quiet "origin/${{ github.base_ref }}^{commit}" || true)
+        if [ -z "$BASE_COMMIT" ]; then
+          echo "::error title=Clud Bug 🐛::Could not resolve origin/${{ github.base_ref }} — per-skill check-runs cannot read the base ref's manifest."
+          echo "::error::Check out with fetch-depth: 0. A strictSkill that silently emits no check-run is a required check that silently never appears."
+          exit 1
+        fi
+        # `ls-tree`, not `rev-parse` or `cat-file -e`, for the reason the
+        # gate step above spells out: it tells "the path isn't declared"
+        # (empty stdout, exit 0) apart from "a tree along the way couldn't be
+        # read" (nonzero exit) — only the first is the opt-out question, and
+        # this step runs on `if: always()`, so it must fail loud on its own
+        # rather than silently skipping a base ref it cannot walk.
+        MANIFEST_ENTRY=$(git ls-tree "${BASE_COMMIT}" -- .claude/skills/.clud-bug.json 2>&1) || {
+          echo "::error title=Clud Bug 🐛::Could not read the base ref's tree at .claude/skills/.clud-bug.json: $MANIFEST_ENTRY"
+          echo "::error::Failing the check — per-skill check-runs cannot be trusted against a base ref this gate cannot walk."
+          exit 1
+        }
+        if [ -z "$MANIFEST_ENTRY" ]; then
+          echo "Base ref ${{ github.base_ref }} declares no .claude/skills/.clud-bug.json — no per-skill check-runs (opt-in feature)."
           exit 0
+        fi
+        BASE_MANIFEST=$(git show "${BASE_COMMIT}:.claude/skills/.clud-bug.json" 2>&1) || {
+          echo "::error title=Clud Bug 🐛::Base ref ${{ github.base_ref }} declares .claude/skills/.clud-bug.json but it could not be read: $BASE_MANIFEST"
+          exit 1
         }
 
         # Extract the strictSkills array. Emits one line per skill on stdout.

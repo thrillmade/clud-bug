@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { serializedReviewSchema } from './review-schema.js';
+import { DEFAULT_MAX_SKILL_BYTES } from './prompt-builder.js';
 import { PKG_VERSION } from './version.js';
 
 const PLACEHOLDER_RE = /\{\{([A-Z_]+)\}\}/g;
@@ -26,6 +27,7 @@ export interface RenderDefaults {
   CCA_VERSION: string;
   CLUD_BUG_VERSION: string;
   REVIEW_SCHEMA: string;
+  MAX_SKILL_BYTES: string;
 }
 
 // Default values for substitution tokens that every template uses.
@@ -37,10 +39,16 @@ export interface RenderDefaults {
 // workflows mid-cycle. Bumping the pin requires a clud-bug release, which
 // makes the upgrade visible + lets users opt out by pinning a different
 // version in their own forked workflow.
+// MAX_SKILL_BYTES: clud-bug#301/#305 — the workflow templates used to
+// hardcode '4000' here, half of DEFAULT_MAX_SKILL_BYTES (prompt-builder.ts)
+// and below SPEC §2.1's 8 KiB recommendation. Two numbers for the same
+// budget is a fact with two owners; deriving the template's env var from
+// the library constant makes prompt-builder.ts the only owner.
 export const DEFAULTS: RenderDefaults = {
   CCA_VERSION: 'v1.0.133',
   CLUD_BUG_VERSION: PKG_VERSION,
   REVIEW_SCHEMA: serializedReviewSchema(),
+  MAX_SKILL_BYTES: String(DEFAULT_MAX_SKILL_BYTES),
 };
 
 // Caller-supplied substitution vars: any extra placeholders the template
