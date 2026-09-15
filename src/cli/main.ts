@@ -20,7 +20,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
-import { detect, buildDescriptionLine, detectPackageTestScript } from '../core/detect.js';
+import { detect, buildDescriptionLine, detectTestSuite } from '../core/detect.js';
 import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { REGISTRATION_PATHS, isRegistrationPathCommittable } from '../core/attestation.js';
 import { reviewPrompt } from '../core/prompts.js';
@@ -30,6 +30,8 @@ import {
   writeSkills, writeSkill, loadBaseline, loadDesignKit,
   readManifest, writeManifest, removeSkill, listInstalled, diffManifest,
 } from './skills.js';
+import { runConfig, renderConfigHelp } from './config.js';
+import { HONEST_GUARANTEE, stampSetting } from '../core/config-schema.js';
 import { computeAuditFileSet } from './audit.js';
 import { renderAuditHeader } from '../core/audit.js';
 import { runUpdate } from './update.js';
@@ -188,6 +190,19 @@ Commands:
   add <source/name>     Pin one new specimen from skills.sh (e.g. vercel-labs/skills/next-best-practices).
   remove <slug>         Unpin a clud-bug-managed specimen (refuses to touch your custom ones).
   refresh               Re-survey, diff against your collection, prompt to update.
+  config list           Show every setting, its value, and where that value came from.
+  config get <key>      Print one setting's value. Add --json for the whole record.
+  config set <key> <v>  Change one setting. Refuses a value the setting cannot take
+                        and says what it can (SPEC §1.6). Same command in a terminal
+                        and in a workflow — nothing here reads a TTY or a CI marker.
+  config unset <key>    Remove a setting, so it resolves to its documented default.
+                        Exit codes: 0 ok · 1 unreadable/unwritable file · 2 no such
+                        setting · 3 value outside the domain · 4 refused.
+                        The settings:
+${renderConfigHelp()}
+                        A setting marked (humans only) decides whether something
+                        blocks, which SPEC §1.6 keeps a person's to change, never an
+                        agent's. ${HONEST_GUARANTEE}
   audit                 Walk the whole habitat (or a recent slice) and prepare a report stub.
                         Use --since / --changed-in / --scope to narrow.
   update                Re-render workflows + refresh baseline specimens to the latest shipped
@@ -408,7 +423,10 @@ async function main() {
   // terminal, and never for the machine-consumed verbs (the hook runs
   // review-prompt in a non-TTY subprocess, so this is doubly skipped there).
   // Best-effort + cache-backed, so it adds no latency to the command.
-  const MACHINE_VERBS = new Set(['review-prompt', 'review', 'review-done', 'post-check-run', 'build-bundle', 'render', 'update-skill-usage']);
+  // `config` is here for the same reason as the rest: §1.6:260 requires the
+  // same command in a terminal and in a workflow, and an update notice on one
+  // and not the other is a difference a script can see.
+  const MACHINE_VERBS = new Set(['review-prompt', 'review', 'review-done', 'post-check-run', 'build-bundle', 'render', 'update-skill-usage', 'config']);
   if (process.stderr.isTTY && !MACHINE_VERBS.has(cmd)) {
     const { maybeNotifyUpdate } = await import('./update-notifier.js');
     await maybeNotifyUpdate(await readPkgVersion());
@@ -420,6 +438,7 @@ async function main() {
     case 'add':     return runAdd(args);
     case 'remove':  return runRemove(args);
     case 'refresh': return runRefresh(args);
+    case 'config':  return runConfig(args);
     case 'audit':   return runAudit(args);
     case 'update':  return runUpdateCmd(args);
     case 'edit-workflow': return runEditWorkflow(args);
@@ -1652,22 +1671,32 @@ async function runInit(args) {
   // lastUpdate field. Existing v0.3.x advisory installs (where strictMode
   // was never written and so == undefined) keep their advisory behavior
   // because lastUpdate IS set; the strictMode default only fires on truly
-  // fresh inits. Users opt out by setting strictMode: false.
+  // fresh inits. Opting out is a person's edit to `strictMode` — §1.6:262
+  // keeps that one out of `clud-bug config`, which refuses it.
+  //
+  // #271: every one of these writes goes through the schema's `stampSetting`,
+  // so `init` and `clud-bug config` share one key space AND one owner rule —
+  // the schema owns where `review.strict_mode` lands on disk, what it may
+  // hold, and that setup may only ever CREATE it at `true`. The condition
+  // below is the product rule on top of that gate, not the gate itself.
   const skillsDirPath = join(cwd, '.claude', 'skills');
-  const manifest = await readManifest(skillsDirPath);
+  // Strict read: a manifest we cannot parse must stop the stamp, not be
+  // replaced by an empty one (which the write below would then persist).
+  let manifest = await readManifest(skillsDirPath, { strict: true });
   if (args.withDesign) {
-    // Flip the off-by-default design lens on; preserve any existing knobs
-    // (gate / themes / viewports) the user already set.
-    const prior = (manifest.design as Record<string, unknown> | undefined) ?? {};
-    manifest.design = { ...prior, enabled: true };
+    // Flip the off-by-default design lens on; the stamp writes only that one
+    // field, so any existing knobs (gate / themes / viewports) survive.
+    manifest = stampSetting(manifest, 'design.enabled', true);
   }
   const isFreshInstall = manifest.lastUpdate === undefined;
-  manifest.lastUpdateVersion = await readPkgVersion();
-  manifest.lastUpdate = new Date().toISOString();
+  manifest = stampSetting(manifest, 'last_update_version', await readPkgVersion());
+  manifest = stampSetting(manifest, 'last_update', new Date().toISOString());
+  // §1.6:262 forbids an agent WEAKENING this one. The write below can only
+  // ever strengthen it: it fires solely when the key is absent, and the value
+  // is always `true`. Turning strict mode off stays a person's edit.
   if (isFreshInstall && manifest.strictMode === undefined) {
-    manifest.strictMode = true;
+    manifest = stampSetting(manifest, 'review.strict_mode', true);
   }
-
   // #319 — SPEC 2.0 §6.7: "Setup MUST ask, and MUST NOT complete without an
   // answer." Only relevant once the pre-push mechanical gate actually exists
   // (wantsPrePushHook) — a repo with no local hook has no gate to declare
@@ -1675,7 +1704,16 @@ async function runInit(args) {
   // `tests` (set by a prior init, or by hand) is never re-asked.
   if (wantsPrePushHook && manifest.tests === undefined) {
     const { resolveTestsDeclaration } = await import('./hooks.js');
-    const detected = await detectPackageTestScript(cwd);
+    // `detectTestSuite` (not the narrower `detectPackageTestScript` alone) —
+    // the same detector `config set tests`'s own honesty check uses
+    // (`assertHonestTestsDeclaration`, src/cli/config.ts). A repo with test
+    // FILES but no `package.json` script has no command to suggest
+    // (`suite.command` stays null, same "none" suggestion as before), but it
+    // DOES have a suite, and the "no suite auto-detected" warning below must
+    // not claim otherwise just because this narrower half of the detector
+    // came up empty.
+    const suite = await detectTestSuite(cwd);
+    const detected = suite?.command ?? null;
     const ask = async (q: string) => {
       const rl = createInterface({ input, output });
       try {
@@ -1688,14 +1726,20 @@ async function runInit(args) {
     // #319 CRITICAL fix: `resolveTestsDeclaration` always returns a real
     // value now (never `null`) — the manifest is never left undeclared, so
     // there is no longer a branch here that skips the write.
-    manifest.tests = decision.value;
+    manifest = stampSetting(manifest, 'tests', decision.value);
     log(`  tests declaration: "${decision.value}" (${decision.source})`);
-    if (decision.source === 'accept-all-undeclared') {
+    // Gated on `suite === null` too — not just the accept-all/undeclared
+    // source — because `detected` (a runnable command) can be null while a
+    // suite still exists (test files with no package.json script). Only the
+    // narrower half came up empty; telling the user NOTHING was found would
+    // be false in that case.
+    if (decision.source === 'accept-all-undeclared' && suite === null) {
       warn(
         'No test suite auto-detected (--accept-all skipped the prompt) — declared "tests": "none". ' +
         'SPEC 6.7: "no suite detected" + "none" declared is a pass, so this does not block your next ' +
-        'push. If that is wrong (the repo does have a suite), edit "tests" in ' +
-        '.claude/skills/.clud-bug.json before you push, or the hook will block on the contradiction.',
+        'push. If that is wrong (the repo does have a suite), run ' +
+        '`clud-bug config set tests "<command>"` before you push, or the hook will block on the ' +
+        'contradiction.',
       );
     }
   }

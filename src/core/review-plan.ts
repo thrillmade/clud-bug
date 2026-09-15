@@ -142,6 +142,13 @@ export interface ReviewPassesConfig {
   roles?: ReviewRole[];
   default?: Partial<ReviewPassesEntry>;
   perSkill?: Record<string, Partial<ReviewPassesEntry>>;
+  /**
+   * Passes whose critical findings turn the check red. SPEC §1.6's table:
+   * "Marking a pass blocking is humans-only"; §4.8: "A repository MAY opt a
+   * design critical into blocking, by marking that pass blocking in
+   * `review.passes`." Absent means no pass blocks on its own.
+   */
+  blocking?: string[];
 }
 
 /** Frontmatter shape (subset) — only the bit D.2.5 cares about. */
@@ -211,20 +218,44 @@ function coerceEntry(raw: unknown): Partial<ReviewPassesEntry> {
   return out;
 }
 
+export interface ReadReviewPassesOptions {
+  /**
+   * The manifest as it stands on the pull request's BASE ref, where the
+   * consumer has it. `blocking` — and only `blocking` — is then read from
+   * there, per SPEC §6.3: a gate's input comes from the base ref, "never from
+   * the head ref", so a change cannot mark its own pass blocking (or unmark
+   * one) in the diff being judged.
+   *
+   * Omit it where there is no base ref to read (a local `commit`/`push`
+   * review), and resolution is unchanged.
+   */
+  baseRefManifest?: unknown;
+}
+
 /**
  * Reads top-level `reviewPasses` from a parsed `.clud-bug.json` object.
  * Tolerates absence + invalid types.
  */
 export function readReviewPassesConfig(
   parsedJson: unknown,
+  options: ReadReviewPassesOptions = {},
 ): ReviewPassesConfig | null {
-  if (!parsedJson || typeof parsedJson !== 'object') return null;
+  const blocking = readBlocking(
+    'baseRefManifest' in options ? options.baseRefManifest : parsedJson,
+  );
+
+  // A tree with no `reviewPasses` of its own still cannot unmark a pass the
+  // base ref marked — §6.3 reads the marker from there precisely so the diff
+  // being judged has no say, and deleting the block is the same weakening as
+  // rewriting it. So the base-ref marker survives both of these returns.
+  if (!parsedJson || typeof parsedJson !== 'object') return blocking ? { blocking } : null;
   const root = parsedJson as Record<string, unknown>;
   const raw = root.reviewPasses;
-  if (!raw || typeof raw !== 'object') return null;
+  if (!raw || typeof raw !== 'object') return blocking ? { blocking } : null;
 
   const obj = raw as Record<string, unknown>;
   const cfg: ReviewPassesConfig = {};
+  if (blocking) cfg.blocking = blocking;
 
   if (typeof obj.count === 'number') cfg.count = clampCount(obj.count);
   const flatMode = asMode(obj.mode);
@@ -255,6 +286,15 @@ export function readReviewPassesConfig(
   }
 
   return cfg;
+}
+
+/** The blocking marker, from whichever manifest is allowed to say. */
+function readBlocking(manifest: unknown): string[] | null {
+  const raw = (manifest as { reviewPasses?: { blocking?: unknown } } | null | undefined)
+    ?.reviewPasses?.blocking;
+  if (!Array.isArray(raw)) return null;
+  const names = raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+  return names.length > 0 ? names.map((n) => n.trim()) : null;
 }
 
 function coerceRole(raw: unknown): ReviewRole | null {

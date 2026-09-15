@@ -9,7 +9,7 @@
 // `MANIFEST_FILE` (the CLI-side pieces previously hidden under
 // `_internal.X`) are now first-class named exports of this module.
 
-import { mkdir, writeFile, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, open, rename, writeFile, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -297,22 +297,85 @@ export async function writeSkill(
   };
 }
 
-export async function readManifest(targetDir: string): Promise<Manifest> {
+// #271: the tolerant read below is what every READER wants (SPEC §1.6:243 —
+// a file a consumer cannot make sense of must not fail the review). It is
+// wrong for a WRITER: a swallowed parse error returns a FRESH EMPTY manifest,
+// and the `writeManifest` that follows then deletes the repository's whole
+// configuration over a stray comma. `{ strict: true }` is for the write paths
+// — it distinguishes "no file yet" (still the empty manifest; that is how a
+// first install looks) from "a file I could not parse, or could not even read"
+// (throw, write nothing).
+export interface ReadManifestOptions {
+  strict?: boolean;
+}
+
+export async function readManifest(
+  targetDir: string,
+  options: ReadManifestOptions = {},
+): Promise<Manifest> {
+  let text: string;
   try {
-    const text = await readFile(join(targetDir, MANIFEST_FILE), 'utf8');
+    text = await readFile(join(targetDir, MANIFEST_FILE), 'utf8');
+  } catch (err) {
+    // ENOENT is the only read failure that means "no file yet". A write path
+    // must not read EACCES/EIO as absence either — the empty manifest it
+    // returns is what `writeManifest` would then persist over the real one.
+    if (options.strict && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw new Error(
+        `${join(targetDir, MANIFEST_FILE)} could not be read (${(err as Error).message}). ` +
+        'Nothing was written — fix the file by hand, then run this again.',
+      );
+    }
+    return { version: MANIFEST_VERSION, installed: [] };
+  }
+  try {
     const data = JSON.parse(text) as Partial<Manifest> & Record<string, unknown>;
     return {
       ...data,
       version: data.version || MANIFEST_VERSION,
       installed: Array.isArray(data.installed) ? data.installed : [],
     };
-  } catch {
+  } catch (err) {
+    if (options.strict) {
+      throw new Error(
+        `${join(targetDir, MANIFEST_FILE)} is not valid JSON (${(err as Error).message}). ` +
+        'Nothing was written — fix the file by hand, then run this again.',
+      );
+    }
     return { version: MANIFEST_VERSION, installed: [] };
   }
 }
 
-export async function writeManifest(targetDir: string, manifest: Manifest): Promise<void> {
+// The on-disk byte format, in one place: two-space JSON and a trailing
+// newline. `clud-bug config` serializes through this too, so the file a
+// `config set` leaves behind and the file `init` writes are the same shape.
+export function serializeManifest(manifest: Record<string, unknown>): string {
+  return JSON.stringify(manifest, null, 2) + '\n';
+}
+
+// #271 — the one way the manifest bytes are replaced. `writeFile` truncates
+// and then writes, so a reader arriving mid-write (the pre-push hook, a
+// concurrent `config get`) gets a file that is valid JSON only by luck; the
+// concurrency test for `config set` reproduced exactly that, reporting
+// "Unexpected end of JSON input" on a file nobody had corrupted. A rename over
+// the target cannot be observed half-done.
+export async function writeManifestBytes(
+  targetDir: string,
+  manifest: Record<string, unknown>,
+): Promise<void> {
   await mkdir(targetDir, { recursive: true });
+  const target = join(targetDir, MANIFEST_FILE);
+  const tmp = `${target}.tmp-${process.pid}`;
+  await writeFile(tmp, serializeManifest(manifest));
+  try {
+    await rename(tmp, target);
+  } catch (err) {
+    await rm(tmp, { force: true });
+    throw err;
+  }
+}
+
+export async function writeManifest(targetDir: string, manifest: Manifest): Promise<void> {
   // Preserve any additional fields callers want to stamp (e.g. lastUpdate,
   // lastUpdateVersion, pinVersion). Only `version` and `installed` are normalized.
   const out: Manifest = {
@@ -320,7 +383,104 @@ export async function writeManifest(targetDir: string, manifest: Manifest): Prom
     version: manifest.version || MANIFEST_VERSION,
     installed: manifest.installed || [],
   };
-  await writeFile(join(targetDir, MANIFEST_FILE), JSON.stringify(out, null, 2) + '\n');
+  await writeManifestBytes(targetDir, out as unknown as Record<string, unknown>);
+}
+
+// #271 — a `config set` is a read, a decision, and a write, and three of them
+// racing lost whole keys: each read the same bytes and each wrote its own
+// one-key edit over them, at exit 0. Serializing them is what scales past two
+// — the compare in `writeManifestFile` (config.ts) can only refuse, and three
+// commands refusing each other is a worse answer than three that wait.
+const LOCK_FILE = `${MANIFEST_FILE}.lock`;
+const LOCK_TIMEOUT_MS = 10_000;
+const LOCK_POLL_MS = 15;
+// A lock older than this whose owner is gone is a crash, not a slow write.
+const LOCK_STALE_MS = 60_000;
+
+/**
+ * Run `fn` serialized against every other holder of this lock in `targetDir`,
+ * across processes.
+ *
+ * Today that is `clud-bug config set` and `config unset`, and nothing else:
+ * `init`, `update`, `add` and `remove` replace the manifest atomically through
+ * `writeManifestBytes` but do not take the lock. What the lock buys is that
+ * two invocations of the command cannot lose each other's writes.
+ *
+ * Against those four, the command compares the bytes it read before it writes
+ * (`writeManifestFile` in config.ts), so one of them landing in its window is
+ * a refusal rather than a silent drop. The reverse is still open: any of the
+ * four reads, does its work, and writes its own object back over a `config
+ * set` that landed meanwhile — that setting is gone, and nothing says so.
+ * Closing it means this lock around their read-to-write spans too.
+ *
+ * The lock is a file created with `wx` — one syscall, and the loser of the
+ * race gets EEXIST rather than a second lock. It holds the owning pid so a
+ * lock left by a process that died is recognised as stale immediately, rather
+ * than wedging every later write for as long as the timeout.
+ */
+export async function withManifestLock<T>(
+  targetDir: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  await mkdir(targetDir, { recursive: true });
+  const path = join(targetDir, LOCK_FILE);
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  for (;;) {
+    try {
+      const handle = await open(path, 'wx');
+      try {
+        await handle.writeFile(`${process.pid}\n`);
+      } finally {
+        await handle.close();
+      }
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      if (await lockIsStale(path)) {
+        await rm(path, { force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `${join(targetDir, MANIFEST_FILE)} is being written by another clud-bug ` +
+          `(${path}). Nothing was written — run it again once that one has finished, or ` +
+          'delete that lock file if no clud-bug is running.',
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(path, { force: true });
+  }
+}
+
+/** A lock whose owner is gone, or one older than any real write. */
+async function lockIsStale(path: string): Promise<boolean> {
+  let owner: number | null = null;
+  let age = 0;
+  try {
+    const [text, stats] = await Promise.all([readFile(path, 'utf8'), stat(path)]);
+    const pid = Number.parseInt(text.trim(), 10);
+    owner = Number.isInteger(pid) && pid > 0 ? pid : null;
+    age = Date.now() - stats.mtimeMs;
+  } catch {
+    // Gone between the EEXIST and here — the holder released it. Not stale;
+    // the next acquire attempt is the one that matters.
+    return false;
+  }
+  if (owner !== null && owner !== process.pid) {
+    try {
+      // Signal 0 tests for the process without touching it. ESRCH means the
+      // holder is gone; EPERM means it is alive and someone else's.
+      process.kill(owner, 0);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ESRCH') return true;
+    }
+  }
+  return age > LOCK_STALE_MS;
 }
 
 export function mergeManifest(existing: Manifest, newEntries: ManifestEntry[]): Manifest {

@@ -6,6 +6,8 @@
 // per-section budgets, comment format updates) by editing one function
 // instead of three templates.
 
+import { DEFAULT_MAX_SKILL_BYTES } from './prompt-builder.js';
+
 export type ReviewPromptLanguage = 'generic' | 'ts' | 'py';
 
 export interface ReviewPromptOptions {
@@ -120,8 +122,8 @@ cached system prefix is free at 10%; per-PR fetches are not.
     incremental view is for fast re-confirmation, not blind trust.
 
   - Skill files: \`head -c "$MAX_SKILL_BYTES" .claude/skills/<name>/SKILL.md\`
-    per file (default 4,000 bytes). Baseline skills fit easily;
-    bloated user-added skills get truncated.
+    per file (default ${DEFAULT_MAX_SKILL_BYTES} bytes). Baseline skills fit
+    easily; bloated user-added skills get truncated.
 
   - PR comments: \`gh api "repos/$REPO_OWNER/$REPO_NAME/issues/$PR_NUMBER/comments?per_page=20" --jq '.[] | select(.user.login != "claude[bot]" and .user.login != "github-actions[bot]")' | head -c "$MAX_COMMENT_BYTES"\`
     (default 20,000 bytes, 20 most-recent). Skips your own prior
