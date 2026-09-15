@@ -117,13 +117,26 @@ jobs:
             fi
           done
 
-          echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
-          echo "latest=$LATEST"       >> "$GITHUB_OUTPUT"
-          echo "pin=$PIN"              >> "$GITHUB_OUTPUT"
+          {
+            echo "installed=$INSTALLED"
+            echo "latest=$LATEST"
+            echo "pin=$PIN"
+          } >> "$GITHUB_OUTPUT"
           echo "Installed: $INSTALLED  Latest: $LATEST  Pin: ${PIN:-(none)}"
 
           if [ -n "$PIN" ]; then
             echo "::notice::Pinned to $PIN via .logmind/config.yml — skipping update check."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Guard the empty case BEFORE the inequality test. All three
+          # fetch_latest attempts failing leaves LATEST="", which is
+          # != a non-empty INSTALLED — without this check that falls
+          # through to skip=false and hands setup-logmind a bare `v`
+          # below, failing its resolver. A transient API outage should
+          # skip the week, not red the run.
+          if [ -z "$LATEST" ]; then
+            echo "::warning::Could not resolve the latest logmind release after 3 attempts against /releases/latest. Skipping this run rather than passing an empty version to setup-logmind."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -137,11 +150,27 @@ jobs:
       # v1.1.0+ installs logmind itself via the setup-logmind action so
       # `logmind init` (the refresh) runs against the same binary
       # version consumer repos will see after this workflow lands its
-      # PR. The action's version tracks the LATEST step output.
+      # PR.
+      #
+      # `v${{ latest }}`, NOT the bare `${{ latest }}`. The compare step
+      # above strips the leading `v` for its INSTALLED/LATEST string
+      # comparison, but setup-logmind's resolver only accepts 'latest',
+      # 'v<MAJOR>', or 'v<MAJOR>.<MINOR>.<PATCH>' — handing it the bare
+      # number failed every run with "unrecognized version input
+      # '1.2.0'" once INSTALLED first diverged from LATEST (before that
+      # the compare step always short-circuited to skip=true, so the
+      # defect stayed latent). Re-add the `v`.
+      #
+      # An exact `vX.Y.Z` tag also short-circuits setup-logmind's
+      # resolver without a network call, unlike `version: latest`, which
+      # re-hits the (anonymous, 60 req/hr) /releases/latest endpoint —
+      # `token:` is passed so a future switch to a resolving input isn't
+      # silently anonymous.
       - uses: thrillmade/setup-logmind@v1.0.1
         if: steps.compare.outputs.skip == 'false'
         with:
-          version: ${{ steps.compare.outputs.latest }}
+          token: ${{ github.token }}
+          version: v${{ steps.compare.outputs.latest }}
 
       - name: Run logmind init + open PR
         if: steps.compare.outputs.skip == 'false'
@@ -160,7 +189,19 @@ jobs:
           # Refresh mode rewrites stale workflow templates by the
           # `# logmind-template-version:` marker, leaves docs/ +
           # .logmind/ + agent files untouched. Idempotent.
-          logmind init --no-git --no-skill-install || logmind init
+          #
+          # `--skill-install no`, NOT `--no-skill-install`. `init`
+          # registers `--skill-install` as a string flag (accepts
+          # yes/no), so cobra rejects `--no-skill-install` outright and
+          # this line has exited non-zero on every run — masked until
+          # now by the `|| logmind init` fallback, which reran WITHOUT
+          # `--no-git` and let init commit directly, so a broken flag
+          # here failed silently instead of redding the run. That
+          # fallback path was unreachable while the version bug above
+          # stopped every run before this step; fixing that bug makes
+          # it reachable, so the flag and the fallback are both fixed
+          # here rather than shipping a new silent no-op.
+          logmind init --no-git --skill-install no
 
           # SMART WORKFLOW-SKIP. Decouples action-pin bumps (now
           # handled by Dependabot, no PAT needed) from template-body
