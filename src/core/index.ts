@@ -227,6 +227,17 @@ export {
   type ApplyCanonicalRulesetParams,
   type ApplyResult,
 } from './configure-github.js';
+// clud-bug#268 / agent-skills#180 — the agent roster reader (SPEC §2.4).
+// Reads `.claude/agents/*.md` frontmatter; never the body, never executes,
+// never drops a malformed entry in silence. `review-plan.ts` consumes
+// `RosterEntry[]` to resolve a pass's role to a dispatched agent by name.
+export {
+  readRoster,
+  parseRosterEntry,
+  type RosterEntry,
+  type RosterProblem,
+  type RosterReadResult,
+} from './roster.js';
 // Wave 6b — review-planning "brain" ported from clud-bug-app/lib. Three pure
 // modules: the multi-pass config resolver (`review-plan`), the Layer-1 cost
 // gate (`budget-plan`), and the multi-pass aggregator (`multi-pass-aggregate`).

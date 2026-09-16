@@ -685,3 +685,120 @@ describe('#263 — kind routes a skill to a pass', () => {
     expect(r.stdout).toContain('a-writing-skill');
   });
 });
+
+// ---------------------------------------------------------------------------
+// clud-bug#268 — the agent roster (SPEC §2.4) surfaces in the rendered recipe:
+// which roster entry each pass resolved to, and a malformed `.claude/agents`
+// file as a warning, never a crash.
+// ---------------------------------------------------------------------------
+
+describe('#268 — the roster surfaces in the rendered recipe', () => {
+  it('a roster entry matching a role by name prints its file + overrides the tier model', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp268a-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(join(skillsDir, 'a-rule-skill'), { recursive: true });
+    await writeFile(
+      join(skillsDir, '.clud-bug.json'),
+      JSON.stringify({
+        version: 1,
+        installed: [{ slug: 'a-rule-skill', name: 'a-rule-skill', source: 'manual', kind: 'baseline', description: 'x' }],
+        reviewPasses: { count: 2, mode: 'cross-check' },
+      }),
+    );
+    await writeFile(
+      join(skillsDir, 'a-rule-skill', 'SKILL.md'),
+      '---\nname: a-rule-skill\ndescription: x\nsource: manual\nreview_mode: shared\n---\n\nrules',
+    );
+    const agentsDir = join(dir, '.claude', 'agents');
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(
+      join(agentsDir, 'Beetle.md'),
+      '---\nname: Beetle\ndescription: The roster\'s own fast pass.\nmodel: anthropic/claude-roster-9\n---\n\nBeetle instructions.',
+    );
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'pr'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/\*\*Beetle\*\*.*roster: `\.claude\/agents\/Beetle\.md`/);
+    expect(r.stderr).not.toMatch(/did not load/);
+  });
+
+  it('a roster entry with no `model:` still prints its file, not just entries that pin one', async () => {
+    // `model` is optional per agent-skills#180 — a legal, name-matched entry
+    // that omits it must still surface on the rendered recipe rather than
+    // being indistinguishable from no-match-at-all.
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp268d-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(join(skillsDir, 'a-rule-skill'), { recursive: true });
+    await writeFile(
+      join(skillsDir, '.clud-bug.json'),
+      JSON.stringify({
+        version: 1,
+        installed: [{ slug: 'a-rule-skill', name: 'a-rule-skill', source: 'manual', kind: 'baseline', description: 'x' }],
+        reviewPasses: { count: 2, mode: 'cross-check' },
+      }),
+    );
+    await writeFile(
+      join(skillsDir, 'a-rule-skill', 'SKILL.md'),
+      '---\nname: a-rule-skill\ndescription: x\nsource: manual\nreview_mode: shared\n---\n\nrules',
+    );
+    const agentsDir = join(dir, '.claude', 'agents');
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(
+      join(agentsDir, 'Beetle.md'),
+      '---\nname: Beetle\ndescription: The roster\'s own fast pass.\n---\n\nBeetle instructions.',
+    );
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'pr'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/\*\*Beetle\*\*.*roster: `\.claude\/agents\/Beetle\.md`/);
+    expect(r.stderr).not.toMatch(/did not load/);
+  });
+
+  it('a malformed roster file warns on stderr and never crashes the recipe', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp268b-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(join(skillsDir, '.clud-bug.json'), JSON.stringify({ version: 1, installed: [] }));
+    const agentsDir = join(dir, '.claude', 'agents');
+    await mkdir(agentsDir, { recursive: true });
+    // Missing `description` — a malformed entry, never silently dropped.
+    await writeFile(join(agentsDir, 'incomplete.md'), '---\nname: incomplete\n---\n\nbody');
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'commit'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/roster entry `\.claude\/agents\/incomplete\.md` did not load/);
+    expect(r.stderr).toMatch(/description/i);
+    expect(r.stdout).toContain(CLUD_BUG_RECIPE_MARKER);
+  });
+
+  it('no roster at all renders byte-identically to before #268 (no roster: line, no warning)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'clud-bug-rp268c-'));
+    const skillsDir = join(dir, '.claude', 'skills');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(
+      join(skillsDir, '.clud-bug.json'),
+      JSON.stringify({ version: 1, installed: [], reviewPasses: { count: 2, mode: 'cross-check' } }),
+    );
+
+    const r = spawnSync(process.execPath, [CLI, 'review-prompt', '--trigger', 'pr'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toMatch(/roster:/);
+    expect(r.stderr).not.toMatch(/did not load/);
+  });
+});

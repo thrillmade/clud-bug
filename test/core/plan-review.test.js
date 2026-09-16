@@ -104,6 +104,22 @@ describe('planReview', () => {
     expect(plan.summary).toMatch(/budget exceeded/i);
   });
 
+  // clud-bug#268 — planReview is the ONE shared planner (SPEC §4.3/§11.5);
+  // `roster` must actually reach `resolveReviewPasses` through it, not just
+  // exist as a dead field on the input.
+  it('forwards `roster` to resolveReviewPasses so a matching role\'s model resolves through the roster', () => {
+    const plan = planReview({
+      skills: SKILLS,
+      config: CONFIG,
+      roster: [
+        { name: 'Beetle', description: 'x', model: 'anthropic/claude-roster-9', file: '.claude/agents/Beetle.md' },
+      ],
+    });
+    const beetle = plan.roles.find((r) => r.name === 'Beetle');
+    expect(beetle?.model).toBe('anthropic/claude-roster-9');
+    expect(beetle?.rosterFile).toBe('.claude/agents/Beetle.md');
+  });
+
   it('plans with NO cost ceiling when the caller configures none (SPEC §4.9)', () => {
     // The default path every consumer takes today — neither the CLI's
     // `resolveReviewInputs` nor the hosted orchestrator passes `perPrCapUsd`.

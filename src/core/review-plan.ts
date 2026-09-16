@@ -1,4 +1,5 @@
 import type { SkillFrontmatter } from './skills.js';
+import type { RosterEntry } from './roster.js';
 
 /**
  * Multi-pass review config resolution.
@@ -78,17 +79,34 @@ export interface ReviewPassesEntry {
  * `name` + `model` stay for back-compat (inline attribution + AI-Gateway
  * routing); `tier` is additive and optional so config-supplied roles that
  * omit it still validate.
+ *
+ * @deprecated clud-bug#268: a pass is a dispatched role from the agent
+ * roster (SPEC §2.4), not a mode of the reviewer — the beetle/wasp/mantis
+ * tier was the pre-roster mechanism for the same problem (which model runs
+ * which pass) and is REJECTED as of #268. It stays live here only as the
+ * fallback for a pass whose role name matches no roster entry; removal is
+ * tracked as a CHANGELOG follow-up once the catalog ships rosters.
  */
 export type ReviewRoleTier = 'beetle' | 'wasp' | 'mantis';
 
 /** One role definition; pairs a label ("Beetle") with a model slug. */
 export interface ReviewRole {
-  /** Display name. Surfaced inline in the comment per the spec. */
+  /** Display name. Surfaced inline in the comment per the spec. Also the key
+   * `resolveReviewPasses` matches against a roster entry's `name` (#268). */
   name: string;
-  /** AI Gateway model slug, e.g. `anthropic/claude-sonnet-4.6`. */
+  /** AI Gateway model slug, e.g. `anthropic/claude-sonnet-4.6`. Overridden by
+   * a matching roster entry's `model` when one exists AND pins a model
+   * (#268) — `model` is optional on a roster entry (agent-skills#180), so a
+   * match alone doesn't guarantee an override; see `rosterFile`. */
   model: string;
-  /** Optional reviewer tier. See ReviewRoleTier. */
+  /** Optional reviewer tier. See ReviewRoleTier — deprecated fallback. */
   tier?: ReviewRoleTier;
+  /** Repo-relative path of the roster entry this role resolved to (e.g.
+   * `.claude/agents/beetle.md`), set whenever `resolveReviewPasses` found an
+   * exact `name` match in the roster (#268) — regardless of whether that
+   * entry also pinned a `model`. Absent means no roster entry named this
+   * role at all, still running on the pre-roster tier fallback. */
+  rosterFile?: string;
 }
 
 /** Full resolved per-skill config exposed to the orchestrator. */
@@ -387,6 +405,18 @@ export interface ResolveReviewPassesInput {
   rawSkillMd?: Record<string, string>;
   /** Parsed `.clud-bug.json` `reviewPasses` block. May be null/empty. */
   config: ReviewPassesConfig | null;
+  /**
+   * The repo's agent roster (clud-bug#268 / SPEC §2.4), read via
+   * `readRoster`. Optional/empty — pure function, no I/O here — the caller
+   * does the filesystem walk and passes the result. Where a resolved role's
+   * `name` exactly matches a roster entry, that entry's `model` is what
+   * actually runs the pass when the entry pins one (`model` is optional —
+   * a match with no `model` still surfaces via `rosterFile`, but leaves the
+   * role on its fallback); the config `roles` field (and its deprecated
+   * beetle/wasp/mantis tiers) is only the fallback for whatever the roster
+   * doesn't cover.
+   */
+  roster?: RosterEntry[];
 }
 
 export interface ResolveReviewPassesResult {
@@ -416,7 +446,7 @@ export interface ResolveReviewPassesResult {
 export function resolveReviewPasses(
   input: ResolveReviewPassesInput,
 ): ResolveReviewPassesResult {
-  const { skills, rawSkillMd = {}, config } = input;
+  const { skills, rawSkillMd = {}, config, roster = [] } = input;
 
   // 1. Repo-level default — collapses the two .clud-bug.json layouts.
   const repoDefault: Partial<ReviewPassesEntry> = (() => {
@@ -430,8 +460,25 @@ export function resolveReviewPasses(
   })();
 
   // 2. Roles + applyTo carry over uniformly.
-  const roles =
+  const baseRoles =
     config?.roles && config.roles.length > 0 ? config.roles : BUILTIN_ROLES;
+  // #268 — "A pass is a dispatched role, not a mode of the reviewer. Every
+  // pass ... is an agent from the roster (§2.4), taking its model ... from
+  // that role's own file." Where a role's `name` exactly matches a roster
+  // entry, `rosterFile` is set regardless — a name match is reportable on the
+  // surface even when the entry has nothing to override the model with
+  // (`model` is optional per agent-skills#180, and a spec-legal entry must
+  // not be indistinguishable from no-match-at-all). Only `model` itself is
+  // conditional: it's overridden when the entry pins one, and otherwise the
+  // role keeps running on the deprecated tier fallback above (`baseRoles`'s
+  // own `model`) unchanged.
+  const rosterByName = new Map(roster.map((r) => [r.name, r] as const));
+  const roles: ReviewRole[] = baseRoles.map((role) => {
+    const entry = rosterByName.get(role.name);
+    if (!entry) return role;
+    const matched = { ...role, rosterFile: entry.file };
+    return entry.model ? { ...matched, model: entry.model } : matched;
+  });
   const applyTo: ApplyTo = config?.applyTo === 'shared-only' ? 'shared-only' : 'all';
 
   const perSkill: ResolvedReviewPasses[] = skills.map((skill) => {

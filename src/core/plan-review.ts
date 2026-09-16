@@ -17,6 +17,7 @@ import {
   type ApplyTo,
 } from './review-plan.js';
 import { estimateBudget, type BudgetVerdict } from './budget-plan.js';
+import type { RosterEntry } from './roster.js';
 
 /** Trigger context that selects plan depth (SPEC §11.5). */
 export type ReviewTrigger = 'commit' | 'push' | 'pr';
@@ -38,6 +39,13 @@ export interface PlanReviewInput {
   config: ReviewPassesConfig | null;
   /** Raw SKILL.md text per slug, for the frontmatter `review_passes` override. */
   rawSkillMd?: Record<string, string>;
+  /**
+   * clud-bug#268 — the repo's agent roster (`readRoster`'s result), forwarded
+   * to `resolveReviewPasses` so every consumer of this ONE shared planner
+   * (SPEC §4.3/§11.5) resolves a pass's role to a roster entry the same way,
+   * rather than each reimplementing the lookup.
+   */
+  roster?: RosterEntry[];
   /** Trigger context. Defaults to `pr` (the full plan). */
   trigger?: ReviewTrigger;
   /** Diff size under review, in bytes — enables large-diff auto-tiering. */
@@ -86,6 +94,7 @@ export function planReview(input: PlanReviewInput): ReviewPlan {
     skills: input.skills,
     config: input.config,
     ...(input.rawSkillMd !== undefined ? { rawSkillMd: input.rawSkillMd } : {}),
+    ...(input.roster !== undefined ? { roster: input.roster } : {}),
   });
 
   let tieredDown: TierDownReason | undefined;
