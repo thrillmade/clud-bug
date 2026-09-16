@@ -34,7 +34,7 @@ import { runConfig, renderConfigHelp } from './config.js';
 import { HONEST_GUARANTEE, stampSetting } from '../core/config-schema.js';
 import { computeAuditFileSet } from './audit.js';
 import { renderAuditHeader } from '../core/audit.js';
-import { runUpdate } from './update.js';
+import { runUpdate, resolveReviewTrigger, resolveCommitHookMerge, removePrePushHookFile } from './update.js';
 import { runReviewPrompt } from './review-prompt.js';
 import { runReview, runReviewDone } from './review.js';
 import { runPostCheckRun } from './post-check-run.js';
@@ -1525,8 +1525,33 @@ async function runInit(args) {
   // that same promise. So: no explicit flag + something already installed →
   // preserve it. An explicit --hook-trigger always overrides, and a repo
   // with nothing installed yet still gets the push default below.
+  //
+  // #253 residual (ruling 1) — the hook-FILE guess above is only ever a
+  // guess. Once the manifest has recorded `review.trigger` (via a prior
+  // `init --hook-trigger`, or a `clud-bug config set review.trigger …` since),
+  // IT is the one source of truth — a bare `init --with-hooks` re-run must
+  // not silently revert a config-set trigger back to whatever the hook files
+  // on disk still say. `resolveReviewTrigger` (update.ts) is the identical
+  // precedence `runUpdate`'s own reconciliation already uses, so the two
+  // callers cannot drift the way they did before #253. Peeked non-strict: a
+  // manifest that fails to parse falls through to the file-based guess
+  // below, exactly as it did before this manifest read existed — the strict
+  // read further down still aborts on it before anything gets stamped.
   const explicitHookTrigger = args.hookTrigger !== null && args.hookTrigger !== undefined;
-  const existingHookTrigger = explicitHookTrigger ? null : await detectExistingHookTrigger(cwd);
+  const priorManifestTrigger = explicitHookTrigger
+    ? null
+    : (await readManifest(join(cwd, '.claude', 'skills')))['reviewTrigger'];
+  // Read regardless of `explicitHookTrigger`: an explicit --hook-trigger still
+  // needs to know what's ALREADY on disk, so a switch away from a surface can
+  // remove it below (`wantsCommitHook`/`wantsPrePushHook` reconciliation) —
+  // only the preserve-on-bare-re-run fallback (`existingHookTrigger`) is
+  // conditional on there being no explicit flag to override it.
+  const installedTrigger = await detectExistingHookTrigger(cwd);
+  const commitHookFilePresent = installedTrigger === 'commit' || installedTrigger === 'both';
+  const prePushFilePresent = installedTrigger === 'push' || installedTrigger === 'both';
+  const existingHookTrigger = explicitHookTrigger
+    ? null
+    : resolveReviewTrigger(priorManifestTrigger, installedTrigger);
   const hookTrigger = (() => {
     if (existingHookTrigger) {
       warn(`No --hook-trigger passed — preserving the existing local-review surface (${existingHookTrigger}).`);
@@ -1549,13 +1574,7 @@ async function runInit(args) {
   // committed. `--no-hooks` installs neither: with no local surface, clud-bug
   // dispatches nothing to attest to.
   if (args.withHooks) {
-    const {
-      mergeLocalReviewHook,
-      mergeAttestationHooks,
-      buildCommitReviewCommand,
-      buildReviewerAgentFile,
-      REVIEWER_AGENT_PATH,
-    } = await import('./hooks.js');
+    const { buildReviewerAgentFile, REVIEWER_AGENT_PATH } = await import('./hooks.js');
     const settingsPath = join(cwd, '.claude', 'settings.json');
     await mkdir(dirname(settingsPath), { recursive: true });
     // Read-then-parse so we can tell "no file yet" (fresh merge) from "file
@@ -1577,14 +1596,15 @@ async function runInit(args) {
       }
     }
     if (proceed) {
-      const merged = wantsCommitHook
-        ? // Floating @next pin (default) — the hook auto-fetches the latest recipe.
-          mergeLocalReviewHook(existing, buildCommitReviewCommand())
-        : mergeAttestationHooks(existing);
+      // #253 residual (ruling 1's own break-it finding) — the same three-way
+      // choice `runUpdate` reconciles to its resolved trigger (update.ts),
+      // shared so `init` cannot leave a stale commit-review entry installed
+      // alongside a surface it just switched TO: add/refresh when
+      // `wantsCommitHook`, REMOVE when the entry is present but no longer
+      // wanted, else touch only the #266 attestation entries.
+      const { merged, label } = resolveCommitHookMerge(existing, wantsCommitHook, commitHookFilePresent);
       await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
-      log(
-        `    wrote ${rel(cwd, settingsPath)} (${wantsCommitHook ? 'commit-review hook + ' : ''}attestation hooks)`,
-      );
+      log(`    wrote ${rel(cwd, settingsPath)} (${label})`);
     }
 
     // The subagent type the SubagentStop matcher filters on has to exist, or
@@ -1649,6 +1669,23 @@ async function runInit(args) {
   // That is inherent to `pre-push`, not a choice made here.
   if (wantsPrePushHook) {
     await installPrePushHook(cwd);
+  } else if (args.withHooks && prePushFilePresent) {
+    // #253 residual (ruling 1's own break-it finding) — the REMOVE
+    // counterpart to `installPrePushHook`'s ADD: a switch away from the push
+    // surface (a bare re-run honoring a `config set review.trigger`, or an
+    // explicit `--hook-trigger commit`) must not leave the blocking pre-push
+    // hook installed alongside the new one. `removePrePushHookFile`
+    // (update.ts) is the same restore-a-chained-hook-or-`rm` primitive
+    // `runUpdate`'s own REMOVE branch uses, so the two callers cannot drift
+    // on removal the way `init` already drifted on precedence before #253.
+    const hooksDirResult = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd, encoding: 'utf8' });
+    if (hooksDirResult.status === 0) {
+      const { PREPUSH_HOOK_FILE } = await import('./hooks.js');
+      const hooksDir = join(cwd, hooksDirResult.stdout.trim());
+      const prePushHookPath = join(hooksDir, PREPUSH_HOOK_FILE);
+      await removePrePushHookFile(hooksDir, prePushHookPath);
+      log(`    removed ${rel(cwd, prePushHookPath)} (review.trigger no longer names the push surface)`);
+    }
   }
 
   // rc.16: --with-design installs the bundled design-critic kit (4 `kind:
@@ -1691,6 +1728,16 @@ async function runInit(args) {
   const isFreshInstall = manifest.lastUpdate === undefined;
   manifest = stampSetting(manifest, 'last_update_version', await readPkgVersion());
   manifest = stampSetting(manifest, 'last_update', new Date().toISOString());
+  // #253 residual / SPEC 2.0 §4.1: review.trigger is real. `hookTrigger`
+  // above is already the resolved surface (explicit --hook-trigger, or the
+  // preserved/defaulted one) — persist it through the schema so it has ONE
+  // source of truth. `clud-bug update` reconciles the installed hooks to
+  // THIS value; the hook FILE(s) present stop being a second record of it.
+  // Gated on --with-hooks: a repo that opted out of the local surface
+  // entirely has no trigger to record.
+  if (args.withHooks) {
+    manifest = stampSetting(manifest, 'review.trigger', hookTrigger);
+  }
   // §1.6:262 forbids an agent WEAKENING this one. The write below can only
   // ever strengthen it: it fires solely when the key is absent, and the value
   // is always `true`. Turning strict mode off stays a person's edit.
@@ -1762,6 +1809,13 @@ async function runInit(args) {
   });
   for (const p of agentDocs.created) log(`    created ${p}`);
   for (const p of agentDocs.touched) log(`    updated ${p}`);
+  // #253 migration ruling — a file already damaged by the shipped
+  // duplicate-append bug (more than one live clud-bug block) was just
+  // collapsed to one. Always surfaced, quiet mode or not: it is repairing
+  // data loss, not routine progress chatter.
+  for (const p of agentDocs.collapsed) {
+    warn(`${p}: found more than one clud-bug block (#253) — collapsed to one, keeping the first.`);
+  }
 
   if (args.commit) {
     log('  committing...');

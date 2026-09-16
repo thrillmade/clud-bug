@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (15 decisions)
+## 2026-09 (16 decisions)
 
-- **2026-09-15** — Sync main into dev after #349: self-update failure notification *(sync/main-into-dev-349)* — [decisions-branches/sync__main-into-dev-349.md](decisions-branches/sync__main-into-dev-349.md)
-- *... 13 more decisions ...*
+- **2026-09-15** — Update follow-up: one tests resolver, config-command messaging, review.trigger written and reconciled, #253 residuals closed *(fix/update-followup-253-residuals-trigger-key)* — [decisions-branches/fix__update-followup-253-residuals-trigger-key.md](decisions-branches/fix__update-followup-253-residuals-trigger-key.md)
+- *... 14 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import {
   buildLocalReviewHook,
   mergeLocalReviewHook,
+  removeLocalReviewHook,
   buildCommitReviewCommand,
   HOOK_FIRED_FILE,
   REVIEW_DONE_FILE,
@@ -189,6 +190,31 @@ describe('mergeLocalReviewHook', () => {
     const s = mergeLocalReviewHook('garbage', COMMIT_REVIEW_COMMAND);
     expect(reviewEntries(s)).toHaveLength(1);
     expect(attestEntries(s)).toHaveLength(2);
+  });
+});
+
+describe('removeLocalReviewHook', () => {
+  // #253 residual — the mirror image of the co-located-hook test above: a
+  // user hook hand-appended INSIDE our commit-review matcher entry must
+  // survive our entry's removal, re-attached as its own bare `Bash` entry,
+  // rather than vanish along with the entry that used to carry it.
+  it('preserves a user hook co-located INSIDE our entry when the entry itself is removed', () => {
+    const v1 = mergeLocalReviewHook(undefined, COMMIT_REVIEW_COMMAND);
+    const reviewEntry = v1.hooks.PostToolUse.find((e) =>
+      e.hooks.some((h) => typeof h.command === 'string' && h.command.includes('clud-bug-local-review')),
+    );
+    reviewEntry.hooks.push({ type: 'command', command: './notify.sh' });
+
+    const s = removeLocalReviewHook(v1);
+    const post = s.hooks.PostToolUse;
+    // our commit-review command is gone entirely
+    expect(
+      post.some((e) => e.hooks.some((h) => typeof h.command === 'string' && h.command.includes('clud-bug-local-review'))),
+    ).toBe(false);
+    // the user's co-located hook survives as its own Bash entry
+    const survivor = post.find((e) => e.matcher === 'Bash' && e.hooks.some((h) => h.command === './notify.sh'));
+    expect(survivor).toBeTruthy();
+    expect(survivor.hooks).toHaveLength(1);
   });
 });
 

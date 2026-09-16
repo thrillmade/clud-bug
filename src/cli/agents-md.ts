@@ -87,8 +87,9 @@ strict-mode mechanics, workflow-edit constraint — live in the bundled
 [\`clud-bug-collaboration\` skill](${skillPath}).
 Read that skill before pushing fixes addressing prior review threads.
 
-Strict mode is ${strictNote}. Toggle via \`.claude/skills/.clud-bug.json\`
-(read from PR **base ref**, so PRs can't disable strict-mode on themselves).
+Strict mode is ${strictNote}. Humans only (SPEC §1.6) — \`config set review.strict_mode\`
+refuses; toggle \`strictMode\` in \`.claude/skills/.clud-bug.json\` on the default branch
+(base-ref read, so PRs can't self-disable it).
 
 For agent invocations of the \`clud-bug\` CLI, prefer \`CLUD_BUG_QUIET=1\`
 (or pass \`--quiet\`) — suppresses progress chatter and emits a single
@@ -188,6 +189,17 @@ export async function detectSkillRelPath(cwd: string): Promise<string> {
 // example. A heuristic (doesn't track fence indentation/info-string
 // subtleties precisely), not a full markdown parser — good enough to keep
 // matching off a quoted example, the one case this guards against.
+//
+// #253 residual (a): the SAME risk exists one level down, at inline code —
+// `` `<!-- clud-bug-start -->` `` (README.md wrote exactly this, quoting the
+// syntax in a sentence rather than a fenced sample) is prose showing the
+// marker, not a live block, and gets the same exclusion via
+// `inlineCodeSpans` below. The other direction matters just as much: a marker
+// written as PLAIN prose, with no backticks and no fence around it at all, IS
+// live — this file only ever excludes the two quoted forms (fenced, inline
+// code), never bare text. A doc sentence that wants to talk ABOUT the marker
+// without going live has to quote it as one of those two; anything else is
+// read as the real thing.
 const FENCE_LINE_RE = /^[ \t]{0,3}(`{3,}|~{3,})/;
 
 /** Character-offset ranges `[start, end)` covered by fenced code blocks
@@ -254,12 +266,73 @@ function isInsideFence(ranges: Array<[number, number]>, index: number): boolean 
   return ranges.some(([s, e]) => index >= s && index < e);
 }
 
+/** True when range `a` and range `b` overlap without one fully containing
+ * the other — the shape a mis-tracked fence map produces (#253 residual b):
+ * a fence-looking line hidden inside raw HTML (an HTML comment, which
+ * CommonMark never parses as markdown) shifts `fenceRanges`' idea of where a
+ * fence starts or ends, so a fence can end up starting INSIDE a candidate
+ * marker span and finishing outside it (or the reverse) without either
+ * containing the other. That partial overlap is itself the tell that the
+ * fence map disagrees with this candidate — rejecting it is cheaper and more
+ * robust than trying to parse HTML comments correctly just for this check. */
+function straddles(a: readonly [number, number], b: readonly [number, number]): boolean {
+  const [aStart, aEnd] = a;
+  const [bStart, bEnd] = b;
+  if (aStart >= bEnd || bStart >= aEnd) return false; // no overlap at all
+  const aContainsB = aStart <= bStart && aEnd >= bEnd;
+  const bContainsA = bStart <= aStart && bEnd >= aEnd;
+  return !aContainsB && !bContainsA;
+}
+
+/** Character-offset spans `[start, end)` of inline code (single or multiple
+ * backtick runs, GFM/CommonMark-style) on lines NOT already inside a fenced
+ * block. #253 residual (a): a marker quoted as inline code — `` `<!-- clud-bug-start -->` ``
+ * (README.md:43 does exactly this) — is prose showing the syntax, not a live
+ * block, and must be rejected the same way a fenced example already is. A
+ * bare marker with NO backticks around it is ordinary prose and stays live —
+ * this only excludes the code-span form.
+ *
+ * Per-line, like CommonMark's own inline-code rule (an inline code span
+ * doesn't cross a line clud-bug needs to reason about here): pairs the first
+ * backtick run with the next run of the SAME length on that line as its
+ * closer, same "exact match, nothing shorter" rule `fenceRanges` uses for
+ * block fences. */
+function inlineCodeSpans(content: string, fences: Array<[number, number]>): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  const parts = content.split(/(\r?\n)/);
+  let offset = 0;
+  for (let i = 0; i < parts.length; i += 2) {
+    const line = parts[i] ?? '';
+    const sep = parts[i + 1] ?? '';
+    if (!isInsideFence(fences, offset)) {
+      const tickRe = /`+/g;
+      let open: { start: number; len: number } | null = null;
+      let tm: RegExpExecArray | null;
+      while ((tm = tickRe.exec(line))) {
+        const run = tm[0];
+        if (open === null) {
+          open = { start: offset + tm.index, len: run.length };
+        } else if (run.length === open.len) {
+          spans.push([open.start, offset + tm.index + run.length]);
+          open = null;
+        }
+        // A run of a different length while a span is open is just content
+        // between the backticks (CommonMark: the closer must match the
+        // opener's exact run length) — keep scanning for the real closer.
+      }
+    }
+    offset += line.length + sep.length;
+  }
+  return spans;
+}
+
 /** Character-offset spans `[start, end)` of every LIVE clud-bug block in
  * `content`: each `START_MARKER ... END_MARKER` run whose two markers are
- * both outside any fenced code block. The single place either function
- * below decides what "a block" is — upsertBlock takes the first span,
- * removeBlock takes all of them — so the two can never disagree about which
- * bytes are ours.
+ * both outside any fenced code block, whose start marker is not quoted as
+ * inline code, and whose span doesn't straddle a fence boundary. The single
+ * place either function below decides what "a block" is — upsertBlock takes
+ * the first span, removeBlock takes all of them — so the two can never
+ * disagree about which bytes are ours.
  *
  * Each span runs from START_MARKER through the FIRST END_MARKER after it.
  * The `*?` is NON-greedy on purpose: content following the end marker (a
@@ -270,21 +343,40 @@ function isInsideFence(ranges: Array<[number, number]>, index: number): boolean 
 function liveBlockSpans(content: string): Array<[number, number]> {
   const re = new RegExp(`${escapeRe(START_MARKER)}[\\s\\S]*?${escapeRe(END_MARKER)}`, 'g');
   const fences = fenceRanges(content);
+  const inlineCode = inlineCodeSpans(content, fences);
   const spans: Array<[number, number]> = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
     const startIdx = m.index;
     const endIdx = m.index + m[0].length - END_MARKER.length;
-    if (!isInsideFence(fences, startIdx) && !isInsideFence(fences, endIdx)) {
-      spans.push([startIdx, startIdx + m[0].length]);
+    const whole: [number, number] = [startIdx, startIdx + m[0].length];
+    // #253 residual 2's ruling text asks, verbatim, to "reject any candidate
+    // span that straddles a fence boundary" — this last disjunct is that,
+    // kept even though no case currently reaches it in isolation: fence
+    // ranges only start/end at line boundaries, and both markers are
+    // single-line literals, so any straddling span already has one endpoint
+    // strictly inside the fence and trips one of the two isInsideFence
+    // checks above it first. It stays as the literal guard the ruling asked
+    // for — and as a rail against a future marker or fence-detector change
+    // that could make it reachable — not as a currently mutation-provable
+    // one; see test/agents-md.test.js's #253-residual-(b) case for the
+    // isInsideFence path that (correctly) catches today's version of this.
+    const rejected =
+      isInsideFence(fences, startIdx) ||
+      isInsideFence(fences, endIdx) ||
+      isInsideFence(inlineCode, startIdx) ||
+      fences.some((f) => straddles(f, whole));
+    if (!rejected) {
+      spans.push(whole);
       continue; // `lastIndex` sits past OUR end marker, which is where the next span can start
     }
-    // Quoted inside a fence — not a live block. Resume from just past the
-    // QUOTED start marker rather than from where the engine left `lastIndex`:
-    // `*?` stops at the first end marker anywhere after its start marker, and
-    // a fenced example may quote a LONE start marker (README.md writes one in
-    // prose today), in which case the end marker this match consumed belongs
-    // to the LIVE block below it. Resuming past that end marker skips the live
+    // Quoted (in a fence or as inline code), or the fence map straddles this
+    // candidate — not a live block. Resume from just past the QUOTED start
+    // marker rather than from where the engine left `lastIndex`: `*?` stops
+    // at the first end marker anywhere after its start marker, and a quoted
+    // example may show a LONE start marker (README.md writes one in prose
+    // today), in which case the end marker this match consumed belongs to
+    // the LIVE block below it. Resuming past that end marker skips the live
     // pair entirely — upsertBlock then appends a duplicate on every run, and
     // removeBlock strips nothing.
     re.lastIndex = startIdx + START_MARKER.length;
@@ -334,14 +426,29 @@ export function hasAgentsMdImport(content: unknown): boolean {
 // that somehow accrued two copies — a bad merge of two branches that each ran
 // init — must end up with zero, not one. "MUST NOT carry a copy" is not
 // satisfied by removing only the first.
-export function removeBlock(content: string): string {
-  if (typeof content !== 'string') return content;
-  const spans = liveBlockSpans(content);
+/**
+ * Strip `spans` (each `[start, end)`, in ascending order) out of `content`,
+ * closing each gap with exactly one separator. Shared by `removeBlock`
+ * (strips every live span) and `collapseDuplicateBlocks` below (strips every
+ * span but the first) so the two can never disagree about what counts as one
+ * gap versus two.
+ *
+ * #253 residual (c): adjacent blocks (nothing but blank lines between them)
+ * used to get a separator emitted PER SPAN rather than per GAP — removing
+ * two touching blocks left the blank lines from both sides stacked instead
+ * of collapsed to one. Fixed by first computing each span's own removal
+ * extent (absorbing the blank line(s) that surround it, same as before),
+ * then MERGING any extents that touch or overlap before deciding
+ * separators — two spans with nothing real between them become one merged
+ * gap, with one separator, not two.
+ */
+function stripSpans(content: string, spans: Array<[number, number]>): string {
   if (spans.length === 0) return content;
   // Emit the line ending the file already uses, rather than forcing LF into
   // a CRLF file (which shows up as a whole-file diff in a Windows checkout).
   const nl = content.includes('\r\n') ? '\r\n' : '\n';
-  let out = '';
+
+  const extended: Array<[number, number]> = [];
   let cursor = 0;
   for (const [start, end] of spans) {
     // Take the line breaks on BOTH sides of the block along with it, so no
@@ -356,8 +463,27 @@ export function removeBlock(content: string): string {
     // reaching back into bytes the previous span already accounted for.
     const from = start - (/(?:\r?\n)*$/.exec(content.slice(cursor, start))?.[0].length ?? 0);
     const to = end + (/^(?:\r?\n)*/.exec(content.slice(end))?.[0].length ?? 0);
+    extended.push([Math.max(from, cursor), to]);
+    cursor = to;
+  }
+
+  // Merge extents that touch or overlap — the gap between two such spans is
+  // ONE gap in the output, not two.
+  const merged: Array<[number, number]> = [];
+  for (const range of extended) {
+    const last = merged[merged.length - 1];
+    if (last && range[0] <= last[1]) {
+      last[1] = Math.max(last[1], range[1]);
+    } else {
+      merged.push([range[0], range[1]]);
+    }
+  }
+
+  let out = '';
+  cursor = 0;
+  for (const [from, to] of merged) {
     out += content.slice(cursor, from);
-    // #265: what replaces the span depends on where the block sat.
+    // #265: what replaces the gap depends on where it sat.
     //
     // Replacing with '' unconditionally — what this did before — was safe only
     // while the block was guaranteed to be the LAST thing in the file, which it
@@ -377,6 +503,34 @@ export function removeBlock(content: string): string {
   return out + content.slice(cursor);
 }
 
+export function removeBlock(content: string): string {
+  if (typeof content !== 'string') return content;
+  return stripSpans(content, liveBlockSpans(content));
+}
+
+export interface CollapseDuplicateBlocksResult {
+  content: string;
+  /** How many extra live blocks were removed. 0 means the file already had
+   * at most one — the common case, and a no-op. */
+  collapsedCount: number;
+}
+
+/**
+ * #253 migration ruling (2026-09-15): a file already damaged by the shipped
+ * duplicate-append bug can carry MORE than one live clud-bug block —
+ * `upsertBlock` only ever refreshes the FIRST (see its own doc comment), so
+ * every later copy went stale forever rather than tracking updates. Collapse
+ * to exactly one: keep the first (the slot `upsertBlock` already refreshes)
+ * and remove every other one, closing the gaps the same way `removeBlock`
+ * would. A no-op when there is at most one live block.
+ */
+export function collapseDuplicateBlocks(content: string): CollapseDuplicateBlocksResult {
+  const spans = liveBlockSpans(content);
+  if (spans.length <= 1) return { content, collapsedCount: 0 };
+  const [, ...extra] = spans;
+  return { content: stripSpans(content, extra), collapsedCount: extra.length };
+}
+
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -384,6 +538,10 @@ function escapeRe(s: string): string {
 export interface ApplyToRepoResult {
   touched: string[];
   created: string[];
+  /** #253 migration ruling — files where MORE than one live block was found
+   * and collapsed down to one. Empty on the common path (0 or 1 blocks). The
+   * caller prints a one-line notice per entry; this list is what it names. */
+  collapsed: string[];
 }
 
 // Touches all relevant agent-instruction files in `cwd`.
@@ -391,7 +549,8 @@ export interface ApplyToRepoResult {
 // Updates other files only if they already exist (don't proliferate stubs;
 // logmind or the user owns those creation decisions).
 //
-// Returns { touched: string[], created: string[] } for the caller to log.
+// Returns { touched: string[], created: string[], collapsed: string[] } for
+// the caller to log.
 export async function applyToRepo(cwd: string, blockOpts: RenderBlockOptions = {}): Promise<ApplyToRepoResult> {
   // v0.6.25 / gotcha #2: detect publisher repo + render local skill path.
   // Pre-v0.6.25 always rendered the consumer install path → broke
@@ -401,12 +560,19 @@ export async function applyToRepo(cwd: string, blockOpts: RenderBlockOptions = {
   const block = renderBlock({ ...blockOpts, skillRelPath });
   const touched: string[] = [];
   const created: string[] = [];
+  const collapsed: string[] = [];
 
   for (const path of ALWAYS_TOUCH) {
     const full = join(cwd, path);
     const existed = await fileExists(full);
     const prior = existed ? await readFile(full, 'utf8') : seedFile(path);
-    const next = upsertBlock(prior, block);
+    // #253 migration ruling — a file damage already left with more than one
+    // live block collapses to one BEFORE upsertBlock refreshes it, or the
+    // extra copy(ies) would go stale forever (upsertBlock only ever touches
+    // the first span).
+    const { content: deduped, collapsedCount } = collapseDuplicateBlocks(prior);
+    if (collapsedCount > 0) collapsed.push(path);
+    const next = upsertBlock(deduped, block);
     if (next !== prior) {
       await writeFile(full, next);
       (existed ? touched : created).push(path);
@@ -443,7 +609,7 @@ export async function applyToRepo(cwd: string, blockOpts: RenderBlockOptions = {
     }
   }
 
-  return { touched, created };
+  return { touched, created, collapsed };
 }
 
 // #265 / SPEC 2.0 §1.2: decide what content a per-tool file should have.

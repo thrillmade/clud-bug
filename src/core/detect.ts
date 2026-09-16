@@ -74,11 +74,18 @@ interface PackageJson {
 
 // #319 (§6.7 setup-time suite detection) — the placeholder every `npm init`
 // writes. It declares nothing about the repository; a repo that never
-// touched it has no test suite in any sense §6.7 cares about. Mirrors
-// PKG_TEST_SCRIPT_PARSER in src/cli/hooks.ts, which applies the identical
-// rule from the base ref at PUSH time — this copy is the working-tree-time
-// twin, used only to SUGGEST a value during `clud-bug init`/`update`.
-const NPM_INIT_TEST_PLACEHOLDER = /^echo\s+"Error:\s*no\s*test\s*specified"\s*&&\s*exit\s*1$/i;
+// touched it has no test suite in any sense §6.7 cares about.
+//
+// #253 residual (ruling 1): PKG_TEST_SCRIPT_PARSER in src/cli/hooks.ts applies
+// the IDENTICAL rule from the base ref at push time, embedded in a `node -e`
+// string a git hook runs — it cannot `import` this module, so it imports this
+// PATTERN (a plain string, same trick as TEST_FILE_PATTERN below) and
+// interpolates it into its own regex literal at generation time, rather than
+// hand-copying the pattern text a second time. One owner for the rule; the
+// only genuinely separate thing left is which TIME each reads (working tree
+// here, vs. the base ref there — §6.3).
+export const NPM_INIT_TEST_PLACEHOLDER_PATTERN = '^echo\\s+"Error:\\s*no\\s*test\\s*specified"\\s*&&\\s*exit\\s*1$';
+const NPM_INIT_TEST_PLACEHOLDER = new RegExp(NPM_INIT_TEST_PLACEHOLDER_PATTERN, 'i');
 
 /**
  * A real `package.json` `scripts.test`, or `null` if there is none (missing,
