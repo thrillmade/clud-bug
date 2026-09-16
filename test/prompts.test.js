@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 import { reviewPrompt } from '../src/core/prompts.js';
 import { renderFile, templateLanguage } from '../src/core/render.js';
 import { DEFAULT_MAX_SKILL_BYTES } from '../src/core/prompt-builder.js';
@@ -142,8 +143,14 @@ test('rendered workflow.yml.tmpl sets the three budget env vars', async () => {
   // REPO_OWNER and REPO_NAME are needed by the comment-fetch pattern.
   assert.match(out, /REPO_OWNER: \$\{\{ github\.repository_owner \}\}/);
   assert.match(out, /REPO_NAME: \$\{\{ github\.event\.repository\.name \}\}/);
-  // Bash(head:*) added to allowedTools so Claude can pipe through head.
-  assert.match(out, /Bash\(head:\*\)/);
+  // clud-bug#332 FOR REAL: the uncapped `Bash(head:*)` wildcard is gone
+  // from --allowedTools — it never actually capped anything (a wildcard on
+  // the whole command line). Scoped to the --allowedTools VALUE, not the
+  // whole rendered file, so this doesn't trip on the fix's own explanatory
+  // comment naming the removed pattern for context.
+  const allowedTools = out.match(/--allowedTools "([^"]*)"/)[1];
+  assert.doesNotMatch(allowedTools, /Bash\(head:\*\)/);
+  assert.match(allowedTools, new RegExp(`Bash\\(head -c ${DEFAULT_MAX_SKILL_BYTES} \\.claude/skills/\\*/SKILL\\.md\\)`));
 });
 
 // clud-bug#301/#305: the three templates must stay in lockstep on the skill
@@ -200,7 +207,16 @@ test('rendered workflow-ts and workflow-py templates also set budget env vars', 
       }),
     });
     assert.match(out, /MAX_DIFF_BYTES: '5000000'/, `${tmpl} missing MAX_DIFF_BYTES`);
-    assert.match(out, /Bash\(head:\*\)/, `${tmpl} missing Bash(head:*) in allowedTools`);
+    // Scoped to the --allowedTools VALUE (not the whole rendered file) so
+    // this doesn't trip on the fix's own explanatory comment naming the
+    // removed pattern for context.
+    const allowedTools = out.match(/--allowedTools "([^"]*)"/)[1];
+    assert.doesNotMatch(allowedTools, /Bash\(head:\*\)/, `${tmpl} still grants the uncapped Bash(head:*) wildcard (clud-bug#332)`);
+    assert.match(
+      allowedTools,
+      new RegExp(`Bash\\(head -c ${DEFAULT_MAX_SKILL_BYTES} \\.claude/skills/\\*/SKILL\\.md\\)`),
+      `${tmpl} missing the capped skill-read grant in allowedTools`,
+    );
   }
 });
 
@@ -754,10 +770,44 @@ test('Layer 6 fallback: legacy bare-H2 path when no inline findings either', asy
     });
     assert.match(out, /if \[ "\$INLINE_COUNT" -gt 0 \]/,
       `${tmpl}: L6 must branch on INLINE_COUNT > 0`);
-    // Both branches must emit a comment (no silent exit).
-    const gateMatches = out.match(/gh pr comment "\$PR_NUMBER" --body/g) || [];
+    // Both branches must emit a comment (no silent exit). clud-bug#259
+    // item 1 routed every post site through `upsert_review_comment`
+    // (edit-in-place) instead of a bare `gh pr comment`.
+    const gateMatches = out.match(/upsert_review_comment "\$PR_NUMBER" "\$REPO"/g) || [];
     assert.ok(gateMatches.length >= 3,
       `${tmpl}: L6 must emit a comment in both branches (synthetic + bare-H2) AND the structured-render step has its own — found ${gateMatches.length}`);
+  }
+});
+
+// Fallback summary MUST be gated on steps.guard.outputs.skip, exactly like
+// the action step above it: when Guard already posted the "## 🐛 Clud Bug
+// skipped — nothing here was checked" advisory (same-repo bot PR, no
+// ANTHROPIC_API_KEY) and exited 0, the action step is skipped —
+// `success()` is still true and structured_output is still empty, so
+// without this gate L6 fires too and OVERWRITES Guard's advisory (same
+// upsert_review_comment marker) with a synthetic "0 critical · 0 minor"
+// comment that reads as reviewed-and-clean. Nothing was reviewed.
+test('Fallback summary is gated on steps.guard.outputs.skip, so it cannot overwrite Guard\'s skip advisory', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-py.yml.tmpl', 'workflow-ts.yml.tmpl']) {
+    const lang = tmpl.includes('-ts') ? 'ts' : tmpl.includes('-py') ? 'py' : 'generic';
+    const doc = parseYaml(await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: lang }),
+    }));
+    const step = doc.jobs.review.steps.find((s) => s && s.name === 'Fallback summary (structured_output empty)');
+    assert.ok(step, `${tmpl}: no 'Fallback summary (structured_output empty)' step`);
+    assert.match(
+      step.if,
+      /steps\.guard\.outputs\.skip\s*!=\s*'true'/,
+      `${tmpl}: Fallback summary's if: condition does not check steps.guard.outputs.skip — it can fire after Guard already skipped and overwrite the skip advisory`,
+    );
+    // Same gate the action step itself uses — not a different guard that
+    // happens to also mention "skip".
+    const actionStep = doc.jobs.review.steps.find((s) => s && typeof s.uses === 'string' && s.uses.includes('claude-code-action'));
+    assert.equal(
+      step.if.match(/steps\.guard\.outputs\.skip\s*!=\s*'true'/)[0],
+      actionStep.if.match(/steps\.guard\.outputs\.skip\s*!=\s*'true'/)[0],
+      `${tmpl}: Fallback summary's guard clause must match the action step's literal condition`,
+    );
   }
 });
 
@@ -944,7 +994,7 @@ test('all 3 rendered workflow templates pass bot-login: github-actions[bot] to s
   }
 });
 
-test('all 3 rendered workflow templates: skip-advisory dedup query filters github-actions[bot]', async () => {
+test('all 3 rendered workflow templates: the review-comment dedup identity is github-actions[bot]', async () => {
   // REGRESSION GUARD: clud-bug-review on PR #114 caught that the
   // Guard step's skip-dedup query filtered claude[bot] but the
   // accompanying gh pr comment posts under github-actions[bot]
@@ -952,14 +1002,27 @@ test('all 3 rendered workflow templates: skip-advisory dedup query filters githu
   // run, stacking duplicate "Clud Bug skipped" advisories on every
   // pull_request: synchronize on a long-running fork/bot PR.
   // Mirror of the strict-mode-gate identity contract — pin it.
+  //
+  // clud-bug#259 item 1 moved this dedup off a per-step query
+  // (`startswith("## 🐛 Clud Bug skipped")`, which only ever matched
+  // the skip advisory) and onto the shared `upsert_review_comment`
+  // helper's `<!-- written-by: ... -->` marker search, which now
+  // covers every post site. The regression this guards against is
+  // unchanged: the identity that query filters on MUST be
+  // github-actions[bot], the actual GITHUB_TOKEN posting identity.
   for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
     const out = await renderFile(join(TEMPLATES, tmpl), {
       REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: templateLanguage(tmpl) }),
     });
     assert.match(
       out,
-      /select\(\.user\.login == "github-actions\[bot\]" and \(\.body \| startswith\("## 🐛 Clud Bug skipped"\)\)\)/,
-      `${tmpl}: skip-advisory dedup query must filter github-actions[bot] (the GITHUB_TOKEN identity), not claude[bot]`,
+      /local identity='github-actions\[bot\]'/,
+      `${tmpl}: upsert_review_comment's identity must be github-actions[bot] (the GITHUB_TOKEN identity), not claude[bot]`,
+    );
+    assert.match(
+      out,
+      /select\(\.user\.login == \\"\$\{identity\}\\" and \(\.body \| contains\(\\"\$\{marker\}\\"\)\)\)/,
+      `${tmpl}: upsert_review_comment's search query must filter by the identity variable, not a hardcoded or different login`,
     );
   }
 });

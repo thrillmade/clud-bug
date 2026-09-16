@@ -78,6 +78,7 @@ clud-bug
 │   ├── branch-protection.test.js
 │   ├── build-bundle.test.js
 │   ├── check-verdict.test.js
+│   ├── cli-resolution-isolation.test.js
 │   ├── cli.test.js
 │   ├── config-command.test.js
 │   ├── config-docs.test.js
@@ -104,6 +105,7 @@ clud-bug
 │   ├── release-discipline.test.js
 │   ├── render-review.test.js
 │   ├── render.test.js
+│   ├── review-comment-upsert.test.js
 │   ├── review-context.test.js
 │   ├── review-prompt-push.test.js
 │   ├── review-prompt.test.js
@@ -111,6 +113,7 @@ clud-bug
 │   ├── review-writeback.test.js
 │   ├── review.test.js
 │   ├── skill-authoring-docs.test.js
+│   ├── skill-read-cap-allowlist.test.js
 │   ├── skill-usage-aggregation.test.js
 │   ├── skill-usage.test.js
 │   ├── skills-base-ref.test.js
@@ -120,6 +123,7 @@ clud-bug
 │   ├── strict-mode-gate-base-ref.test.js
 │   ├── strict-mode-gate-ci-lint.test.js
 │   ├── strict-mode-gate-classifier.test.js
+│   ├── strict-mode-gate-comment-window.test.js
 │   ├── update-notifier.test.js
 │   ├── update-pre-push.test.js
 │   ├── update-skill-usage.test.js

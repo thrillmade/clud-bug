@@ -23,6 +23,15 @@ export function extractFirstReviewHeaderLine(body) {
   return m ? m[0] : null;
 }
 
+// HIGH: `comments` is expected to already be narrowed by the caller
+// (action.yml) to ones authored by `botLogin`, fetched with `gh api
+// --paginate` (not a single windowed page) — never further narrowed to a
+// `<!-- written-by: ... -->` marker. That marker is `upsert_review_comment`'s
+// own anchor, stamped by the identity IT posts under; this gate's default
+// `bot-login`, `claude[bot]` (third-party `anthropics/claude-code-action`),
+// never stamps it, so requiring it there finds zero comments under the
+// action's own documented default usage and fails the gate open. Identity
+// is the sole precondition; this function does the rest itself, below.
 export function selectReviewHeader(comments, botLogin) {
   if (!Array.isArray(comments)) return null;
   if (typeof botLogin !== 'string' || !botLogin) return null;
@@ -49,7 +58,8 @@ export function isCriticalReviewHeader(headerLine) {
 
 // Step 2 (BB.3 per-skill check-runs): returns the full body of the
 // latest clud-bug review comment, used as the source for per-skill scan
-// outcome extraction.
+// outcome extraction. Same identity-only pre-filter contract as
+// selectReviewHeader above (HIGH — recency-window fail-open) — see its comment.
 export function selectReviewBody(comments, botLogin) {
   if (!Array.isArray(comments)) return null;
   if (typeof botLogin !== 'string' || !botLogin) return null;

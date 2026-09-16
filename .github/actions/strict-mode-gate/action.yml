@@ -144,10 +144,44 @@ runs:
           exit 1
         fi
 
-        # Fetch all bot-authored PR comments as JSON. gh api returns them
-        # in created order; we pass desc so newest is first, matching what
-        # selectReviewHeader walks. Pipe to Node for selection.
-        COMMENTS_JSON=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100")
+        # Fetch EVERY PR comment (HIGH — recency-window fail-open on a busy
+        # PR). A single page of the newest-or-oldest 100 comments lets this
+        # gate's own review comment age out of the fetch window: workflow.
+        # yml.tmpl's `upsert_review_comment` edits ONE comment in place, so
+        # its `created_at` never advances while unrelated discussion piles
+        # up around it on the PR — a windowed fetch (`sort=created&
+        # direction=desc&per_page=100`, no `--paginate`) can stop returning
+        # it entirely once ~100 other comments land after it. This gate
+        # then sees no review comment at all ("NONE"), and NONE is
+        # advisory — a PR with real critical findings gets a green check.
+        # `--paginate` walks every page so the comment can never fall out
+        # of view.
+        #
+        # The `jq` filter narrows the merged result to comments authored by
+        # $BOT_LOGIN — IDENTITY, not the `<!-- written-by: ... -->` marker.
+        # This action's documented default, `bot-login: claude[bot]` (see
+        # `inputs:` above), is `anthropics/claude-code-action`'s own
+        # identity — third-party code this repo does not control and that
+        # never stamps that marker. Filtering on marker-presence there
+        # finds ZERO comments no matter how many `claude[bot]` posted,
+        # COMMENTS_JSON comes back `[]`, the verdict is "NONE" (advisory),
+        # and a PR with real critical findings gets a green check under the
+        # action's own documented default usage — fail OPEN. selectReviewHeader
+        # (classifier.mjs) already re-derives identity from each comment's
+        # `.user.login` and walks newest-first for the header line; the marker
+        # is that helper's own concern if it ever needs one, never a
+        # precondition this fetch imposes before a comment is considered at
+        # all. Pipe the identity-narrowed result to Node for header extraction.
+        #
+        # `gh api --paginate` prints each page as its OWN top-level JSON
+        # value ("Each page is a separate JSON array or object" — `gh api
+        # --help`), not one merged array — piping that straight into a jq
+        # program that assumes a single document breaks on the second
+        # page. `--jq '.[]'` unwraps each page into one JSON object per
+        # line as gh walks it; the standalone `jq -s` (slurp) below then
+        # collects that whole NDJSON stream into ONE array before filtering.
+        COMMENTS_JSON=$(gh api --paginate "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" --jq '.[]' \
+          | jq -s --arg bot "${BOT_LOGIN}" '[.[] | select((.user.login // "") == $bot)]')
 
         # Returns "CRITICAL", "CLEAN", or "NONE" (no review header found).
         # "CLEAN" includes both the strict-mode "— clean" header and the
@@ -265,7 +299,17 @@ runs:
         # jq filter as the gate, so per-skill check-runs were silently
         # disabled on every install with strictSkills since BB.3 shipped
         # in v0.5.10. Caught by both bots on PR #61.
-        COMMENTS_JSON=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?sort=created&direction=desc&per_page=100")
+        #
+        # HIGH (same fix as the gate step above): a windowed,
+        # recency-sorted fetch lets THIS step's source comment age out too,
+        # silently disabling every per-skill check-run on a busy PR.
+        # `--paginate` + the identity filter (never the written-by marker —
+        # see the gate step above for why requiring it fails open under
+        # this action's own documented default `bot-login`) apply here
+        # unchanged; same reason for `--jq '.[]' | jq -s` over a bare
+        # `--paginate` piped straight into a jq array literal.
+        COMMENTS_JSON=$(gh api --paginate "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" --jq '.[]' \
+          | jq -s --arg bot "${BOT_LOGIN}" '[.[] | select((.user.login // "") == $bot)]')
         LATEST=$(SKILLS_LIB="$SKILLS_LIB" BOT_LOGIN="$BOT_LOGIN" COMMENTS_JSON="$COMMENTS_JSON" node -e "
           import('file://' + process.env.SKILLS_LIB).then(({ selectReviewBody }) => {
             const comments = JSON.parse(process.env.COMMENTS_JSON || '[]');
