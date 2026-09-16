@@ -142,6 +142,15 @@
 //   edits — which is why `init`/`update` also write `.claude/agents/
 //   clud-bug-reviewer.md`, the subagent definition the recipe dispatches.
 
+// #253 residual (ruling 1) — ONE owner for the §6.7 declaration's suite-
+// detection pattern and the logmind-line pattern the shell-embedded parsers
+// below render into generated JS/shell text: both come from src/core, not
+// from a second copy hand-typed here. Both modules are pure (no I/O, no
+// process state), so importing them costs this dependency-free file nothing
+// at runtime beyond the two string constants it actually uses.
+import { TEST_FILE_PATTERN, NPM_INIT_TEST_PLACEHOLDER_PATTERN } from '../core/detect.js';
+import { LOGMIND_TESTS_LINE_PATTERN } from '../core/tests-declaration.js';
+
 /** Stable marker embedded in our hook so re-runs — and upgrades from the old,
  * broken `type: agent` hook — replace it in place. */
 export const CLUD_BUG_HOOK_MARKER = 'clud-bug-local-review';
@@ -760,6 +769,42 @@ export function mergeAttestationHooks(existing: unknown): ClaudeSettings {
   return mergeSettingsHooks(existing, null);
 }
 
+/**
+ * The other direction of `mergeLocalReviewHook`: strips clud-bug's
+ * commit-review entry out of `.claude/settings.json`, leaving the
+ * harness-attestation entries (and everything else) exactly where they are.
+ *
+ * #253 residual / SPEC 2.0 §4.1: `clud-bug update` calls this when
+ * `review.trigger` no longer names the commit surface, so the manifest stays
+ * the ONE source of truth for which hooks are installed — the hook entry's
+ * mere presence in a settings.json nobody has reconciled in a while stops
+ * being a second, driftable record of it. `mergeAttestationHooks` above
+ * deliberately leaves a commit-review entry alone (its own doc comment says
+ * so); this is the call that actually removes one.
+ */
+export function removeLocalReviewHook(existing: unknown): ClaudeSettings {
+  const base: ClaudeSettings =
+    existing && typeof existing === 'object' ? { ...(existing as ClaudeSettings) } : {};
+  const hooks: Record<string, HookMatcherEntry[]> = { ...(base.hooks ?? {}) };
+
+  const priorPost = Array.isArray(hooks.PostToolUse) ? hooks.PostToolUse : [];
+  const review = splitOurEntries(priorPost, CLUD_BUG_HOOK_MARKER);
+  const dispatch = splitOurEntries(review.others, ATTESTATION_HOOK_MARKER);
+  hooks.PostToolUse = [
+    ...dispatch.others,
+    withCoLocated(buildAttestDispatchHook(), dispatch.coLocated),
+  ];
+  // A user hook co-located INSIDE our commit-review matcher must survive our
+  // entry's removal — re-attach it as its own bare `Bash` entry rather than
+  // let it vanish along with the entry that used to carry it.
+  if (review.coLocated.length > 0) {
+    hooks.PostToolUse = [{ matcher: 'Bash', hooks: review.coLocated }, ...hooks.PostToolUse];
+  }
+
+  base.hooks = hooks;
+  return base;
+}
+
 function mergeSettingsHooks(existing: unknown, reviewCommand: string | null): ClaudeSettings {
   const base: ClaudeSettings =
     existing && typeof existing === 'object' ? { ...(existing as ClaudeSettings) } : {};
@@ -848,6 +893,37 @@ const TESTS_DECL_PARSER =
   'else if(t&&typeof t==="object"&&typeof t.command==="string")process.stdout.write(t.command.trim())}' +
   'catch(e){}})';
 
+/**
+ * #253 residual (ruling 1) — ONE owner for the §6.7 declaration: parses a
+ * top-level `tests:` scalar out of `.logmind/config.yml` on stdin, the SAME
+ * precedence `readTestsDeclaration` (src/core/tests-declaration.ts) gives it
+ * — logmind wins where present, so the hook and `clud-bug config`/init can
+ * never disagree about which file's declaration is the real one. Built from
+ * `LOGMIND_TESTS_LINE_PATTERN` (that module's export), not a hand-copied
+ * pattern. Ported logic, not shared bytes — a git hook is a `node -e`
+ * argument, `parseLogmindTests` is not — so the two are kept from drifting
+ * apart by test/config-parity.test.js pinning the shared pattern, and
+ * test/pre-push-hook.test.js running matching fixtures through both.
+ *
+ * Quote/comment handling mirrors `parseLogmindTests`'s own `stripComment`:
+ * a value wrapped in matching quotes takes exactly what's inside them
+ * (never truncated at a `#` inside the quotes); anything else drops a
+ * trailing `# comment`. `\x22`/`\x27` (not literal `"`/`'`) so this stays
+ * embeddable in `node -e '…'` without escaping either quote character. */
+const LOGMIND_TESTS_PARSER =
+  'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
+  'var lines=s.split(/\\r?\\n/);' +
+  'for(var i=0;i<lines.length;i++){' +
+  `var m=/${LOGMIND_TESTS_LINE_PATTERN}/.exec(lines[i]);` +
+  'if(!m)continue;' +
+  'var raw=(m[1]||"").trim();' +
+  'var q=/^([\\x22\\x27])([\\s\\S]*?)\\1\\s*(?:#.*)?$/.exec(raw);' +
+  'var val;' +
+  'if(q){val=q[2]||""}else{var h=raw.indexOf("#");val=(h===-1?raw:raw.slice(0,h)).trim()}' +
+  'if(val)process.stdout.write(val);' +
+  'return}' +
+  '})';
+
 // #319 — the other half of §6.7's declaration matrix (#276 deliberately left
 // this out; see the block comment above buildPrePushHookScript). Quoting the
 // table in full:
@@ -870,30 +946,39 @@ const TESTS_DECL_PARSER =
 // purely local, no-network, read from the SAME base ref as the declaration
 // (§6.3 applied on the machine).
 
-/** §6.7 suite detection, signal 1: filenames on the base ref matching common
- * test-file conventions across languages — `foo.test.ts`, `foo_test.go`,
- * `test_foo.py`, a `tests/`/`__tests__/`/`spec/` directory, `foo_spec.rb`.
- * Matched with `grep -Eiq` against `git ls-tree -r --name-only <baseref>`.
- * A heuristic, not a proof: false positives cost a one-line `.clud-bug.json`
- * declaration (itself exempted below); false negatives fall back to signal 2
- * or to detection reading `no`, which only ever weakens a verdict toward
- * `pass`/`block-with-generic-message`, never toward a false pass on a real
- * suite (that direction is signal 2's job for the common JS case, and the
- * conservative default otherwise). Single-quote-free — embedded in
- * `grep -Eiq '…'`. */
-const TEST_FILE_PATTERN =
-  '(^|/)(tests?|__tests__|spec)/|\\.(test|spec)\\.[cm]?[jt]sx?$|' +
-  '(^|/)test_[^/]+\\.py$|_test\\.py$|_test\\.go$|_spec\\.rb$';
+// §6.7 suite detection, signal 1: filenames on the base ref matching common
+// test-file conventions across languages — `foo.test.ts`, `foo_test.go`,
+// `test_foo.py`, a `tests/`/`__tests__/`/`spec/` directory, `foo_spec.rb`.
+// Matched with `grep -Eiq` against `git ls-tree -r --name-only <baseref>`.
+// A heuristic, not a proof: false positives cost a one-line `.clud-bug.json`
+// declaration (itself exempted below); false negatives fall back to signal 2
+// or to detection reading `no`, which only ever weakens a verdict toward
+// `pass`/`block-with-generic-message`, never toward a false pass on a real
+// suite (that direction is signal 2's job for the common JS case, and the
+// conservative default otherwise).
+//
+// #253 residual (ruling 1): imported from src/core/detect.ts (`TEST_FILE_PATTERN`,
+// the top of this file) rather than a second copy hand-typed here — the
+// pattern the WORKING-TREE detector (`detectTestSuite`, used by `init`/
+// `clud-bug config set tests`) and the one THIS base-ref grep uses are now
+// the SAME BINDING, not two literals a future edit can let drift. Single-
+// quote-free (no apostrophe anywhere in it) so it interpolates cleanly into
+// `grep -Eiq '…'` below; test/config-parity.test.js pins the generated
+// script's copy byte-equal to the export, in case that ever stops holding.
 
 /** §6.7 suite detection, signal 2: `package.json`'s own `scripts.test`, when
  * it is a REAL command — not the placeholder every `npm init` writes
  * (`"echo \"Error: no test specified\" && exit 1"`), which declares nothing
- * about the repository. Single-quote-free, same reason as TESTS_DECL_PARSER. */
+ * about the repository. Single-quote-free, same reason as TESTS_DECL_PARSER.
+ * #253 residual (ruling 1): the placeholder pattern is `NPM_INIT_TEST_PLACEHOLDER_PATTERN`
+ * (src/core/detect.ts) interpolated in, not hand-copied — same rule as
+ * TEST_FILE_PATTERN above, for the OTHER heuristic this hook shares with
+ * `detectPackageTestScript`. */
 const PKG_TEST_SCRIPT_PARSER =
   'let s="";process.stdin.on("data",function(d){s+=d}).on("end",function(){' +
   'try{var j=JSON.parse(s);var t=j&&j.scripts&&j.scripts.test;' +
   'if(typeof t==="string"){var v=t.trim();' +
-  'var isPlaceholder=/^echo\\s+"Error:\\s*no\\s*test\\s*specified"\\s*&&\\s*exit\\s*1$/i.test(v);' +
+  `var isPlaceholder=/${NPM_INIT_TEST_PLACEHOLDER_PATTERN}/i.test(v);` +
   'if(v&&!isPlaceholder)process.stdout.write("1")}}' +
   'catch(e){}})';
 
@@ -1024,11 +1109,24 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     // failing takes the whole verdict fail-open (3c), not just its own row.
     `nodeerror=0`,
     `if [ -n "$baseref" ]; then`,
-    `  cfg=$(git show "$baseref:.claude/skills/.clud-bug.json" 2>/dev/null </dev/null) || cfg=`,
-    `  if [ -n "$cfg" ]; then`,
-    `    if ! testdecl=$(printf '%s' "$cfg" | node -e '${TESTS_DECL_PARSER}' 2>/dev/null); then`,
+    // #253 residual (ruling 1): ONE owner for the declaration means the SAME
+    // precedence `readTestsDeclaration` gives it — .logmind/config.yml wins
+    // where it declares one, else .clud-bug.json. Read from the same base
+    // ref as everything else in this step (§6.3 applied on the machine).
+    `  logmindcfg=$(git show "$baseref:.logmind/config.yml" 2>/dev/null </dev/null) || logmindcfg=`,
+    `  if [ -n "$logmindcfg" ]; then`,
+    `    if ! testdecl=$(printf '%s' "$logmindcfg" | node -e '${LOGMIND_TESTS_PARSER}' 2>/dev/null); then`,
     `      testdecl=`,
     `      nodeerror=1`,
+    `    fi`,
+    `  fi`,
+    `  if [ -z "$testdecl" ] && [ "$nodeerror" = 0 ]; then`,
+    `    cfg=$(git show "$baseref:.claude/skills/.clud-bug.json" 2>/dev/null </dev/null) || cfg=`,
+    `    if [ -n "$cfg" ]; then`,
+    `      if ! testdecl=$(printf '%s' "$cfg" | node -e '${TESTS_DECL_PARSER}' 2>/dev/null); then`,
+    `        testdecl=`,
+    `        nodeerror=1`,
+    `      fi`,
     `    fi`,
     `  fi`,
     `fi`,
@@ -1063,18 +1161,21 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `#         read from the OLD base ref, so the one push that ADDS a missing`,
     `#         declaration (or replaces a dishonest "none") would otherwise be`,
     `#         judged by the very state it corrects. Recognized narrowly: EVERY`,
-    `#         changed path must be one clud-bug itself owns as install/config`,
-    `#         mechanism — the declaration file, and the settings file the`,
-    `#         commit-review hook is merged into (init/update can write both in`,
-    `#         the SAME bootstrap commit: e.g. \`--hook-trigger both\` merges the`,
-    `#         commit hook into .claude/settings.json and declares "tests" in`,
-    `#         one run — the original one-file check never fired for that real`,
-    `#         flow, wedging exactly the push §6.7 says must be allowed). Widened`,
-    `#         to this fixed pair, not to .claude/ broadly: neither file can`,
-    `#         carry user feature content, so the anti-smuggling property the`,
-    `#         "also changes other files" case below tests still holds. Multi-ref`,
-    `#         pushes share $range's existing first-ref-only limitation (see`,
-    `#         "N refs were pushed" below) — not widened here.`,
+    `#         changed path must be one clud-bug (or logmind, #253 residual —`,
+    `#         the declaration can live in EITHER file, ruling 1) itself owns`,
+    `#         as install/config mechanism — the two files the declaration can`,
+    `#         live in, and the settings file the commit-review hook is merged`,
+    `#         into (init/update can write more than one of these in the SAME`,
+    `#         bootstrap commit: e.g. \`--hook-trigger both\` merges the commit`,
+    `#         hook into .claude/settings.json and declares "tests" in one run`,
+    `#         — the original one-file check never fired for that real flow,`,
+    `#         wedging exactly the push §6.7 says must be allowed). Widened to`,
+    `#         this fixed set, not to .claude/ or .logmind/ broadly: none of`,
+    `#         these three can carry user feature content, so the anti-`,
+    `#         smuggling property the "also changes other files" case below`,
+    `#         tests still holds. Multi-ref pushes share $range's existing`,
+    `#         first-ref-only limitation (see "N refs were pushed" below) —`,
+    `#         not widened here.`,
     `declonlychange=0`,
     `if [ -n "$range" ]; then`,
     `  changedpaths=$(git diff --name-only "$range" 2>/dev/null </dev/null) || changedpaths=`,
@@ -1082,7 +1183,7 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `    declonlychange=1`,
     `    while IFS= read -r changedpath; do`,
     `      case "$changedpath" in`,
-    `        .claude/skills/.clud-bug.json|.claude/settings.json) ;;`,
+    `        .claude/skills/.clud-bug.json|.claude/settings.json|.logmind/config.yml) ;;`,
     `        *) declonlychange=0 ;;`,
     `      esac`,
     `    done <<CLUD_BUG_CHANGED`,
@@ -1109,14 +1210,14 @@ export function buildPrePushHookScript(pin: string = 'next'): string {
     `  printf 'clud-bug: this push only changes clud-bug local-gate config (.claude/skills/.clud-bug.json and/or .claude/settings.json) — allowed regardless of the state it replaces (SPEC 6.7: the config that unblocks pushing must itself be pushable).\\n' >&2`,
     `elif [ -z "$testdecl" ]; then`,
     `  if [ "$suitedetected" = 1 ]; then`,
-    `    printf 'clud-bug: PUSH BLOCKED — %s has test files but no "tests" declaration. SPEC 6.7: a repository with a detected suite that is not run blocks. Add "tests": "<command>" to .claude/skills/.clud-bug.json on the default branch, then push again.\\n' "$baseref" >&2`,
+    `    printf 'clud-bug: PUSH BLOCKED — %s has test files but no "tests" declaration. SPEC 6.7: a repository with a detected suite that is not run blocks. Run clud-bug config set tests "<command>" and land it on the default branch, then push again.\\n' "$baseref" >&2`,
     `  else`,
-    `    printf 'clud-bug: PUSH BLOCKED — %s has no "tests" declaration. SPEC 6.7 requires one: add "tests": "<command>" (or "tests": "none" if there truly is no suite) to .claude/skills/.clud-bug.json on the default branch, then push again.\\n' "$baseref" >&2`,
+    `    printf 'clud-bug: PUSH BLOCKED — %s has no "tests" declaration. SPEC 6.7 requires one: run clud-bug config set tests "<command>" (or clud-bug config set tests none if there truly is no suite) and land it on the default branch, then push again.\\n' "$baseref" >&2`,
     `  fi`,
     `  exit 1`,
     `elif [ "$testdecl" = "none" ]; then`,
     `  if [ "$suitedetected" = 1 ]; then`,
-    `    printf 'clud-bug: PUSH BLOCKED — %s declares "tests": "none" but has test files. SPEC 6.7: a "none" declaration that contradicts the repository blocks. Declare the real command in .claude/skills/.clud-bug.json on the default branch, then push again.\\n' "$baseref" >&2`,
+    `    printf 'clud-bug: PUSH BLOCKED — %s declares "tests": "none" but has test files. SPEC 6.7: a "none" declaration that contradicts the repository blocks. Run clud-bug config set tests "<command>" and land it on the default branch, then push again.\\n' "$baseref" >&2`,
     `    exit 1`,
     `  fi`,
     `  printf 'clud-bug: %s declares "tests": "none" — no mechanical check to run.\\n' "$baseref" >&2`,

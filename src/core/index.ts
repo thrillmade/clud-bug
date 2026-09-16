@@ -259,6 +259,7 @@ export {
   type ReviewPlanSkill,
   type ResolveReviewPassesInput,
   type ResolveReviewPassesResult,
+  type ReadReviewPassesOptions,
 } from './review-plan.js';
 export {
   perCallCeiling,
@@ -303,7 +304,45 @@ export {
   BUILTIN_DESIGN_CONFIG,
   type DesignConfig,
   type DesignGate,
+  type ReadDesignConfigOptions,
 } from './design.js';
+// SPEC §1.6 (clud-bug#271) — the setting schema: what a setting is called,
+// where it lives on disk, what it may hold, and who may write it. Exported so
+// a consumer that re-derives a gate setting from the base ref reads the same
+// key list this CLI writes, rather than its own copy of it.
+export {
+  CONFIG_KEYS,
+  CONFIG_KEY_NAMES,
+  NAMED_CONFIG_KEYS,
+  HONEST_GUARANTEE,
+  NOT_IN_SPEC,
+  describeDomain,
+  getAt,
+  guardWrite,
+  humanOwnedRefusal,
+  parseValueArg,
+  resolveKey,
+  setAt,
+  specLabel,
+  toolOwnedRefusal,
+  unsetAt,
+  validateValue,
+  type ConfigKeyDef,
+  type ConfigOwner,
+  type GuardResult,
+  type ResolveKeyResult,
+  type ValidateResult,
+} from './config-schema.js';
+// SPEC §6.7's declaration, resolved from the two files that can carry it
+// (§1.6's table names `.logmind/config.yml`; clud-bug-only installs have
+// only `.clud-bug.json`).
+export {
+  readTestsDeclaration,
+  parseLogmindTests,
+  type TestsDeclaration,
+  type TestsDeclarationSource,
+  type ReadTestsDeclarationInput,
+} from './tests-declaration.js';
 // Phase ZP2: default-on notary config resolver — the shared brain for
 // `post-check-run` (submit path) and `review-prompt` (§5 recipe rendering)
 // so both resolve the same notary origin (or opt-out) the same way.
@@ -346,7 +385,6 @@ export {
 export {
   buildBundle,
   parseBundle,
-  notaryResponseIsRejection,
   NOTARY_BUNDLE_VERSION,
   NOTARY_PROTOCOL_VERSION,
   type NotaryBundle,
@@ -354,6 +392,18 @@ export {
   type NotarySeverity,
   type GroundingKind,
 } from './notary-bundle.js';
+// #269 — SPEC §6.5: the notary HTTP-client boundary. ONE classifier decides
+// terminal (authoritative decline) vs. transient (failed to answer) for every
+// call site, and ONE bounded retry-with-backoff helper is what a `transient`
+// outcome feeds before the CLI falls back to the self-attested check.
+export {
+  classifyNotaryAttempt,
+  requestNotaryWithRetry,
+  NOTARY_MAX_ATTEMPTS,
+  type NotaryAttemptOutcome,
+  type NotaryResponseClass,
+  type NotaryRetryResult,
+} from './notary-client.js';
 // #266 — SPEC §4.4 harness attestation: the reader half of the two committed
 // Claude Code hooks in `cli/hooks.ts`. `collectAttestation` is the one place
 // that decides what counts as a record (dispatch ⋈ completed, both at this

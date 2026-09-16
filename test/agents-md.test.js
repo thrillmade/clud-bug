@@ -40,6 +40,15 @@ test('renderBlock: strictMode false renders advisory text', () => {
   assert.match(block, /Strict mode is \*\*off\*\*/);
 });
 
+// #253 ruling 2 — strict mode is humans-only (SPEC §1.6): the block must say
+// so and point at the refusal, not at hand-editing the JSON with no context.
+test('renderBlock: strict-mode line names it humans-only and that `config set` refuses', () => {
+  const block = renderBlock({ version: '0.5.1', strictMode: true });
+  assert.match(block, /humans only/i);
+  assert.match(block, /config set review\.strict_mode/);
+  assert.match(block, /refuses/);
+});
+
 // --- 0.A.5 (v0.6.6): block trim — full rules move to clud-bug-collaboration skill ---
 
 test('renderBlock v2: trimmed to a pointer + strict-mode toggle (≤600 chars)', () => {
@@ -917,11 +926,126 @@ test('applyToRepo: a full marker pair inside a closed fence stays byte-identical
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('applyToRepo: with two live blocks in AGENTS.md the FIRST is refreshed and the rest are left alone, stably', async () => {
-  // The documented contract, on the bytes: upsertBlock owns the first span and
-  // nothing else, so a file that already carried two blocks keeps the second
-  // one as the user's problem rather than growing a third on every run.
-  // Healing such a file is a separate decision (#253 does not ask for it).
+// --- #253 residual (a): a marker quoted as INLINE CODE, not just fenced -----
+//
+// Round 3 above handles a marker quoted inside a FENCED (``` or ~~~) example.
+// The same risk exists one level down, at inline code: README.md:43 writes
+// the marker pair inside a single backtick span in a sentence, not a fenced
+// block — `isInsideFence` alone never sees it, because there is no fence.
+
+test('upsertBlock: a marker pair quoted as INLINE CODE (not fenced) is not live', () => {
+  const before = [
+    '# README',
+    '',
+    'Init briefs other agents by adding a `<!-- clud-bug-start --> ... <!-- clud-bug-end -->` block.',
+    '',
+  ].join('\n');
+  const quoted = '`<!-- clud-bug-start --> ... <!-- clud-bug-end -->`';
+  const after = upsertBlock(before, '<!-- clud-bug-start -->\nNEW LIVE BLOCK\n<!-- clud-bug-end -->');
+  assert.ok(after.includes(quoted), 'the inline-code mention must survive byte-for-byte');
+  assert.match(after, /NEW LIVE BLOCK/, 'a live block must still be appended — the inline mention is not it');
+  assert.equal(after.match(/<!-- clud-bug-start -->/g).length, 2, 'the quoted mention + the appended live block');
+});
+
+test('removeBlock: a marker pair quoted as INLINE CODE (not fenced) survives untouched', () => {
+  const before = 'See `<!-- clud-bug-start --> ... <!-- clud-bug-end -->` for the syntax.\n';
+  assert.equal(removeBlock(before), before);
+});
+
+test('liveBlockSpans (via upsertBlock): a BARE marker in plain prose — no backticks, no fence — IS live', () => {
+  // The other half of the same ruling: only the two QUOTED forms (fenced,
+  // inline code) are excluded. A marker typed directly into a sentence with
+  // no code formatting at all is read as the real thing — a doc that wants
+  // to talk ABOUT the marker without going live has to quote it one of those
+  // two ways (why README.md:43 itself was fixed to wrap its mention in
+  // backticks, rather than leaving it bare).
+  const before = [
+    '# NOTES',
+    '',
+    'Watch for a line like <!-- clud-bug-start --> appearing in a diff.',
+    '<!-- clud-bug-end -->',
+    '',
+  ].join('\n');
+  const after = upsertBlock(before, '<!-- clud-bug-start -->\nNEW\n<!-- clud-bug-end -->');
+  // Text BEFORE the bare marker, on the same line, sits outside the span and
+  // survives — same as any live block. The marker itself and everything
+  // through its paired end marker (the sentence's own tail) is what the bare
+  // marker being read as LIVE means gets replaced.
+  assert.match(after, /^Watch for a line like /m, 'text before the bare marker must survive');
+  assert.doesNotMatch(after, /appearing in a diff/, 'a bare marker in prose must be read as live and its own span replaced');
+  assert.match(after, /NEW/);
+});
+
+// --- #253 residual (b): a fence-looking line hidden inside raw HTML --------
+//
+// CommonMark never parses a `<!-- ... -->` comment's contents as markdown, so
+// a line inside one that happens to start with ``` is not a real fence — but
+// this file's own line-based fenceRanges() scan cannot tell the difference,
+// and can end up pairing that phantom opener with a REAL fence's closer
+// further down. The doc's own fenced example (meant to quote a lone start
+// marker as documentation, the same shape round 3 above covers) then loses
+// its closer to the phantom, so its start marker would be read as live and,
+// with no end marker before the doc's OWN trailing fence, could swallow real
+// content down to whatever end marker comes next. Rejecting any candidate
+// whose span straddles a fence boundary is the guard against exactly that
+// confused fence map, rather than trusting it either way.
+
+test('upsertBlock: a fence-looking line inside an HTML comment must not turn a quoted example into a live block', () => {
+  const before = [
+    'Example:',
+    '<!-- clud-bug-start -->',
+    '<!--',
+    '```',
+    '-->',
+    '<!-- clud-bug-end -->',
+    'Trailing real fence:',
+    '```',
+    'closer content',
+    '```',
+    '',
+  ].join('\n');
+  const after = upsertBlock(before, '<!-- clud-bug-start -->\nNEW LIVE BLOCK\n<!-- clud-bug-end -->');
+  // The confused example must be left exactly as written — never spliced
+  // into, never used to swallow the real trailing fence below it.
+  assert.ok(after.startsWith(before.slice(0, -1)), 'the confused example region was altered');
+  // A live block still gets installed — appended fresh, since nothing in the
+  // confused region above was a real, unambiguous live block to refresh.
+  assert.match(after, /NEW LIVE BLOCK/);
+  assert.equal(after.match(/<!-- clud-bug-start -->/g).length, 2, 'the quoted example + the appended live block');
+});
+
+// --- #253 residual (c): one separator per GAP, not per SPAN ----------------
+
+test('removeBlock: two ADJACENT live blocks (nothing but blank lines between) collapse to ONE separator, not two', () => {
+  // Before the fix, each span emitted its own separator on removal — two
+  // touching blocks left the blank lines from both sides stacked instead of
+  // collapsed to the one gap they actually left behind.
+  const before = [
+    'HEAD',
+    '',
+    '<!-- clud-bug-start -->',
+    'A',
+    '<!-- clud-bug-end -->',
+    '',
+    '<!-- clud-bug-start -->',
+    'B',
+    '<!-- clud-bug-end -->',
+    '',
+    'TAIL',
+    '',
+  ].join('\n');
+  assert.equal(removeBlock(before), 'HEAD\n\nTAIL\n');
+  assert.doesNotMatch(removeBlock(before), /\n\n\n/, 'stacked blank lines from two separators, not one');
+});
+
+test('applyToRepo: with two live blocks in AGENTS.md, update COLLAPSES to one (#253 migration ruling)', async () => {
+  // #253's fourth residual, ruled 2026-09-15: a file with more than one live
+  // block is damage from the shipped duplicate-append bug, not a state to
+  // leave alone. `update` collapses to ONE block (the first survives,
+  // refreshed; every other copy is removed) and reports the file in
+  // `collapsed` so the caller can print a one-line notice. This replaces the
+  // old contract this test used to pin ("the second block is not ours to
+  // rewrite") — that contract is exactly the bug #253 was filed against.
   const before = [
     'HEAD',
     '',
@@ -940,18 +1064,20 @@ test('applyToRepo: with two live blocks in AGENTS.md the FIRST is refreshed and 
   ].join('\n');
   const dir = await makeRepo({ 'AGENTS.md': before });
   try {
-    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const r1 = await applyToRepo(dir, { version: '0.7.0', strictMode: true });
     const after1 = await readFile(join(dir, 'AGENTS.md'), 'utf8');
     assert.doesNotMatch(after1, /OLD FIRST BLOCK/, 'run 1: the first block was not the one updated');
     assert.match(after1, /clud-bug v0\.7\.0/, 'run 1: the first block carries the new content');
-    assert.match(after1, /OLD SECOND BLOCK/, 'run 1: the second block is not ours to rewrite');
-    assert.equal(after1.match(/<!-- clud-bug-start -->/g).length, 2, 'run 1: still two blocks — no third appended');
+    assert.doesNotMatch(after1, /OLD SECOND BLOCK/, 'run 1: the second (duplicate) block must be removed');
+    assert.equal(after1.match(/<!-- clud-bug-start -->/g).length, 1, 'run 1: exactly one block remains');
     assert.ok(after1.startsWith('HEAD\n\n'), 'run 1: content above the first block must survive');
     assert.match(after1, /\nMIDDLE\n/, 'run 1: content between the two blocks must survive');
-    assert.ok(after1.endsWith('\nTAIL\n'), 'run 1: content after the second block must survive');
+    assert.ok(after1.endsWith('\nTAIL\n'), 'run 1: content after the removed second block must survive');
+    assert.deepEqual(r1.collapsed, ['AGENTS.md'], 'run 1: reports the file it collapsed');
 
-    await applyToRepo(dir, { version: '0.7.0', strictMode: true });
+    const r2 = await applyToRepo(dir, { version: '0.7.0', strictMode: true });
     assert.equal(await readFile(join(dir, 'AGENTS.md'), 'utf8'), after1, 'run 2: byte-identical to run 1');
+    assert.deepEqual(r2.collapsed, [], 'run 2: nothing left to collapse, and no repeat notice');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

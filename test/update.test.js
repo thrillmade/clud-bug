@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { runUpdate } from '../src/cli/update.js';
 import { DEFAULTS } from '../src/core/render.js';
 
@@ -24,6 +25,53 @@ async function makeRepo(files = {}) {
   }
   return dir;
 }
+
+// #271 — `update` is a WRITE path: it reads the manifest, stamps it, and
+// writes it back. A manifest it cannot parse used to read as a fresh empty
+// one, so the stamp at the end deleted every setting in the file and reported
+// success. Only ENOENT means "no file yet"; a stray comma means stop.
+const MALFORMED_MANIFEST = '{\n  "strictMode": true,\n  "ciChecks": ["build"],\n  "tests": "npm test",\n}\n';
+
+test('runUpdate: refuses a manifest it cannot parse, and leaves it byte-identical', async () => {
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+    '.github/workflows/clud-bug-review.yml': '# clud-bug-template-version: v0\n# old contents\n',
+    '.claude/skills/.clud-bug.json': MALFORMED_MANIFEST,
+  });
+  const path = join(dir, '.claude/skills/.clud-bug.json');
+  try {
+    await assert.rejects(
+      () => runUpdate({
+        cwd: dir, templatesDir: TEMPLATES, baselineDir: BASELINE, ourVersion: '0.3.0',
+        loadBaselineOpts: offlineLoadBaseline,
+      }),
+      (err) => {
+        assert.match(err.message, /\.clud-bug\.json/);
+        return true;
+      },
+    );
+    assert.equal(await readFile(path, 'utf8'), MALFORMED_MANIFEST);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// The exit code is the half a person actually sees: `clud-bug update` used to
+// print success and exit 0 over the wipe.
+test('clud-bug update exits non-zero on a manifest it cannot parse', async () => {
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+    '.github/workflows/clud-bug-review.yml': '# clud-bug-template-version: v0\n',
+    '.claude/skills/.clud-bug.json': MALFORMED_MANIFEST,
+  });
+  const path = join(dir, '.claude/skills/.clud-bug.json');
+  try {
+    const r = spawnSync(process.execPath, [join(REPO_ROOT, 'bin', 'clud-bug.js'), 'update'], {
+      cwd: dir, encoding: 'utf8', env: { ...process.env, CLUD_BUG_QUIET: '1' },
+    });
+    assert.notEqual(r.status, 0, `exit ${r.status}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /\.clud-bug\.json/);
+    assert.equal(await readFile(path, 'utf8'), MALFORMED_MANIFEST);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 
 test('runUpdate: short-circuits when no manifest and no workflow exist', async () => {
   const dir = await makeRepo({});

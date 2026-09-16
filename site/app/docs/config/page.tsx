@@ -5,9 +5,14 @@ const REPO_URL = 'https://github.com/thrillmade/clud-bug';
 export const metadata: Metadata = {
   title: 'Configuration — Clud Bug docs',
   description:
-    'Every .clud-bug.json option, with a small example each: strictMode, reviewContext, reviewPasses, design, autoResolve, and ciChecks — grounded in the modules that read them.',
+    'Every setting clud-bug reads, how to set it with `clud-bug config`, and which ones only a person may change — grounded in the modules that read them.',
   alternates: { canonical: '/docs/config' },
 };
+
+// Kept byte-identical to HONEST_GUARANTEE in src/core/config-schema.ts, which
+// owns the claim; test/config-docs.test.js fails if the two ever differ.
+const HONEST_GUARANTEE =
+  `This refusal only stops a tool that asks. Nothing stops an agent that writes the file directly — no local check can. What holds instead is the pair SPEC §1.6 names: a gate reads its settings from the pull request's base ref (§6.3), so an edit inside a pull request has no effect on the gate judging it, and the edit is a hunk in a diff a review reads like any other.`;
 
 export default function DocsConfig() {
   return (
@@ -24,33 +29,62 @@ export default function DocsConfig() {
           <span className="doc-eyebrow">§ Configuration</span>
           <h1 className="doc-title">The manifest.</h1>
           <p className="doc-lede">
-            Everything Clud Bug reads from a repository lives in one optional
-            file — <code>.clud-bug.json</code> at the root. Six blocks, each with
-            a safe default when absent, each grounded in a module you can open.
+            Everything Clud Bug reads from a repository lives in one file —{' '}
+            <code>.claude/skills/.clud-bug.json</code>. Nobody needs to open it:{' '}
+            <code>clud-bug config</code> sets every setting by name, refuses a
+            value a setting cannot take, and tells you what it can.
           </p>
         </header>
 
         <div className="doc-body">
           <p>
-            No block is required; an empty file, or no file at all, gives you the
-            defaults below. Each option maps to a module in{' '}
+            Nothing is required; an empty file, or no file at all, gives you the
+            defaults below. Each setting maps to a module in{' '}
             <a href={`${REPO_URL}/tree/main/src/core`} rel="noopener">
               src/core
             </a>{' '}
             that reads and normalizes it — a malformed value is tolerated and
-            falls back to its default rather than failing the review.
+            falls back to its default rather than failing the review, and a key
+            this version has never heard of is round-tripped untouched.
+          </p>
+
+          <h2>clud-bug config</h2>
+          <pre>
+            <code>{`clud-bug config list                       # every setting, its value, where it came from
+clud-bug config get review.ci_checks       # one value (add --json for the record)
+clud-bug config set review.ci_checks '["build","typecheck"]'
+clud-bug config unset review.ci_checks     # back to the documented default`}</code>
+          </pre>
+          <p>
+            The same command in a terminal and in a workflow: nothing here reads
+            a TTY, <code>CI</code>, or any agent marker. Exit codes are the
+            contract a script reads — <code>0</code> done, <code>1</code> a file
+            that could not be read or written (it is left exactly as it was),{' '}
+            <code>2</code> no such setting (with a did-you-mean), <code>3</code>{' '}
+            a value outside the domain, <code>4</code> refused.
+          </p>
+
+          <h2>Every setting</h2>
+          <p>
+            The left column is the name you type. The middle is where the value
+            lands in the file, which is camelCase for historical reasons and is
+            the only place those two spellings meet.
           </p>
 
           <table className="doc-table">
             <thead>
               <tr>
-                <th>Block</th>
+                <th>Setting</th>
+                <th>On disk</th>
                 <th>Default</th>
                 <th>What it governs</th>
               </tr>
             </thead>
             <tbody>
               <tr>
+                <td>
+                  <code>review.strict_mode</code> <strong>humans only</strong>
+                </td>
                 <td>
                   <code>strictMode</code>
                 </td>
@@ -61,12 +95,53 @@ export default function DocsConfig() {
               </tr>
               <tr>
                 <td>
-                  <code>reviewContext</code>
+                  <code>review.ci_checks</code>
                 </td>
-                <td>none</td>
-                <td>Trusted standing instructions that focus the review.</td>
+                <td>
+                  <code>ciChecks</code>
+                </td>
+                <td>every check</td>
+                <td>Narrows which CI checks a review reads as evidence.</td>
               </tr>
               <tr>
+                <td>
+                  <code>review.trigger</code>
+                </td>
+                <td>
+                  <code>reviewTrigger</code>
+                </td>
+                <td>
+                  <code>push</code>
+                </td>
+                <td>Whether the local review runs after a commit or before a push.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>review.auto_fix</code> <strong>humans only</strong>
+                </td>
+                <td>
+                  <code>autoFix</code>
+                </td>
+                <td>unset</td>
+                <td>
+                  Whether a reviewer may push a fix, and how many rounds. Read by the hosted App;
+                  the CLI does not push fixes.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>review.auto_resolve</code>
+                </td>
+                <td>
+                  <code>autoResolve</code>
+                </td>
+                <td>verified</td>
+                <td>How prior threads are re-checked on a fix-push.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>review.passes</code>
+                </td>
                 <td>
                   <code>reviewPasses</code>
                 </td>
@@ -77,29 +152,144 @@ export default function DocsConfig() {
               </tr>
               <tr>
                 <td>
-                  <code>design</code>
+                  <code>review.passes.blocking</code> <strong>humans only</strong>
                 </td>
-                <td>off</td>
-                <td>The optional visual design-critic pass.</td>
+                <td>
+                  <code>reviewPasses.blocking</code>
+                </td>
+                <td>none</td>
+                <td>Which passes turn the check red.</td>
               </tr>
               <tr>
                 <td>
-                  <code>autoResolve</code>
+                  <code>tests</code>
                 </td>
-                <td>verified</td>
-                <td>How prior threads are re-checked on a fix-push.</td>
+                <td>
+                  <code>tests</code>
+                </td>
+                <td>unset</td>
+                <td>
+                  The command run before every push, or <code>none</code>.
+                </td>
               </tr>
               <tr>
                 <td>
-                  <code>ciChecks</code>
+                  <code>review_context</code>
                 </td>
-                <td>every check</td>
-                <td>Narrows which CI checks a review reads as evidence.</td>
+                <td>
+                  <code>reviewContext</code>
+                </td>
+                <td>none</td>
+                <td>Trusted standing instructions that focus the review.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>review.cost_cap_usd</code>
+                </td>
+                <td>
+                  <code>perPrCapUsd</code>
+                </td>
+                <td>unset</td>
+                <td>
+                  Cumulative USD ceiling per pull request. Unset means no
+                  ceiling — and nothing enforces it yet, so setting it changes
+                  nothing today.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>review.strict_skills</code> <strong>humans only</strong>
+                </td>
+                <td>
+                  <code>strictSkills</code>
+                </td>
+                <td>none</td>
+                <td>Skills that get their own required check-run.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>review.notary</code>
+                </td>
+                <td>
+                  <code>notary</code>
+                </td>
+                <td>
+                  <code>true</code>
+                </td>
+                <td>Whether a local review certifies through the notary, or self-attests.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>design.enabled</code>
+                </td>
+                <td>
+                  <code>design.enabled</code>
+                </td>
+                <td>
+                  <code>false</code>
+                </td>
+                <td>Whether the visual design pass runs at all.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>design.gate</code> <strong>humans only</strong>
+                </td>
+                <td>
+                  <code>design.gate</code>
+                </td>
+                <td>advisory</td>
+                <td>Whether a design critical blocks the merge.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>design.themes</code> · <code>design.viewports</code>
+                </td>
+                <td>
+                  <code>design.themes</code> · <code>design.viewports</code>
+                </td>
+                <td>light + dark · desktop</td>
+                <td>What the design pass renders.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>pin_version</code>
+                </td>
+                <td>
+                  <code>pinVersion</code>
+                </td>
+                <td>unset</td>
+                <td>Pin clud-bug to one version and stop the weekly self-update PRs.</td>
+              </tr>
+              <tr>
+                <td>
+                  <code>excluded_baselines</code>
+                </td>
+                <td>
+                  <code>excludedBaselines</code>
+                </td>
+                <td>none</td>
+                <td>Baseline skills this repository removed and does not want back.</td>
               </tr>
             </tbody>
           </table>
 
-          <h2>strictMode</h2>
+          <h2>The settings only a person may change</h2>
+          <p>
+            A setting that decides whether something <em>blocks</em> is a
+            person&rsquo;s to change, never an agent&rsquo;s — SPEC §1.6. Asked
+            to set one, <code>clud-bug config</code> refuses with exit{' '}
+            <code>4</code>, names the section, and points at the hand edit a
+            person makes on the default branch. What that buys is worth stating
+            exactly:
+          </p>
+          <p>{HONEST_GUARANTEE}</p>
+          <p>
+            Everything else an agent may set: registering a skill it just wrote,
+            declaring the test command, narrowing a noisy CI check. Those are
+            legitimate work, and blocking them helps nobody.
+          </p>
+
+          <h2>review.strict_mode</h2>
           <p>
             A boolean gate on merges. When a review turns up a{' '}
             <code>critical</code> finding, <code>strictMode: true</code> makes the{' '}
@@ -114,6 +304,13 @@ export default function DocsConfig() {
 }`}</code>
           </pre>
           <p>
+            This one is edited by hand on purpose: <code>clud-bug config set
+            review.strict_mode</code> refuses, because a setting that decides
+            whether something blocks is a person&rsquo;s to change. Fresh
+            installs get <code>true</code> from <code>clud-bug init</code>;
+            turning it off is your edit to make.
+          </p>
+          <p>
             The value is read from the pull request&rsquo;s <strong>base ref</strong>{' '}
             — the branch being merged into, not the PR&rsquo;s own head — so a
             pull request cannot disable strict mode on itself in the same diff.
@@ -126,7 +323,7 @@ export default function DocsConfig() {
             — the bot never blocks a merge on its own inability to run.
           </p>
 
-          <h2>reviewContext</h2>
+          <h2>review_context</h2>
           <p>
             Standing, repo-level guidance that focuses every review — &ldquo;scrutinize
             the auth migration&rdquo;, &ldquo;the generated files under{' '}
@@ -163,7 +360,7 @@ export default function DocsConfig() {
             it is treated as a hint, never an instruction.
           </p>
 
-          <h2>reviewPasses</h2>
+          <h2>review.passes</h2>
           <p>
             Configures the multi-pass plan — how many independent passes the
             reviewer runs per skill, and how their findings are aggregated. Two
@@ -208,7 +405,7 @@ export default function DocsConfig() {
             <a href="/docs/multi-pass">the multi-pass entry</a>.
           </p>
 
-          <h2>design</h2>
+          <h2>design.enabled</h2>
           <p>
             An optional visual review. When enabled, the bot renders each changed
             UI surface on the pull request&rsquo;s deploy-preview and critiques the
@@ -231,7 +428,8 @@ export default function DocsConfig() {
             <code>gate</code> is <code>advisory</code> by default — design
             findings post as comments and never block. Set it to{' '}
             <code>strict</code> to make a design <code>critical</code> turn the
-            check red. <code>themes</code> defaults to both light and dark;{' '}
+            check red — by hand, because <code>design.gate</code> decides
+            whether something blocks and the command refuses it. <code>themes</code> defaults to both light and dark;{' '}
             <code>viewports</code> to a single desktop width. A missing or
             malformed block resolves to the off default, so a typo can never
             silently enable the render (see{' '}
@@ -241,7 +439,17 @@ export default function DocsConfig() {
             ).
           </p>
 
-          <h2>autoResolve</h2>
+          <h2>review.auto_fix</h2>
+          <p>
+            SPEC 2.0 §4.6: whether a reviewer may push a fix for its own
+            finding, and how many rounds. Only the hosted App implements the
+            push — this key exists so it is settable and humans-only
+            (§1.6:262) under the exact name SPEC names, even though the OSS
+            CLI never reads it. See <code>review.auto_resolve</code> below for
+            the thing this CLI actually does on a fix-push.
+          </p>
+
+          <h2>review.auto_resolve</h2>
           <p>
             Governs what happens on a fix-push. For each open thread the bot
             raised on a prior pass, it re-verifies whether the new commit
@@ -272,7 +480,7 @@ export default function DocsConfig() {
             <a href="/docs/auto-fix">the auto-fix entry</a>.
           </p>
 
-          <h2>ciChecks</h2>
+          <h2>review.ci_checks</h2>
           <p>
             The reviewer never executes anything of its own — no probe, no
             build, no test run against the diff. Where{' '}
@@ -283,6 +491,9 @@ export default function DocsConfig() {
             and a concluded failure grounds a finding exactly as a quoted diff
             line does.
           </p>
+          <pre>
+            <code>{`clud-bug config set review.ci_checks '["build","typecheck"]'`}</code>
+          </pre>
           <pre>
             <code>{`{
   "ciChecks": ["build", "typecheck"]

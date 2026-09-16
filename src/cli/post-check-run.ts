@@ -33,11 +33,14 @@ import {
   validateBundle,
   validateConsistency,
   splitUnifiedDiff,
-  notaryResponseIsRejection,
+  classifyNotaryAttempt,
+  requestNotaryWithRetry,
   readNotaryConfig,
   readAttestation,
   type NotaryBundle,
   type DiffFile,
+  type NotaryAttemptOutcome,
+  type NotaryResponseClass,
 } from '../core/index.js';
 import { readManifest } from './skills.js';
 
@@ -117,78 +120,143 @@ interface NotaryResult {
   bundle: NotaryBundle | null;
 }
 
-/** Outcome of the `POST /challenge` round-trip that precedes `/notarize`. */
-type ChallengeResult = { nonce: string } | 'rejected' | 'fallback';
+/** Per-request timeout for a notary fetch — `fetch()` alone never times out,
+ *  so a notary that accepts the connection and then never answers (a network
+ *  partition, a deadlocked upstream) would hang the CLI forever instead of
+ *  degrading like every other unreachable shape (SPEC §6.5: "a gate that
+ *  cannot run MUST report that it could not"). `CLUD_BUG_NOTARY_TIMEOUT_MS`
+ *  overrides it for hermetic tests, mirroring `CLUD_BUG_NOTARY_RETRY_MS`. */
+const NOTARY_REQUEST_TIMEOUT_MS = 10_000;
 
-/**
- * Mint the single-use nonce (Z4 ① replay-closure) the notary requires before it
- * will certify a bundle: `POST {repo, pr, head_sha}` to `/notarize/challenge`
- * (a sub-path of `/notarize`, matching the server route), expect `{ nonce }`.
- * Classified like `/notarize` — a 4xx is the server AUTHORITATIVELY
- * declining (terminal), a 5xx/network error just means the endpoint is DOWN
- * (fallback to the self-attested check) — EXCEPT 402 (not-entitled): that's not
- * a decline of THIS bundle, it's "this install can't be notarized at all", so it
- * gets a loud warning explaining why the check is unnotarized and falls back
- * rather than blocking the review with a bare rejection.
- */
-async function fetchChallenge(
-  notaryUrl: string,
-  bundle: NotaryBundle,
-  warn: (m: string) => void,
-): Promise<ChallengeResult> {
+function notaryTimeoutMs(): number {
+  const raw = process.env['CLUD_BUG_NOTARY_TIMEOUT_MS']?.trim();
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : NOTARY_REQUEST_TIMEOUT_MS;
+}
+
+/** `fetch`, bounded by `NOTARY_REQUEST_TIMEOUT_MS` — same
+ *  AbortController+setTimeout+`finally(clearTimeout)` idiom as
+ *  `tryFetchSkill` (src/cli/skills.ts). The abort surfaces as a thrown
+ *  `AbortError`, which both call sites below already fold into the same
+ *  `network-error` outcome as a DNS failure or ECONNREFUSED — a notary that
+ *  hangs has FAILED TO ANSWER exactly as one that refuses the connection. */
+function fetchNotary(url: string, init: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), notaryTimeoutMs());
+  return fetch(url, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
+/** A single raw attempt at `POST {repo, pr, head_sha}` → `/notarize/challenge`,
+ *  reduced to a `NotaryAttemptOutcome` — no retry, no interpretation. */
+async function fetchChallengeOnce(notaryUrl: string, bundle: NotaryBundle): Promise<NotaryAttemptOutcome> {
   const url = notaryUrl.replace(/\/+$/, '') + '/notarize/challenge';
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetchNotary(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ repo: bundle.repo, pr: bundle.pr, head_sha: bundle.head_sha }),
     });
   } catch (e) {
-    warn(`notary challenge endpoint unreachable (${e instanceof Error ? e.message : String(e)}); falling back to the self-attested check.`);
-    return 'fallback';
+    return { kind: 'network-error', message: e instanceof Error ? e.message : String(e) };
   }
+  return { kind: 'response', status: res.status, body: await readJsonBody(res) };
+}
 
-  if (res.status === 402) {
-    warn(
-      [
-        'this review is NOT notarized — no independent check verified it; the',
-        'merge check is self-attested only.',
-        'Install the clud-bug App / upgrade to certify: https://cludbug.dev',
-      ].join('\n'),
-    );
-    return 'fallback';
-  }
-  if (notaryResponseIsRejection(res.status)) {
-    warn(`notary declined the challenge (HTTP ${res.status}); not certifying.`);
-    return 'rejected';
-  }
-  if (!res.ok) {
-    warn(`notary challenge endpoint unavailable (HTTP ${res.status}); falling back to the self-attested check.`);
-    return 'fallback';
-  }
-
-  let body: unknown;
+/** A single raw attempt at `POST bundle` → `/notarize`, reduced to a
+ *  `NotaryAttemptOutcome` — no retry, no interpretation. */
+async function postNotarizeOnce(notaryUrl: string, bundle: NotaryBundle): Promise<NotaryAttemptOutcome> {
+  const url = notaryUrl.replace(/\/+$/, '') + '/notarize';
+  let res: Response;
   try {
-    body = await res.json();
+    res = await fetchNotary(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(bundle),
+    });
   } catch (e) {
-    warn(`notary challenge response was not valid JSON (${e instanceof Error ? e.message : String(e)}); falling back to the self-attested check.`);
-    return 'fallback';
+    return { kind: 'network-error', message: e instanceof Error ? e.message : String(e) };
   }
+  return { kind: 'response', status: res.status, body: await readJsonBody(res) };
+}
+
+/** Best-effort JSON parse — `undefined` on an empty or non-JSON body. Reading
+ *  the body of every response (not just a success) is what lets `attemptNotarizeRound`
+ *  see a `{ retryable: true }` field on an error body, wherever it's set. */
+async function readJsonBody(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function extractNonce(body: unknown): string | null {
   const nonce = body && typeof body === 'object' ? (body as Record<string, unknown>)['nonce'] : undefined;
-  if (typeof nonce !== 'string' || !nonce) {
-    warn('notary challenge response is missing a nonce; falling back to the self-attested check.');
-    return 'fallback';
-  }
-  return { nonce };
+  return typeof nonce === 'string' && nonce ? nonce : null;
+}
+
+/**
+ * The outcome of ONE mint-nonce-then-submit round. `not-entitled` (402 on the
+ * challenge) and `challenge-malformed` (a 2xx challenge whose body carries no
+ * usable nonce) are both PERMANENT states of the request as sent — retrying
+ * the identical thing changes nothing, so `classifyRound` below marks them
+ * `terminal` and they're never retried. `challenge`/`submit` carry whichever
+ * HTTP call this round reached last, for `classifyNotaryAttempt` to classify.
+ */
+type NotarizeRoundOutcome =
+  | { stage: 'not-entitled' }
+  | { stage: 'challenge-malformed' }
+  | { stage: 'challenge'; outcome: NotaryAttemptOutcome }
+  | { stage: 'submit'; outcome: NotaryAttemptOutcome };
+
+/**
+ * ONE round of the Z4 handshake: mint the single-use nonce (① replay-closure)
+ * via `POST /notarize/challenge`, then `POST /notarize` with it attached.
+ *
+ * A nonce is single-use — the App's `/notarize` consumes it BEFORE its own
+ * ground-truth fetch (clud-bug-app PR #133), so on a transient failure THERE
+ * (clud-bug#269's `503 { retryable: true }`), the nonce is already spent. A
+ * bare retry of just `/notarize` on that stale nonce would come back a fresh
+ * terminal 401 (spent nonce) — misreporting "the notary failed to answer" as
+ * "the notary refused", the exact SPEC §6.5 confusion this whole path exists
+ * to avoid. Re-minting the nonce EVERY round, not just the first, is what
+ * keeps a retried round an honest re-ask of the same question.
+ */
+async function attemptNotarizeRound(notaryUrl: string, bundle: NotaryBundle): Promise<NotarizeRoundOutcome> {
+  const challenge = await fetchChallengeOnce(notaryUrl, bundle);
+  if (challenge.kind === 'network-error') return { stage: 'challenge', outcome: challenge };
+  // 402 is not a decline of THIS bundle — it's "this install can't be
+  // notarized at all" (no App / not entitled). Distinct from every other
+  // status: never retried, and it falls back with its own loud warning
+  // rather than the generic terminal/transient messages below.
+  if (challenge.status === 402) return { stage: 'not-entitled' };
+  if (classifyNotaryAttempt(challenge) !== 'accepted') return { stage: 'challenge', outcome: challenge };
+
+  const nonce = extractNonce(challenge.body);
+  if (!nonce) return { stage: 'challenge-malformed' };
+  bundle.nonce = nonce;
+
+  return { stage: 'submit', outcome: await postNotarizeOnce(notaryUrl, bundle) };
+}
+
+/** Classify a round for the retry driver. `classifyNotaryAttempt` — the SAME
+ *  classifier every HTTP outcome in this file goes through — decides the
+ *  `challenge`/`submit` stages; the two permanent stages are always `terminal`
+ *  (stopping the retry loop immediately, on round 1). */
+function classifyRound(round: NotarizeRoundOutcome): NotaryResponseClass {
+  if (round.stage === 'not-entitled' || round.stage === 'challenge-malformed') return 'terminal';
+  return classifyNotaryAttempt(round.outcome);
 }
 
 /**
  * The notary submit path (Phase Z). Reads + parses the bundle, LOCALLY
  * re-validates it (the handshake — a deterministic program refusing to certify
- * an inconsistent/ungrounded review), mints a challenge nonce, then POSTs to the
- * notary. The server (Z4) re-validates ①–⑤ against GitHub and — as SOLE issuer —
- * posts the pinned check.
+ * an inconsistent/ungrounded review), then runs the mint+submit round (above),
+ * RETRYING it — bounded, with backoff (`requestNotaryWithRetry`) — for as long
+ * as `classifyRound` says `transient`: SPEC §6.5, "failing to answer is not the
+ * same as refusing". The server (Z4) re-validates ①–⑤ against GitHub and — as
+ * SOLE issuer — posts the pinned check.
  *
  * Outcomes:
  *   'posted'   — the notary accepted; the SERVER owns the check, do not self-post.
@@ -196,9 +264,10 @@ async function fetchChallenge(
  *                ungrounded bundle, OR a server 4xx AUTHORITATIVELY declining, on either
  *                `/challenge` or `/notarize`). Post NO check — never a false green off a
  *                bad artifact or over a server "no".
- *   'fallback' — the endpoint is DOWN (network error or 5xx) or NOT ENTITLED (402), not a
- *                verdict; the caller may self-post the self-attested check (derived from
- *                THIS bundle) so local max mode keeps gating while Z4 is pending.
+ *   'fallback' — every round FAILED TO ANSWER (network error / 5xx / a `retryable: true`
+ *                body, exhausting the retry bound) or the install is NOT ENTITLED (402);
+ *                neither is a verdict, so the caller self-posts the self-attested check
+ *                (derived from THIS bundle) — never nothing, never a false green.
  */
 async function submitToNotary(
   notaryUrl: string,
@@ -251,38 +320,69 @@ async function submitToNotary(
     return { outcome: 'fallback', bundle };
   }
 
-  // Mint the single-use nonce (① replay-closure) before certifying. A terminal
-  // decline here (bad request / not-entitled) never reaches `/notarize`; only a
-  // minted nonce does.
-  const challenge = await fetchChallenge(notaryUrl, bundle, warn);
-  if (challenge === 'rejected') return { outcome: 'rejected', bundle };
-  if (challenge === 'fallback') return { outcome: 'fallback', bundle };
-  bundle.nonce = challenge.nonce;
+  // Mint + submit, retrying the WHOLE round (bounded, with backoff) while
+  // `classifyRound` says `transient` — SPEC §6.5: an unreachable notary is
+  // never a refusal. A terminal decline (bad request / not-entitled / a real
+  // 4xx) stops immediately; only a minted nonce that gets a real answer does.
+  const { result: round, class: cls } = await requestNotaryWithRetry(
+    () => attemptNotarizeRound(notaryUrl, bundle),
+    classifyRound,
+  );
 
-  // Submit. The server re-fetches GitHub's ground-truth diff, re-runs ①–⑤,
-  // checks + consumes the nonce, signs, and posts the pinned check.
-  const url = notaryUrl.replace(/\/+$/, '') + '/notarize';
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(bundle),
-    });
-    if (res.ok) {
-      process.stdout.write(`clud-bug: notarized ${bundle.repo}@${bundle.head_sha.slice(0, 12)} (verdict=${bundle.verdict}); the notary posts the check.\n`);
-      return { outcome: 'posted', bundle };
+  switch (round.stage) {
+    case 'not-entitled':
+      warn(
+        [
+          'this review is NOT notarized — no independent check verified it; the',
+          'merge check is self-attested only.',
+          'Install the clud-bug App / upgrade to certify: https://cludbug.dev',
+        ].join('\n'),
+      );
+      return { outcome: 'fallback', bundle };
+
+    case 'challenge-malformed':
+      warn('notary challenge response is missing a nonce; falling back to the self-attested check.');
+      return { outcome: 'fallback', bundle };
+
+    case 'challenge': {
+      const { outcome } = round;
+      if (outcome.kind === 'network-error') {
+        warn(`notary challenge endpoint unreachable (${outcome.message}); falling back to the self-attested check.`);
+        return { outcome: 'fallback', bundle };
+      }
+      if (cls === 'terminal') {
+        warn(`notary declined the challenge (HTTP ${outcome.status}); not certifying.`);
+        return { outcome: 'rejected', bundle };
+      }
+      // transient, retries exhausted — the notary FAILED TO ANSWER, never a
+      // refusal (SPEC §6.5). Fall back; never post nothing.
+      warn(`notary challenge endpoint unavailable (HTTP ${outcome.status}); falling back to the self-attested check.`);
+      return { outcome: 'fallback', bundle };
     }
-    // A 4xx is the SOLE issuer authoritatively declining — terminal, no check.
-    // Only a 5xx (server down) is a fallback-able outage.
-    if (notaryResponseIsRejection(res.status)) {
-      warn(`notary declined the bundle (HTTP ${res.status}); not certifying.`);
-      return { outcome: 'rejected', bundle };
+
+    case 'submit': {
+      const { outcome } = round;
+      if (cls === 'accepted') {
+        process.stdout.write(`clud-bug: notarized ${bundle.repo}@${bundle.head_sha.slice(0, 12)} (verdict=${bundle.verdict}); the notary posts the check.\n`);
+        return { outcome: 'posted', bundle };
+      }
+      if (outcome.kind === 'network-error') {
+        warn(`notary endpoint unreachable (${outcome.message}); falling back to the self-attested check.`);
+        return { outcome: 'fallback', bundle };
+      }
+      // A 4xx is the SOLE issuer authoritatively declining — terminal, no check.
+      if (cls === 'terminal') {
+        warn(`notary declined the bundle (HTTP ${outcome.status}); not certifying.`);
+        return { outcome: 'rejected', bundle };
+      }
+      // transient, retries exhausted (a 5xx, or a `retryable: true` body —
+      // clud-bug-app#133's `503` on a ground-truth-fetch failure) — SPEC §6.5:
+      // the notary FAILED TO ANSWER, which is never the same fact as a
+      // refusal. Fall back to the self-attested check; never post nothing,
+      // never claim a certification that did not happen.
+      warn(`notary unavailable (HTTP ${outcome.status}); falling back to the self-attested check.`);
+      return { outcome: 'fallback', bundle };
     }
-    warn(`notary unavailable (HTTP ${res.status}); falling back to the self-attested check.`);
-    return { outcome: 'fallback', bundle };
-  } catch (e) {
-    warn(`notary endpoint unreachable (${e instanceof Error ? e.message : String(e)}); falling back to the self-attested check.`);
-    return { outcome: 'fallback', bundle };
   }
 }
 

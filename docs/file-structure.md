@@ -79,6 +79,10 @@ clud-bug
 │   ├── build-bundle.test.js
 │   ├── check-verdict.test.js
 │   ├── cli.test.js
+│   ├── config-command.test.js
+│   ├── config-docs.test.js
+│   ├── config-parity.test.js
+│   ├── config-race.test.js
 │   ├── configure-github.test.js
 │   ├── detect.test.js
 │   ├── diff-findings.test.js
@@ -119,6 +123,7 @@ clud-bug
 │   ├── update-notifier.test.js
 │   ├── update-pre-push.test.js
 │   ├── update-skill-usage.test.js
+│   ├── update-trigger-reconcile.test.js
 │   ├── update.test.js
 │   └── usage.test.js
 ├── .cursorrules

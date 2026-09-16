@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (7 decisions)
+## 2026-09 (16 decisions)
 
-- **2026-09-15** — Fix #291 + #305 + #301 item 1: the gate reads every instruction file from the PR base ref (CLAUDE.md @-imports to the CLI's documented depth, all launch roots, safe deletion), one skill byte cap owned by the library, strict-mode gate fails closed *(fix/templates-lane-291-301-305)* — [decisions-branches/fix__templates-lane-291-301-305.md](decisions-branches/fix__templates-lane-291-301-305.md)
-- *... 5 more decisions ...*
+- **2026-09-15** — Update follow-up: one tests resolver, config-command messaging, review.trigger written and reconciled, #253 residuals closed *(fix/update-followup-253-residuals-trigger-key)* — [decisions-branches/fix__update-followup-253-residuals-trigger-key.md](decisions-branches/fix__update-followup-253-residuals-trigger-key.md)
+- *... 14 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)
