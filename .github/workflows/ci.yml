@@ -52,7 +52,17 @@ jobs:
           # the new {{REVIEW_SCHEMA}} and {{CLUD_BUG_VERSION}} placeholders
           # leaked literal {{...}} braces into shell run blocks and SC1083'd
           # actionlint. The renderer matches what clud-bug init produces.
-          for tmpl in templates/workflow*.yml.tmpl; do
+          #
+          # Widened from `templates/workflow*.yml.tmpl` to every
+          # `templates/*.yml.tmpl`: audit.yml.tmpl, fork-notice.yml.tmpl,
+          # and self-update.yml.tmpl shipped unlinted by this loop, glob
+          # pattern excluded them by name alone, not by any actual
+          # difference in what they need rendered. None of the three
+          # references `{{REVIEW_PROMPT}}`, so passing it in unconditionally
+          # below is a no-op for them — `render()` only substitutes
+          # placeholders a template actually contains (src/core/render.ts)
+          # and does not error on an unused var.
+          for tmpl in templates/*.yml.tmpl; do
             tmpl_name=$(basename "$tmpl")
             out=".ci-rendered/${tmpl_name%.tmpl}"
             node -e "

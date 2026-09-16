@@ -89,12 +89,17 @@ test('#260/1: every workflow template pins skills to the base ref before the rev
     const steps = await reviewSteps(tmpl);
     const { idx: pinIdx, step: pin } = findStep(steps, PIN_STEP_NAME, tmpl);
 
-    // The checkout is step 0 and has no `ref:` — i.e. it IS the merge ref.
-    // That is the hazard the pin exists to neutralise; assert it so the test
-    // stays honest if someone "fixes" this by pinning the checkout instead
+    // The checkout has no `ref:` — i.e. it IS the merge ref. That is the
+    // hazard the pin exists to neutralise; assert it so the test stays
+    // honest if someone "fixes" this by pinning the checkout instead
     // (which would break `gh pr diff`-free delta reads and the strict gate).
-    const checkout = steps[0];
-    assert.match(String(checkout.uses), /^actions\/checkout@/, `${tmpl}: step 0 is not checkout`);
+    // Found by `uses:`, not by index: clud-bug#331 inserts an "Install
+    // clud-bug CLI" step BEFORE checkout (it must run before any
+    // checkout-dependent step — see templates/workflow.yml.tmpl), so
+    // checkout is no longer necessarily step 0.
+    const checkoutIdx = steps.findIndex((s) => s && typeof s.uses === 'string' && s.uses.startsWith('actions/checkout@'));
+    assert.notEqual(checkoutIdx, -1, `${tmpl}: no actions/checkout step`);
+    const checkout = steps[checkoutIdx];
     assert.equal(checkout.with?.ref, undefined, `${tmpl}: checkout gained a ref:`);
 
     const cca = steps.findIndex((s) => s && typeof s.uses === 'string' && s.uses.includes('claude-code-action'));

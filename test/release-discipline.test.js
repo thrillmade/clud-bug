@@ -182,8 +182,13 @@ test('release discipline: Formal review step is present in all 3 templates (v0.7
   //   1. The step exists in all 3 templates (workflow/-ts/-py)
   //   2. `continue-on-error: true` — best-effort contract; the step
   //      MUST NEVER fail the workflow on caller-side problems
-  //   3. The step invokes `clud-bug@<CLUD_BUG_VERSION>` (templated)
-  //      so any future version bump automatically picks up the new pin
+  //   3. The step invokes the CLI via `$CLUD_BUG_BIN` — clud-bug#331
+  //      moved the `clud-bug@<CLUD_BUG_VERSION>` (templated) pin to the
+  //      ONE "Install clud-bug CLI" step every call site shares, rather
+  //      than re-pinning it at each of the seven-plus sites (a version
+  //      bump missed at even one site would silently keep running an
+  //      old CLI there). This step must use that shared primitive, not
+  //      a re-introduced `npx` of its own.
   const templates = [
     'workflow.yml.tmpl',
     'workflow-ts.yml.tmpl',
@@ -203,7 +208,7 @@ test('release discipline: Formal review step is present in all 3 templates (v0.7
        See docs/decisions-branches/release__v0.7.0-rc.3.md for design.`,
     );
     // The step block extends ~1500 chars below the step name. Confirm
-    // the best-effort guard and the npx invocation are present.
+    // the best-effort guard and the CLI invocation are present.
     const stepBlock = content.slice(idx, idx + 2000);
     assert.match(
       stepBlock,
@@ -212,8 +217,39 @@ test('release discipline: Formal review step is present in all 3 templates (v0.7
     );
     assert.match(
       stepBlock,
-      /npx --yes clud-bug@\{\{CLUD_BUG_VERSION\}\} select-review-event/,
-      `${tmpl}: 'Formal review' step must invoke \`npx --yes clud-bug@{{CLUD_BUG_VERSION}} select-review-event\`. Hard-coded versions defeat the template's release-discipline pin auto-bump.`,
+      /"\$CLUD_BUG_BIN" select-review-event/,
+      `${tmpl}: 'Formal review' step must invoke \`"$CLUD_BUG_BIN" select-review-event\` — the one absolute-path primitive every verb call routes through (clud-bug#331), not a re-introduced \`npx\`.`,
+    );
+    assert.doesNotMatch(
+      stepBlock,
+      /npx --yes clud-bug/,
+      `${tmpl}: 'Formal review' step reverted to resolving the CLI via \`npx\` from the PR's own workspace (clud-bug#331).`,
+    );
+  }
+});
+
+test('release discipline: the clud-bug CLI version pin lives in exactly ONE place per template (the isolated install step), not at each call site (clud-bug#331)', async () => {
+  const templates = [
+    'workflow.yml.tmpl',
+    'workflow-ts.yml.tmpl',
+    'workflow-py.yml.tmpl',
+  ];
+  for (const tmpl of templates) {
+    const content = await readFile(join(REPO_ROOT, 'templates', tmpl), 'utf8');
+    // Every version-pinned install (one per job that calls the CLI:
+    // `review` and `gate`) carries the templated placeholder, so a
+    // package.json version bump still reaches every installed copy.
+    const installSites = content.match(/npm install --prefix "\$RUNNER_TEMP\/clud-bug" clud-bug@\{\{CLUD_BUG_VERSION\}\}/g) || [];
+    assert.ok(
+      installSites.length >= 1,
+      `${tmpl}: no isolated 'npm install --prefix "$RUNNER_TEMP/clud-bug" clud-bug@{{CLUD_BUG_VERSION}}' — the version pin clud-bug#331 centralised is missing.`,
+    );
+    // And no call site re-derives the CLI from a bare `npx` — the
+    // vulnerability #331 exists to close.
+    assert.doesNotMatch(
+      content,
+      /npx --yes clud-bug@\{\{CLUD_BUG_VERSION\}\}\s+\S/,
+      `${tmpl}: a 'npx --yes clud-bug@{{CLUD_BUG_VERSION}} <verb>' call site survived clud-bug#331's fix.`,
     );
   }
 });

@@ -71,6 +71,19 @@ jobs:
       checks: write
       pull-requests: write
     steps:
+      # Same primitive as the `review`/`gate` jobs in clud-bug-review.yml
+      # (clud-bug#331; SPEC 2.0 §6.3) — this job never checks anything out
+      # (see the SECURITY note above the top of this file), so it can't be
+      # poisoned by a committed `node_modules/clud-bug` the way a checkout
+      # workspace can. It still resolves the CLI by absolute path rather
+      # than carrying its own `npx` exception: one invocation shape across
+      # every template that calls this CLI, not three plus a footnote.
+      - name: Install clud-bug CLI (pinned, isolated)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/clud-bug" clud-bug@{{CLUD_BUG_VERSION}} \
+            --no-package-lock --ignore-scripts --no-audit --no-fund
+          echo "CLUD_BUG_BIN=$RUNNER_TEMP/clud-bug/node_modules/.bin/clud-bug" >> "$GITHUB_ENV"
+
       - name: Post the neutral clud-bug-review check (SPEC §6.5)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +95,7 @@ jobs:
 
           # --owner/--repo are explicit because there is no checkout for
           # `gh repo view` to read a remote from.
-          npx --yes clud-bug@{{CLUD_BUG_VERSION}} post-check-run \
+          "$CLUD_BUG_BIN" post-check-run \
             --sha "$HEAD_SHA" \
             --owner "${BASE_REPO%%/*}" \
             --repo "${BASE_REPO##*/}" \
@@ -90,6 +103,59 @@ jobs:
             --no-notary \
             --verdict skipped \
             --skip-reason "This pull request was opened from a fork ($HEAD_REPO). GitHub withholds repository secrets from fork-triggered workflows, so the reviewer could not authenticate and no review ran."
+
+      # SPEC 2.0 §4.3 / §2.6 — one comment per pull request, edited in
+      # place (clud-bug#259 item 1). Same primitive the review job's three
+      # workflow templates ship (`workflow.yml.tmpl` carries the full
+      # design notes): one bash function, `upsert_review_comment <pr>
+      # <repo> <body>`, that the "Announce the skip" step below sources
+      # and calls instead of running its own ad hoc dedup query and a bare
+      # `gh pr comment`. That ad hoc query fetched a single page of the
+      # OLDEST 100 comments (no `--paginate`) and matched on the comment
+      # PREFIX rather than the shared `<!-- written-by: ... -->` marker —
+      # on a fork PR that already carries >100 comments before this job
+      # ever posts, the query would never find its own prior notice, and
+      # every later push would stack a fresh one instead of editing it.
+      - name: Write review-comment helper
+        run: |
+          cat > "$RUNNER_TEMP/upsert-review-comment.sh" <<'UPSERT_HELPER_EOF'
+          upsert_review_comment() {
+            local pr="$1" repo="$2" body="$3"
+            local identity='github-actions[bot]'
+            local marker="<!-- written-by: ${identity} -->"
+            case "$body" in
+              *"$marker"*) ;;
+              *) body="${body}"$'\n'"${marker}" ;;
+            esac
+            # clud-bug#259 item 1 (the residual) — `--paginate` so a busy
+            # PR's own prior notice can't fall outside the fetch window. A
+            # second residual, same line: a non-zero `gh api` exit (502,
+            # rate limit, dropped page) must not be swallowed into the same
+            # `existing=""` a genuine "not found" produces — that fell
+            # through to CREATE, a second comment. Full design notes in
+            # workflow.yml.tmpl.
+            local existing="" lookup_status=0
+            existing=$(gh api --paginate "repos/${repo}/issues/${pr}/comments?per_page=100" \
+              --jq ".[] | select(.user.login == \"${identity}\" and (.body | contains(\"${marker}\"))) | .id" \
+              2>/dev/null) || lookup_status=$?
+            if [ "$lookup_status" -ne 0 ]; then
+              echo "::warning title=Clud Bug 🐛::Could not list existing review comments on PR #${pr} (gh api exited ${lookup_status}) — not posting this round's notice, to avoid stacking a duplicate if one already exists." >&2
+              return 1
+            fi
+            existing=$(printf '%s\n' "$existing" | tail -n1)
+            if [ -n "$existing" ]; then
+              if gh api --method PATCH "repos/${repo}/issues/comments/${existing}" -f body="$body" >/dev/null 2>&1; then
+                return 0
+              fi
+              echo "::warning title=Clud Bug 🐛::Could not edit the prior review comment (id ${existing}); posting a new one instead." >&2
+            fi
+            # --repo is required here specifically: unlike the review job's
+            # copy of this function, this job never runs `actions/checkout`
+            # (see the file-level SECURITY note), so there is no local git
+            # remote for `gh pr comment` to infer a repo from.
+            gh pr comment "$pr" --repo "$repo" --body "$body" || true
+          }
+          UPSERT_HELPER_EOF
 
       - name: Announce the skip on the pull request (SPEC §6.5)
         env:
@@ -99,15 +165,7 @@ jobs:
         run: |
           set -uo pipefail
 
-          # Dedup: `synchronize` fires on every push to a long-running fork PR,
-          # and one identical comment per push is noise, not an announcement.
-          EXISTING=$(gh api "repos/${BASE_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## 🐛 Clud Bug skipped")))] | length' \
-            2>/dev/null || echo 0)
-          if [ "${EXISTING:-0}" != "0" ]; then
-            echo "::notice title=Clud Bug 🐛::Skip notice already posted on this PR; not repeating it."
-            exit 0
-          fi
-
+          # shellcheck disable=SC2016  # backticks are literal Markdown code-spans in the comment body, not command substitution — single quotes are correct
           BODY=$(printf '## 🐛 Clud Bug skipped\n\nThis pull request came from a fork, so clud-bug did not review it — **nothing here was checked**.\n\nGitHub deliberately withholds repository secrets from fork-triggered workflows, so the reviewer could not authenticate against Anthropic.\n\nThe `clud-bug-review` check is set to `neutral`, not `success`. Neutral does not block this pull request, and it does not claim the change was reviewed. Review the diff manually before merging.\n')
-          gh pr comment "$PR_NUMBER" --repo "$BASE_REPO" --body "$BODY"
+          source "$RUNNER_TEMP/upsert-review-comment.sh"
+          upsert_review_comment "$PR_NUMBER" "$BASE_REPO" "$BODY"
