@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (16 decisions)
+## 2026-09 (17 decisions)
 
-- **2026-09-15** — Update follow-up: one tests resolver, config-command messaging, review.trigger written and reconciled, #253 residuals closed *(fix/update-followup-253-residuals-trigger-key)* — [decisions-branches/fix__update-followup-253-residuals-trigger-key.md](decisions-branches/fix__update-followup-253-residuals-trigger-key.md)
-- *... 14 more decisions ...*
+- **2026-09-15** — Action templates resolve the CLI outside the PR workspace, upsert the review comment, and stop overclaiming the skill-read cap (#331, #332, #259 item 1) *(fix/331-332-259-templates-a2)* — [decisions-branches/fix__331-332-259-templates-a2.md](decisions-branches/fix__331-332-259-templates-a2.md)
+- *... 15 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)
