@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (8 decisions)
+## 2026-09 (15 decisions)
 
-- **2026-09-15** — Fix #271: clud-bug config — one schema owns every setting; humans-only gate keys are refused with the honest guarantee; a manifest that cannot be parsed is never clobbered *(feat/271-config-command)* — [decisions-branches/feat__271-config-command.md](decisions-branches/feat__271-config-command.md)
-- *... 6 more decisions ...*
+- **2026-09-15** — Sync main into dev after #349: self-update failure notification *(sync/main-into-dev-349)* — [decisions-branches/sync__main-into-dev-349.md](decisions-branches/sync__main-into-dev-349.md)
+- *... 13 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)

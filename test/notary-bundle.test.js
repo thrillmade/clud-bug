@@ -9,7 +9,6 @@ import { strict as assert } from 'node:assert';
 import {
   buildBundle,
   parseBundle,
-  notaryResponseIsRejection,
   NOTARY_BUNDLE_VERSION,
   NOTARY_PROTOCOL_VERSION,
 } from '../src/core/notary-bundle.js';
@@ -67,11 +66,6 @@ test('parseBundle: accepts every legitimate verdict', () => {
     assert.ok(b, `verdict ${v} should parse`);
     assert.equal(b.verdict, v);
   }
-});
-
-test('notaryResponseIsRejection: 4xx is a terminal decline; 5xx/2xx are not', () => {
-  for (const s of [400, 403, 409, 422, 499]) assert.equal(notaryResponseIsRejection(s), true, String(s));
-  for (const s of [200, 500, 502, 503]) assert.equal(notaryResponseIsRejection(s), false, String(s));
 });
 
 test('parseBundle: rejects a missing head_sha / findings / coverage', () => {

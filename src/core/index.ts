@@ -385,7 +385,6 @@ export {
 export {
   buildBundle,
   parseBundle,
-  notaryResponseIsRejection,
   NOTARY_BUNDLE_VERSION,
   NOTARY_PROTOCOL_VERSION,
   type NotaryBundle,
@@ -393,6 +392,18 @@ export {
   type NotarySeverity,
   type GroundingKind,
 } from './notary-bundle.js';
+// #269 — SPEC §6.5: the notary HTTP-client boundary. ONE classifier decides
+// terminal (authoritative decline) vs. transient (failed to answer) for every
+// call site, and ONE bounded retry-with-backoff helper is what a `transient`
+// outcome feeds before the CLI falls back to the self-attested check.
+export {
+  classifyNotaryAttempt,
+  requestNotaryWithRetry,
+  NOTARY_MAX_ATTEMPTS,
+  type NotaryAttemptOutcome,
+  type NotaryResponseClass,
+  type NotaryRetryResult,
+} from './notary-client.js';
 // #266 — SPEC §4.4 harness attestation: the reader half of the two committed
 // Claude Code hooks in `cli/hooks.ts`. `collectAttestation` is the one place
 // that decides what counts as a record (dispatch ⋈ completed, both at this

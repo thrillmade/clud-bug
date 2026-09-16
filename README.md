@@ -253,6 +253,8 @@ clud-bug post-check-run --sha "$(git rev-parse HEAD)" --verdict <clean|critical|
 
 Free tier / no App install: submitting a bundle to a notary you're not entitled to falls back automatically to the same labeled self-attested check — the review is never blocked, it just isn't independently certified.
 
+An unreachable notary (a network error, a timeout, or a 5xx — including the `503 { retryable: true }` the App returns when it can't reach GitHub's own ground truth) is retried a few times with backoff and only then falls back to that same self-attested check, printing why; only a notary that actually answers and refuses (a 4xx, e.g. a stale PR head) blocks with no check posted at all — failing to answer is never treated as a refusal.
+
 ### Harness attestation — the record of which reasoners actually ran
 
 A review is only worth the distance between reviewer and author. Claiming that distance needs
