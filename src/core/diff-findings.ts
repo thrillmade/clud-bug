@@ -95,12 +95,20 @@ export function parsePriorReviewFile(
     // Switch active severity on every `### <emoji> <Label>` heading.
     // We pattern-match on the emoji codepoint (not the label text) so a
     // future SPEC tweak to "Critical" → "Blocking" doesn't break us.
+    //
+    // clud-bug#256 gap A: `renderReview` (the PR-comment shape) emits a
+    // DIFFERENT heading — `### Critical findings` etc., no emoji at all
+    // (render-review.ts:76-89) — so a doc-file-only match here left this
+    // parser blind to that shape's headings entirely (every `current`
+    // stayed null, so `out.length === 0` and the whole file parsed as
+    // "no prior findings", silently). Match both heading shapes; this
+    // function stays the ONE parser for both renderers.
     if (line.startsWith('### ')) {
-      if (line.includes(SEVERITY_EMOJI.critical)) {
+      if (line.includes(SEVERITY_EMOJI.critical) || line === '### Critical findings') {
         current = 'critical';
-      } else if (line.includes(SEVERITY_EMOJI.minor)) {
+      } else if (line.includes(SEVERITY_EMOJI.minor) || line === '### Minor findings') {
         current = 'minor';
-      } else if (line.includes(SEVERITY_EMOJI.preexisting)) {
+      } else if (line.includes(SEVERITY_EMOJI.preexisting) || line === '### Pre-existing findings') {
         current = 'preexisting';
       } else {
         current = null;
@@ -125,7 +133,13 @@ export function parsePriorReviewFile(
     //
     // The multi-pass renderer prepends `[Pass N — Role · model]` to the
     // bullet; we accept that prefix and discard it for parsing.
-    const parsed = parseFindingBullet(line);
+    //
+    // clud-bug#256 gap A: `renderReview` emits a different bullet shape
+    // entirely — `<emoji> [<skill>]: <summary> (<anchor>).` (no leading
+    // `- `, no bold file:line; render-review.ts:169-183) — so fall back
+    // to that shape when the doc-file bullet doesn't match. Severity
+    // still comes from the active heading, not the per-bullet emoji.
+    const parsed = parseFindingBullet(line) ?? parseEmojiPrefixBullet(line);
     if (parsed) {
       out.push({ ...parsed, severity: current });
     }
@@ -319,5 +333,63 @@ function parseFindingBullet(line: string): Omit<ParsedFinding, 'severity'> | nul
     }
   }
 
+  return { file, line: lineNum, skillName, summary };
+}
+
+/**
+ * Parse one `renderReview` (PR-comment shape) finding line into a
+ * {file, line, skill, summary} tuple. Returns null for any line that
+ * doesn't match.
+ *
+ * Shape (render-review.ts's `renderFindings`):
+ *   `<emoji> [<skill>]: <summary> (<anchor>).`
+ *   `<emoji> [<skill>]: <summary>`                (no anchor — `f.file` empty)
+ *   `<emoji> <summary> (<anchor>).`                (no skill — defensive only)
+ *
+ * No leading `- `, no bold `**file:line**`, and the emoji is per-finding
+ * (render-review.ts renders one severity emoji per bullet), not the
+ * per-heading marker `parseFindingBullet` expects — hence a second parser
+ * rather than a tweak to the first.
+ */
+function parseEmojiPrefixBullet(line: string): Omit<ParsedFinding, 'severity'> | null {
+  const emojiMatch = line.match(
+    new RegExp(`^(?:${SEVERITY_EMOJI.critical}|${SEVERITY_EMOJI.minor}|${SEVERITY_EMOJI.preexisting})\\s+`, 'u'),
+  );
+  if (!emojiMatch) return null;
+  let rest = line.slice(emojiMatch[0].length);
+
+  // Optional `[<skill>]: ` prefix — absent only when the source finding
+  // had no skill (defensive; SPEC always names one).
+  let skillName = '';
+  const skillMatch = rest.match(/^\[([^\]]+)\]:\s+/);
+  if (skillMatch?.[1]) {
+    skillName = skillMatch[1];
+    rest = rest.slice(skillMatch[0].length);
+  }
+  if (skillName === '') return null;
+
+  // Optional trailing ` (<anchor>).` — `renderFindings` appends this only
+  // when the finding carried a `file`; the trailing `.` is unconditional
+  // (`stripTrailingPunctuation` already removed any punctuation summary
+  // ended with, so this one is always the renderer's own).
+  const anchorMatch = rest.match(/ \(([^)]+)\)\.$/);
+  let file = '(unknown file)';
+  let lineNum = 0;
+  let summary = rest;
+  if (anchorMatch?.index != null) {
+    summary = rest.slice(0, anchorMatch.index);
+    const anchor = anchorMatch[1] ?? '';
+    const colonIdx = anchor.lastIndexOf(':');
+    const tail = colonIdx !== -1 ? anchor.slice(colonIdx + 1) : '';
+    if (colonIdx !== -1 && /^\d+$/.test(tail)) {
+      file = anchor.slice(0, colonIdx);
+      lineNum = Number(tail);
+    } else if (anchor !== '') {
+      file = anchor;
+    }
+  }
+
+  summary = summary.trim();
+  if (summary === '') return null;
   return { file, line: lineNum, skillName, summary };
 }

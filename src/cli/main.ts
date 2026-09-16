@@ -155,9 +155,15 @@ function parseArgs(argv) {
     else if (a === '--flag-no-verify') args.flagNoVerify = true;
     // #239: `clud-bug review --pending` drains the durable queue.
     else if (a === '--pending') args.pending = true;
-    // H3: `clud-bug post-check-run` flags.
+    // H3: `clud-bug post-check-run` flags. `--pr`/`--sha` are also read by
+    // `render` (clud-bug#256 ruling 4) for its OPTIONAL SPEC §4.3 meta.
     else if (a === '--sha') args.sha = argv[++i];
     else if (a === '--verdict') args.verdict = argv[++i];
+    // clud-bug#256 ruling 4: `render`'s OPTIONAL meta — the posting
+    // identity, known to the caller at render time (unlike `verdict` /
+    // `independence`, which the gate hasn't computed yet and this CLI
+    // never invents).
+    else if (a === '--written-by') args.writtenBy = argv[++i];
     // SPEC §6.5: `--verdict skipped` MUST say why. Free text, rendered into the
     // neutral check's summary.
     else if (a === '--skip-reason') args.skipReason = argv[++i];
@@ -249,6 +255,9 @@ ${renderConfigHelp()}
                         GitHub-markdown summary comment shape. Invoked by the
                         workflow post-step; output is what \`gh pr comment\`
                         receives. Empty stdin or non-object payload exits 2.
+                        \`--pr <n>\` [--sha <head-sha>] [--written-by <identity>]
+                        are OPTIONAL and switch the header to SPEC §4.3's
+                        shape (clud-bug#256); omitted entirely without \`--pr\`.
   select-review-event   Compute the formal-review event (APPROVE /
    --stdin               REQUEST_CHANGES / COMMENT / skip) from a structured-output
                         JSON payload + a few env-passed PR-author fields. Used by
@@ -461,6 +470,24 @@ async function main() {
   }
 }
 
+// clud-bug#256 ruling 4: builds the OPTIONAL `renderReview` meta from
+// `render`'s CLI flags — ONLY the fields the caller actually knows at
+// render time (PR number, head sha, posting identity). `verdict` and
+// `independence` are not knowable here (the gate that computes the verdict
+// runs AFTER this step posts the comment — see the #256 follow-up in the
+// PR description) and are never invented; `specVersion` is left unset so
+// renderReview's own SPEC_VERSION default applies. No `--pr` → no meta at
+// all, preserving the pre-#256 H2 header for any caller that doesn't pass
+// it. Exported for direct unit testing (main.ts has no other CLI-argument
+// tests — see test/render-cli-meta.test.js).
+function renderMetaFromArgs(args) {
+  if (args.pr == null || !Number.isFinite(args.pr)) return undefined;
+  const meta = { prNumber: args.pr };
+  if (args.sha) meta.reviewSha = args.sha;
+  if (args.writtenBy) meta.writtenBy = args.writtenBy;
+  return meta;
+}
+
 // 0.0.O (v0.6.22): render a structured-output JSON payload to the
 // GitHub-markdown summary comment shape. Called by the post-step
 // in the workflow templates: it reads the action's
@@ -468,7 +495,10 @@ async function main() {
 // to stdin here, and we emit the rendered markdown on stdout for
 // the shell to pass to `gh pr comment --body`.
 //
-// Usage: `clud-bug render --stdin` (only input source supported).
+// Usage: `clud-bug render --stdin [--pr <n>] [--sha <head-sha>]
+//   [--written-by <identity>]` — the three flags are OPTIONAL and, when
+// `--pr` is given, switch the header to SPEC §4.3's shape (clud-bug#256
+// ruling 4; see renderMetaFromArgs above for what each flag becomes).
 // Exit code: 0 on success, 2 on JSON parse error or non-object payload.
 async function runRender(args) {
   const { renderReview } = await import('../core/render-review.js');
@@ -493,8 +523,9 @@ async function runRender(args) {
     process.stderr.write(`clud-bug render: JSON parse failed: ${e.message}\n`);
     process.exit(2);
   }
+  const meta = renderMetaFromArgs(args);
   try {
-    process.stdout.write(renderReview(payload));
+    process.stdout.write(renderReview(payload, meta ? { meta } : undefined));
   } catch (e) {
     process.stderr.write(`clud-bug render: ${e.message}\n`);
     process.exit(2);
@@ -2927,4 +2958,4 @@ async function installPrePushHook(cwd) {
 
 // Export `main()` so the entry-point shim at bin/clud-bug.js can drive
 // the dispatch. The shim wraps the catch + process.exit error path.
-export { main };
+export { main, renderMetaFromArgs };

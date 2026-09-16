@@ -23,6 +23,7 @@ import type {
   ReviewFinding,
   ReviewSummaryCounts,
 } from './review-schema.js';
+import { SPEC_VERSION } from './spec-version.js';
 
 // Emoji constants: use explicit Unicode escape literals (`\u{HHHHH}`) so
 // every step of the TS→JS toolchain — tsc, vitest's transformer, the
@@ -53,15 +54,43 @@ export { SEVERITY_LABEL };
 // missing fields.
 type RenderReviewInput = Partial<ReviewData> & Record<string, unknown>;
 
+// clud-bug#256 gap B: the caller-supplied metadata SPEC §4.3 (SPEC.md:861-869)
+// puts in the comment header. OPTIONAL — a caller with none of this yet
+// (today: nothing, since renderReview has never taken a second argument)
+// gets the pre-#256 H2 header and byte-identical output; the fixture corpus
+// pins that. `verdict`/`independence` are separately optional WITHIN meta
+// (clud-bug#256 ruling 4): the CLI render step doesn't know either one
+// before the gate runs, and this renderer never invents them — each marker
+// is emitted only when its field is present.
+export interface RenderReviewMeta {
+  /** Required whenever `meta` is passed — the H1 needs it. */
+  prNumber: number;
+  /** Defaults to `SPEC_VERSION` (./spec-version.ts) when meta is given without it. */
+  specVersion?: string;
+  writtenBy?: string;
+  reviewSha?: string;
+  verdict?: 'passing' | 'failing' | 'neutral';
+  independence?: string;
+}
+
+export interface RenderReviewOptions {
+  meta?: RenderReviewMeta;
+}
+
 // Render the full summary comment markdown. `data` is the parsed JSON
 // matching the schema (see review-schema.ts). Returns a string suitable
-// for `gh pr comment --body`.
-export function renderReview(data: RenderReviewInput | null | undefined): string {
+// for `gh pr comment --body`. `opts.meta`, when given, switches the header
+// to SPEC §4.3's shape (see RenderReviewMeta) — see renderHeaderBlock().
+export function renderReview(
+  data: RenderReviewInput | null | undefined,
+  opts?: RenderReviewOptions,
+): string {
   if (!data || typeof data !== 'object') {
     throw new TypeError('renderReview: data must be an object');
   }
+  const meta = opts?.meta;
   const out: string[] = [];
-  out.push(renderHeader(data));
+  out.push(...(meta ? renderHeaderBlock(meta) : [renderHeader(data)]));
   out.push('');
   out.push(renderStatusLine(data.summary_counts));
   out.push('');
@@ -99,6 +128,15 @@ export function renderReview(data: RenderReviewInput | null | undefined): string
   }
   out.push(renderSkillsReferenced(data.skills_referenced));
   out.push('');
+  // clud-bug#256 gap B: SPEC §4.3's `**Skills cited:**` block, ADDITIVE to
+  // the existing "Skills referenced" line above (unchanged, meta or not —
+  // the byte-identity fixture corpus pins it). Only emitted with meta, and
+  // placed before last-reviewed-sha so that marker stays the final line in
+  // every case (test/render-review.test.js pins it there).
+  if (meta) {
+    out.push(...renderSkillsCited(data));
+    out.push('');
+  }
   if (data.last_reviewed_sha) {
     out.push(`<!-- last-reviewed-sha: ${data.last_reviewed_sha} -->`);
   }
@@ -106,6 +144,52 @@ export function renderReview(data: RenderReviewInput | null | undefined): string
   // the comment ends with a final newline (markdown rendering is unchanged
   // either way, but it matches the prior LLM-driven shape).
   return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
+}
+
+// SPEC §4.3 (SPEC.md:864-869) header block: H1 title + the five HTML-comment
+// markers, in order. `verdict`/`independence` are each omitted when absent
+// from `meta` (clud-bug#256 ruling 4 — never invented); `specVersion`
+// defaults from SPEC_VERSION so its line is unconditional.
+function renderHeaderBlock(meta: RenderReviewMeta): string[] {
+  const out: string[] = [`# clud-bug review — PR #${meta.prNumber}`];
+  out.push(`<!-- spec-version: ${meta.specVersion ?? SPEC_VERSION} -->`);
+  if (meta.writtenBy) out.push(`<!-- written-by: ${meta.writtenBy} -->`);
+  if (meta.reviewSha) out.push(`<!-- review-sha: ${meta.reviewSha} -->`);
+  if (meta.verdict) out.push(`<!-- verdict: ${meta.verdict} -->`);
+  if (meta.independence) out.push(`<!-- independence: ${meta.independence} -->`);
+  return out;
+}
+
+// SPEC §4.3 `**Skills cited:**` block — same shape as review-writeback.ts's
+// (renderReviewFile / renderMultiPassMarkdown): one bullet per skill in
+// `skills_referenced` order, with its finding count across every bucket
+// (including dedicated sections).
+function renderSkillsCited(data: RenderReviewInput): string[] {
+  const skills = Array.isArray(data.skills_referenced) ? data.skills_referenced : [];
+  const out: string[] = ['**Skills cited:**'];
+  if (skills.length === 0) {
+    out.push('- _(none — see summary above)_');
+    return out;
+  }
+  const all = collectAllFindings(data);
+  for (const skill of skills) {
+    const count = all.filter((f) => f && String(f.skill || '').trim() === skill).length;
+    out.push(`- ${skill} (${count} finding${count === 1 ? '' : 's'})`);
+  }
+  return out;
+}
+
+function collectAllFindings(data: RenderReviewInput): ReviewFinding[] {
+  const out: ReviewFinding[] = [];
+  if (Array.isArray(data.critical_findings)) out.push(...data.critical_findings);
+  if (Array.isArray(data.minor_findings)) out.push(...data.minor_findings);
+  if (Array.isArray(data.preexisting_findings)) out.push(...data.preexisting_findings);
+  if (Array.isArray(data.dedicated_sections)) {
+    for (const section of data.dedicated_sections) {
+      if (section && Array.isArray(section.findings)) out.push(...section.findings);
+    }
+  }
+  return out;
 }
 
 function renderHeader(data: RenderReviewInput): string {

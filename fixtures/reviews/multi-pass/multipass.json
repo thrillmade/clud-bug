@@ -1,0 +1,42 @@
+{
+  "prNumber": 99,
+  "headSha": "1111111111111111111111111111111111111111",
+  "prUrl": "https://github.com/thrillmade/clud-bug/pull/99",
+  "review": {
+    "status_header": "critical findings",
+    "summary_counts": { "critical": 1, "minor": 1, "preexisting": 0, "resolved_from_prior": 0, "still_open": 0 },
+    "skills_referenced": ["critical-issues-only", "nit-picker"],
+    "mode": "cross-check",
+    "passCount": 2,
+    "roles": [
+      { "passNumber": 1, "roleName": "Beetle", "model": "anthropic/claude-sonnet-4.6" },
+      { "passNumber": 2, "roleName": "Wasp", "model": "anthropic/claude-opus-4.7" }
+    ],
+    "verdict": "request_changes",
+    "findings": [
+      {
+        "skill": "critical-issues-only",
+        "file": "src/auth.ts",
+        "line": 42,
+        "summary": "session token logged in cleartext",
+        "reasoning": "The token is written to debug.log, which ships to the log aggregator.",
+        "severity": "critical",
+        "consensus": "2-of-2",
+        "attributions": [
+          { "passNumber": 1, "roleName": "Beetle", "model": "anthropic/claude-sonnet-4.6", "source": "first" },
+          { "passNumber": 2, "roleName": "Wasp", "model": "anthropic/claude-opus-4.7", "source": "agreed", "note": "confirmed via independent review" }
+        ]
+      },
+      {
+        "skill": "nit-picker",
+        "file": "src/util.ts",
+        "line": 10,
+        "summary": "inconsistent naming",
+        "severity": "minor",
+        "attributions": [
+          { "passNumber": 1, "roleName": "Beetle", "model": "anthropic/claude-sonnet-4.6", "source": "first" }
+        ]
+      }
+    ]
+  }
+}

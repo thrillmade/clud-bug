@@ -1,10 +1,16 @@
-// SPEC §6.6 conformance-fixture harness (NORMATIVE release-gate).
+// SPEC §6.6 (now §4.3) conformance-fixture harness (NORMATIVE release-gate).
 //
-// For every scenario dir under `fixtures/reviews/<scenario>/`, render
-// `input.json` through the SAME `renderReview` used to post the PR comment
-// body and assert the output is byte-identical to the committed
-// `expected.md` golden. A renderer change that alters the comment shape
-// fails this gate until the goldens are regenerated + reviewed.
+// For every scenario dir under `fixtures/reviews/<scenario>/`, render its
+// input through the SAME renderer used to post the PR comment body and
+// assert the output is byte-identical to the committed `expected.md`
+// golden. A renderer change that alters the comment shape fails this gate
+// until the goldens are regenerated + reviewed. Two input shapes:
+//
+//   - `input.json` (+ optional `meta.json`) → `renderReview(input, { meta })`
+//   - `multipass.json`                      → `renderMultiPassMarkdown(input)`
+//     (clud-bug#256 gap C — `renderMultiPassMarkdown` had zero fixture
+//     coverage; a scenario using this shape is what gives it release-test
+//     coverage at all, independent of who calls it in production.)
 //
 //   node scripts/fixture-check.mjs            # check (CI gate)
 //   node scripts/fixture-check.mjs --update   # regenerate goldens
@@ -28,6 +34,7 @@ if (!existsSync(FIXTURES)) {
 }
 
 const { renderReview } = await import('../dist/core/render-review.js');
+const { renderMultiPassMarkdown } = await import('../dist/core/review-writeback.js');
 
 const scenarios = (await readdir(FIXTURES, { withFileTypes: true }))
   .filter((e) => e.isDirectory())
@@ -46,8 +53,18 @@ for (const name of scenarios) {
   const dir = resolve(FIXTURES, name);
   let actual;
   try {
-    const input = JSON.parse(await readFile(resolve(dir, 'input.json'), 'utf8'));
-    actual = renderReview(input);
+    const multiPassPath = resolve(dir, 'multipass.json');
+    if (existsSync(multiPassPath)) {
+      const input = JSON.parse(await readFile(multiPassPath, 'utf8'));
+      actual = renderMultiPassMarkdown(input);
+    } else {
+      const input = JSON.parse(await readFile(resolve(dir, 'input.json'), 'utf8'));
+      const metaPath = resolve(dir, 'meta.json');
+      const meta = existsSync(metaPath)
+        ? JSON.parse(await readFile(metaPath, 'utf8'))
+        : undefined;
+      actual = renderReview(input, meta ? { meta } : undefined);
+    }
   } catch (err) {
     console.error(`FAIL  ${name} — input.json parse/render error: ${err.message}`);
     failed++;

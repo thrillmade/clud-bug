@@ -18,6 +18,7 @@ import {
   findingIdentity as barrelIdentity,
 } from '../src/core/index.js';
 import { renderReviewFile } from '../src/core/review-writeback.js';
+import { renderReview } from '../src/core/render-review.js';
 
 // ---------------------------------------------------------------------------
 // parsePriorReviewFile — robustness
@@ -386,5 +387,63 @@ describe('roundtrip: renderReviewFile output is parsable by parsePriorReviewFile
     const parsed = parsePriorReviewFile(md);
     expect(parsed?.findings.length).toBe(3);
     expect(parsed?.findings.map((f) => f.file)).toEqual(['a.ts', 'b.ts', 'c.ts']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// clud-bug#256 gap A: `renderReview` (the PR-comment shape) emits a
+// DIFFERENT header (`### Critical findings`, no emoji) and bullet
+// (`<emoji> [<skill>]: <summary> (<anchor>).`, no leading `- `, no bold)
+// than the doc-file shape above. Before the fix, `parsePriorReviewFile`
+// matched neither, so `current` never left null and every round parsed to
+// zero findings — silently. Round-trips two rounds through the SAME
+// renderer + parser + `diffFindings`, so a regression here fails on the
+// exact behaviour a converged second producer would depend on (Resolved
+// this round / Still open), not just on the parser in isolation.
+// ---------------------------------------------------------------------------
+
+describe('roundtrip: renderReview (PR-comment shape) output is parsable by parsePriorReviewFile (#256 gap A)', () => {
+  const round1 = {
+    status_header: 'critical findings',
+    summary_counts: { critical: 1, minor: 1, preexisting: 0, resolved_from_prior: 0, still_open: 0 },
+    per_skill_scan: [],
+    critical_findings: [
+      { skill: 'critical-issues-only', file: 'src/auth.ts', line: 42, summary: 'session token logged in cleartext' },
+    ],
+    minor_findings: [
+      { skill: 'nit-picker', file: 'src/util.ts', line: 10, summary: 'inconsistent naming' },
+    ],
+    preexisting_findings: [],
+    skills_referenced: ['critical-issues-only', 'nit-picker'],
+    last_reviewed_sha: '0'.repeat(40),
+  };
+
+  it('renderReview → parsePriorReviewFile recovers the same findings', () => {
+    const md = renderReview(round1);
+    const parsed = parsePriorReviewFile(md);
+    expect(parsed?.findings.length).toBe(2);
+    expect(parsed?.findings.map((f) => f.file)).toEqual(['src/auth.ts', 'src/util.ts']);
+    expect(parsed?.findings.map((f) => f.skillName)).toEqual(['critical-issues-only', 'nit-picker']);
+  });
+
+  it('two rounds through renderReview + diffFindings populate Resolved/Still-open', () => {
+    const round1Markdown = renderReview(round1);
+    const prior = parsePriorReviewFile(round1Markdown);
+
+    // Round 2: the critical finding is fixed (resolved), the minor
+    // finding persists (still open), and a brand-new critical is raised
+    // (neither list — it's this round's own finding).
+    const round2 = {
+      critical_findings: [
+        { skill: 'critical-issues-only', file: 'src/other.ts', line: 5, summary: 'new issue entirely' },
+      ],
+      minor_findings: [
+        { skill: 'nit-picker', file: 'src/util.ts', line: 10, summary: 'inconsistent naming' },
+      ],
+      preexisting_findings: [],
+    };
+    const { resolvedFindings, stillOpenFindings } = diffFindings(prior, round2);
+    expect(resolvedFindings.map((f) => f.summary)).toEqual(['session token logged in cleartext']);
+    expect(stillOpenFindings.map((f) => f.summary)).toEqual(['inconsistent naming']);
   });
 });

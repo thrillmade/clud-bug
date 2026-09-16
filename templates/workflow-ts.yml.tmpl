@@ -710,6 +710,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # clud-bug#256 ruling 4 — the ONLY other meta `render` knows at
+          # this point (see workflow.yml.tmpl for full design notes).
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           STRUCTURED: ${{ steps.clud-bug-review.outputs.structured_output }}
           TURNS_ESTIMATED: ${{ needs.paths-check.outputs.turns_estimated }}
           MAX_TURNS: ${{ needs.paths-check.outputs.max_turns }}
@@ -719,7 +722,7 @@ jobs:
           THREADS_COUNT: ${{ needs.paths-check.outputs.threads_count }}
         run: |
           set -euo pipefail
-          BODY=$(printf '%s\n' "$STRUCTURED" | "$CLUD_BUG_BIN" render --stdin)
+          BODY=$(printf '%s\n' "$STRUCTURED" | "$CLUD_BUG_BIN" render --stdin --pr "$PR_NUMBER" --sha "$HEAD_SHA" --written-by 'github-actions[bot]')
           CALIBRATION="<!-- clud-bug-calibration: turns_estimated=$TURNS_ESTIMATED, max_turns=$MAX_TURNS, files=$FILES_COUNT, lines_added=$LINES_ADDED, lines_deleted=$LINES_DELETED, threads=$THREADS_COUNT -->"
           source "$RUNNER_TEMP/upsert-review-comment.sh"
           upsert_review_comment "$PR_NUMBER" "$REPO" "$BODY

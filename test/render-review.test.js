@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { renderReview } from '../src/core/render-review.js';
+import { SPEC_VERSION } from '../src/core/spec-version.js';
 
 // Minimum-shape input that matches the schema's required fields. Tests
 // build off this via {...MIN, override} to keep each test focused.
@@ -222,4 +223,81 @@ test('renderReview: strips trailing period from summary before adding (anchor) p
     }],
   });
   assert.match(out, /🔴 \[evidence-based-review\]: unsupported type assertion \(src\/foo\.ts:1\)\./);
+});
+
+// ---------------------------------------------------------------------------
+// clud-bug#256 gap B — OPTIONAL `meta` switches the header to SPEC §4.3's
+// shape (SPEC.md:861-869); absent meta MUST leave every byte unchanged
+// (fixtures/reviews/*, checked byte-for-byte by scripts/fixture-check.mjs,
+// carries none — this is the second half of that same contract).
+// ---------------------------------------------------------------------------
+
+test('renderReview: no meta (single-arg call) is byte-identical to before #256', () => {
+  const out = renderReview(MIN);
+  assert.match(out, /^## 🐛 Clud Bug review — clean/);
+  assert.doesNotMatch(out, /clud-bug review — PR #/);
+  assert.doesNotMatch(out, /\*\*Skills cited:\*\*/);
+});
+
+test('renderReview: meta present emits the SPEC §4.3 H1 + ordered HTML-comment markers', () => {
+  const out = renderReview(MIN, {
+    meta: {
+      prNumber: 42,
+      writtenBy: 'github-actions[bot]',
+      reviewSha: 'a'.repeat(40),
+      verdict: 'passing',
+      independence: 'single-producer',
+    },
+  });
+  assert.match(
+    out,
+    new RegExp(
+      '^# clud-bug review — PR #42\\n'
+      + `<!-- spec-version: ${SPEC_VERSION} -->\\n`
+      + '<!-- written-by: github-actions\\[bot\\] -->\\n'
+      + `<!-- review-sha: ${'a'.repeat(40)} -->\\n`
+      + '<!-- verdict: passing -->\\n'
+      + '<!-- independence: single-producer -->\\n',
+    ),
+  );
+});
+
+test('renderReview: meta.specVersion defaults from SPEC_VERSION when omitted', () => {
+  const out = renderReview(MIN, { meta: { prNumber: 1 } });
+  assert.match(out, new RegExp(`<!-- spec-version: ${SPEC_VERSION} -->`));
+});
+
+test('renderReview: meta present but verdict/independence absent — those two markers are omitted, not invented (#256 ruling 4)', () => {
+  const out = renderReview(MIN, { meta: { prNumber: 1, writtenBy: 'github-actions[bot]' } });
+  assert.doesNotMatch(out, /<!-- verdict:/);
+  assert.doesNotMatch(out, /<!-- independence:/);
+  // The markers the caller DOES know still emit.
+  assert.match(out, /<!-- written-by: github-actions\[bot\] -->/);
+});
+
+test('renderReview: meta present adds **Skills cited:** with per-skill finding counts, before the trailing last-reviewed-sha marker', () => {
+  const out = renderReview(
+    {
+      ...MIN,
+      critical_findings: [
+        { skill: 'critical-issues-only', file: 'a.ts', line: 1, summary: 'one' },
+        { skill: 'critical-issues-only', file: 'b.ts', line: 2, summary: 'two' },
+      ],
+      minor_findings: [{ skill: 'nit-picker', file: 'c.ts', line: 3, summary: 'three' }],
+      skills_referenced: ['critical-issues-only', 'nit-picker'],
+    },
+    { meta: { prNumber: 7 } },
+  );
+  assert.match(
+    out,
+    /\*\*Skills cited:\*\*\n- critical-issues-only \(2 findings\)\n- nit-picker \(1 finding\)/,
+  );
+  // last-reviewed-sha stays the final line even with meta (test above pins
+  // this for the no-meta case; this is the meta case).
+  assert.match(out, /<!-- last-reviewed-sha: abc1234 -->\n$/);
+});
+
+test('renderReview: meta present + no skills_referenced — Skills cited falls back like Skills referenced does', () => {
+  const out = renderReview(MIN, { meta: { prNumber: 1 } });
+  assert.match(out, /\*\*Skills cited:\*\*\n- _\(none — see summary above\)_/);
 });
