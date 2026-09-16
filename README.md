@@ -173,6 +173,24 @@ outside the domain, with what it can take · `4` refused.
 | `pin_version` | `pinVersion` | pin clud-bug and stop the self-update PRs |
 | `excluded_baselines` | `excludedBaselines` | baseline skills you removed and don't want back |
 
+**How a pass picks its model (#268, SPEC §2.4).** Every review is at least one
+pass, always — a repo running with no config, no roster, and no skills still
+gets the built-in baseline pass; nothing here can skip it, only change which
+model runs it. `review.passes`'s `roles` names the roles a pass fans out to
+(`Beetle`/`Wasp`/`Mantis` by default). For each role, `clud-bug` checks the
+repo's agent roster — every `.claude/agents/<name>.md` whose frontmatter
+names + describes a role — for an entry whose `name` **exactly matches**.
+Where one exists and pins a `model`, that entry's `model` is what actually
+runs the pass; `model` is optional (agent-skills#180), so a match with no
+`model` still surfaces below but leaves the role on its configured (or
+built-in) model, same as no match at all. A malformed roster file (missing
+`name`/`description`, a `tier` field, a name
+that doesn't match its filename) never crashes a review — `clud-bug
+review-prompt` reports it as a warning and the pass it would have named
+falls back the same way. `clud-bug review-prompt` prints which roster file
+each pass resolved to, so `git blame` on `.claude/agents/` is also a blame
+trail for review behavior.
+
 **Humans only.** A setting that decides whether something *blocks* is a person's to change,
 never an agent's (SPEC §1.6). Asked to set one, `clud-bug config` exits `4`, names the section,
 and points at the edit a person makes on the default branch. What that buys, exactly:

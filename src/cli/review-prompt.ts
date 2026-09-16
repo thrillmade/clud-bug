@@ -21,11 +21,13 @@ import {
   readNotaryConfig,
   parseFrontmatter,
   resolveSkillKind,
+  readRoster,
   type ReviewPlan,
   type ReviewPlanSkill,
   type ReviewTrigger,
   type ReviewPassMode,
   type DesignConfig,
+  type RosterProblem,
 } from '../core/index.js';
 import { readManifest } from './skills.js';
 import { REVIEWER_AGENT_TYPE } from './hooks.js';
@@ -327,7 +329,12 @@ export function renderReviewRecipe(input: {
     const passLines = Array.from({ length: maxPasses }, (_, i) => {
       const role = roleForPass(plan.roles, i, 'Reviewer');
       const tier = role.tier ? ` · ${role.tier} tier` : '';
-      return `  ${i + 1}. **${role.name}**${tier} — \`description: "${role.name}${role.tier ? ` · ${role.tier}` : ''} — pass ${i + 1} of ${maxPasses}"\``;
+      // clud-bug#268 — a pass is a dispatched role from the roster (SPEC
+      // §2.4), so name which roster file it resolved to when one matched;
+      // absent means this role is still running on the deprecated tier
+      // fallback (`tier` above), not on a roster entry.
+      const roster = role.rosterFile ? ` — roster: \`${role.rosterFile}\`` : '';
+      return `  ${i + 1}. **${role.name}**${tier}${roster} — \`description: "${role.name}${role.tier ? ` · ${role.tier}` : ''} — pass ${i + 1} of ${maxPasses}"\``;
     }).join('\n');
     const dispatchTypeRule =
       `Dispatch every pass with **subagent_type: \`${REVIEWER_AGENT_TYPE}\`** and the \`description\` ` +
@@ -639,6 +646,13 @@ export interface ResolvedReviewInputs {
   prose?: { skills: string[] };
   ciChecks?: { names: string[] | null };
   notaryUrl: string | null;
+  /**
+   * clud-bug#268 — `.claude/agents/*.md` files that failed to parse into a
+   * roster entry (`readRoster`'s `problems`). Never thrown; the caller
+   * (`runReviewPrompt`) prints each as a warning, never a crash. Empty when
+   * the roster is absent or every entry parsed cleanly.
+   */
+  rosterProblems: RosterProblem[];
 }
 
 /**
@@ -687,12 +701,21 @@ export async function resolveReviewInputs(
   const writingSkills = skills.filter((s) => kindOf(s) === 'writing');
   const codeSkills = skills.filter((s) => kindOf(s) === 'rule');
 
+  // clud-bug#268 — the agent roster (SPEC §2.4). Read once here (the only
+  // I/O for it) and forward through `planReview`, the one shared planner, so
+  // a pass's role resolves to a roster entry the same way for every consumer.
+  // Never throws: `readRoster` reports a malformed file in `problems` rather
+  // than crashing the review, and an absent `.claude/agents` is an empty
+  // roster, not an error.
+  const { entries: roster, problems: rosterProblems } = await readRoster(cwd);
+
   const config = readReviewPassesConfig(manifest);
   const plan = planReview({
     skills: codeSkills,
     config,
     trigger,
     rawSkillMd,
+    roster,
     ...(diffSizeBytes !== undefined ? { diffSizeBytes } : {}),
   });
 
@@ -735,6 +758,7 @@ export async function resolveReviewInputs(
     ...(prose ? { prose } : {}),
     ...(ciChecks ? { ciChecks } : {}),
     notaryUrl,
+    rosterProblems,
   };
 }
 
@@ -765,11 +789,18 @@ export async function runReviewPrompt(args: ReviewPromptArgs): Promise<void> {
     );
   }
 
-  const { plan, reviewContext, design, prose, ciChecks, notaryUrl } = await resolveReviewInputs(
-    cwd,
-    trigger,
-    args.diffSizeBytes,
-  );
+  const { plan, reviewContext, design, prose, ciChecks, notaryUrl, rosterProblems } =
+    await resolveReviewInputs(cwd, trigger, args.diffSizeBytes);
+
+  // clud-bug#268 — a malformed `.claude/agents/*.md` is reported, never a
+  // crash: warn on stderr (same posture as the unusable-`--range` warning
+  // above) and keep rendering the recipe on the tier fallback.
+  for (const problem of rosterProblems) {
+    process.stderr.write(
+      `clud-bug review-prompt: roster entry \`${problem.file}\` did not load (${problem.reason}); ` +
+        `it will not be dispatched.\n`,
+    );
+  }
 
   // #240 vector 2 — the hook already detected `--no-verify` on the text of
   // the triggering command (`args.flagNoVerify`); only render the finding if

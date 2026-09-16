@@ -510,6 +510,113 @@ describe('anyMultiPass / totalPassCount', () => {
 });
 
 // ---------------------------------------------------------------------------
+// clud-bug#268 — a pass is a dispatched role from the roster (SPEC §2.4), not
+// a mode of the reviewer. `resolveReviewPasses` matches a role's `name`
+// against the roster by exact string; a match's `model` overrides the tier
+// fallback (`BUILTIN_ROLES` / config `roles`), which stays as a fallback only.
+// ---------------------------------------------------------------------------
+
+describe('resolveReviewPasses — roster resolution (#268)', () => {
+  it('a roster entry matching a role by exact name overrides that role\'s model', () => {
+    const resolved = resolveReviewPasses({
+      skills: [makeSkill('skill-a')],
+      config: null,
+      roster: [
+        { name: 'Beetle', description: 'x', model: 'anthropic/claude-haiku-9', file: '.claude/agents/Beetle.md' },
+      ],
+    });
+    const beetle = resolved.roles.find((r) => r.name === 'Beetle');
+    expect(beetle?.model).toBe('anthropic/claude-haiku-9');
+    expect(beetle?.rosterFile).toBe('.claude/agents/Beetle.md');
+    // Untouched roles (no matching roster entry) keep their tier-fallback model.
+    const wasp = resolved.roles.find((r) => r.name === 'Wasp');
+    expect(wasp?.model).toBe(BUILTIN_ROLES.find((r) => r.name === 'Wasp')?.model);
+    expect(wasp?.rosterFile).toBeUndefined();
+  });
+
+  it('falls back to the tier model when no roster entry matches by exact name', () => {
+    const resolved = resolveReviewPasses({
+      skills: [makeSkill('skill-a')],
+      config: null,
+      roster: [{ name: 'beetle', description: 'x', model: 'anthropic/claude-haiku-9', file: '.claude/agents/beetle.md' }],
+    });
+    // BUILTIN_ROLES' display name is "Beetle" (capital B) — a roster entry
+    // named "beetle" (lowercase, the kebab-case SPEC §2.4 shape) does NOT
+    // match by exact name, so the tier fallback is unchanged.
+    const beetle = resolved.roles.find((r) => r.name === 'Beetle');
+    expect(beetle?.model).toBe(BUILTIN_ROLES.find((r) => r.name === 'Beetle')?.model);
+    expect(beetle?.rosterFile).toBeUndefined();
+  });
+
+  it('a roster entry with no model does not override the tier fallback, but still surfaces as a match', () => {
+    // A `model`-less entry is spec-legal (agent-skills#180: "model is
+    // optional") — it must not be invisible on the surface just because it
+    // has nothing to override the tier fallback with.
+    const resolved = resolveReviewPasses({
+      skills: [makeSkill('skill-a')],
+      config: null,
+      roster: [{ name: 'Beetle', description: 'x', file: '.claude/agents/Beetle.md' }],
+    });
+    const beetle = resolved.roles.find((r) => r.name === 'Beetle');
+    expect(beetle?.model).toBe(BUILTIN_ROLES.find((r) => r.name === 'Beetle')?.model);
+    expect(beetle?.rosterFile).toBe('.claude/agents/Beetle.md');
+  });
+
+  it('a matched role resolves via the roster for a custom `reviewPasses.roles` name too', () => {
+    const resolved = resolveReviewPasses({
+      skills: [makeSkill('skill-a')],
+      config: {
+        roles: [{ name: 'security-pass', model: 'anthropic/claude-sonnet-4.6' }],
+      },
+      roster: [
+        {
+          name: 'security-pass',
+          description: 'Security-focused reviewer.',
+          model: 'anthropic/claude-opus-4.7',
+          file: '.claude/agents/security-pass.md',
+        },
+      ],
+    });
+    expect(resolved.roles).toEqual([
+      {
+        name: 'security-pass',
+        model: 'anthropic/claude-opus-4.7',
+        rosterFile: '.claude/agents/security-pass.md',
+      },
+    ]);
+  });
+
+  it('an empty/absent roster leaves the tier fallback exactly as before (#268 back-compat)', () => {
+    const withoutRoster = resolveReviewPasses({ skills: [makeSkill('skill-a')], config: null });
+    const withEmptyRoster = resolveReviewPasses({
+      skills: [makeSkill('skill-a')],
+      config: null,
+      roster: [],
+    });
+    expect(withEmptyRoster.roles).toEqual(withoutRoster.roles);
+  });
+
+  // The baseline pass MUST run regardless of what the roster does — a
+  // repository with no roster, an empty roster, or a fully-malformed roster
+  // (readRoster reports it in `problems`, but a bad file is never passed
+  // through as an `entry`) still gets at least one pass per skill.
+  it('the baseline pass is never skippable — count stays >= 1 whatever the roster resolves', () => {
+    const noRoster = resolveReviewPasses({ skills: [makeSkill('skill-a')], config: null });
+    const withRoster = resolveReviewPasses({
+      skills: [makeSkill('skill-a')],
+      config: null,
+      roster: [{ name: 'Beetle', description: 'x', model: 'anthropic/claude-haiku-9', file: '.claude/agents/Beetle.md' }],
+    });
+    // Pinned against the literal floor (1), not a re-imported MIN_PASSES — a
+    // mutation that lowered MIN_PASSES itself must not drag this guard's
+    // expectation down with it.
+    expect(noRoster.perSkill[0]?.count).toBeGreaterThanOrEqual(1);
+    expect(withRoster.perSkill[0]?.count).toBeGreaterThanOrEqual(1);
+    expect(withRoster.perSkill[0]?.count).toBe(noRoster.perSkill[0]?.count);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // #271 — `review.passes`'s blocking marker (SPEC §1.6's table: "Marking a pass
 // blocking is humans-only"; §4.8: "A repository MAY opt a design critical into
 // blocking, by marking that pass blocking in `review.passes`"). §6.3 puts the
