@@ -21,8 +21,10 @@ import {
   globMatch,
   truncatePatch,
   sliceUtf8Bytes,
+  deriveSkillCap,
   MAX_PATCH_BYTES_PER_FILE,
   DEFAULT_MAX_SKILL_BYTES,
+  DEFAULT_MAX_TOTAL_SKILL_BYTES,
 } from '../src/core/prompt-builder.js';
 
 // ---------------------------------------------------------------------------
@@ -190,6 +192,28 @@ test('buildReviewPrompt: default maxSkillBytes = DEFAULT_MAX_SKILL_BYTES (8192)'
   assert.ok(prompt.includes(`truncated at ${DEFAULT_MAX_SKILL_BYTES} bytes`));
 });
 
+// clud-bug#262 item 5 / SPEC §2.8: a truncation marker MUST say what was
+// removed AND how much — the cap alone (`truncated at N bytes`) only says
+// where the cut is, not how much content the model never saw. Pin the
+// exact omitted-byte count, in the same `(N bytes omitted)` shape
+// `truncatePatch` already uses (see the sibling assertion in the
+// truncatePatch tests below), so the two markers can't silently diverge.
+test('buildReviewPrompt: skill-body truncation marker names the exact bytes omitted (SPEC §2.8)', () => {
+  const body = 'A'.repeat(150); // ASCII: 1 byte/char, so the math is exact.
+  const oversized = {
+    slug: 'oversize',
+    frontmatter: { name: 'oversize', description: 'X' },
+    body,
+  };
+  const { prompt } = buildReviewPrompt({
+    ...INPUT_TS,
+    skills: [oversized],
+    maxSkillBytes: 100,
+  });
+  // 150-byte body capped at 100 bytes omits exactly 50.
+  assert.ok(prompt.includes('(truncated at 100 bytes — 50 bytes omitted — see SKILL.md for full body)'));
+});
+
 // clud-bug#305 — the reviewer reads a skill's SKILL.md body only; a
 // references/ subdirectory next to it is never inlined into the prompt.
 // `PromptLoadedSkill` (the shape a caller must supply) has no `references`
@@ -209,6 +233,63 @@ test('buildReviewPrompt: a skill\'s references/ content never reaches the prompt
   const { prompt } = buildReviewPrompt({ ...INPUT_TS, skills: [skillWithReferences] });
   assert.ok(prompt.includes(SKILL_RACE.body), 'the SKILL.md body itself should still be included');
   assert.ok(!prompt.includes('REFERENCE-ONLY-MARKER-7f2a'), 'references/ content leaked into the prompt');
+});
+
+// ---------------------------------------------------------------------------
+// clud-bug#301 items 2-3: total prompt budget, per-skill cap derived from it
+// ---------------------------------------------------------------------------
+
+test('deriveSkillCap: few skills keep the full flat cap unchanged', () => {
+  // 16 skills * DEFAULT_MAX_SKILL_BYTES == DEFAULT_MAX_TOTAL_SKILL_BYTES
+  // exactly, so this is the boundary case — still the full flat cap.
+  assert.equal(deriveSkillCap(16), DEFAULT_MAX_SKILL_BYTES);
+  assert.equal(deriveSkillCap(1), DEFAULT_MAX_SKILL_BYTES);
+  assert.equal(deriveSkillCap(0), DEFAULT_MAX_SKILL_BYTES);
+});
+
+test('deriveSkillCap: more skills installed than fit shrinks the per-skill share', () => {
+  // 32 skills at the flat cap would be 2x the total budget — the derived
+  // cap must be exactly half the flat cap.
+  assert.equal(deriveSkillCap(32), DEFAULT_MAX_SKILL_BYTES / 2);
+});
+
+test('deriveSkillCap: never raises the flat cap, even with very few skills', () => {
+  const cap = deriveSkillCap(1, { maxSkillBytes: 100, maxTotalSkillBytes: 1_000_000 });
+  assert.equal(cap, 100, 'a huge total budget must never inflate the per-skill cap above the flat one');
+});
+
+test('deriveSkillCap: respects explicit maxSkillBytes/maxTotalSkillBytes overrides', () => {
+  assert.equal(deriveSkillCap(10, { maxSkillBytes: 1000, maxTotalSkillBytes: 5000 }), 500);
+});
+
+test('deriveSkillCap: floors at 1 byte rather than going to 0 or negative', () => {
+  assert.equal(deriveSkillCap(1_000_000, { maxSkillBytes: 100, maxTotalSkillBytes: 10 }), 1);
+});
+
+test('buildReviewPrompt: a large installed catalog shrinks every skill body below the flat cap', () => {
+  // 32 skills, each with a body larger than the derived cap (flat/2), so
+  // EVERY one of them gets truncated at the SAME derived cap — proving the
+  // cap came from the total budget, not the flat constant.
+  const manySkills = Array.from({ length: 32 }, (_, i) => ({
+    slug: `skill-${i}`,
+    frontmatter: { name: `skill-${i}`, description: 'X' },
+    body: 'A'.repeat(DEFAULT_MAX_SKILL_BYTES), // bigger than the derived cap
+  }));
+  const expectedCap = DEFAULT_MAX_SKILL_BYTES / 2;
+  const { prompt, truncatedSkills } = buildReviewPrompt({ ...INPUT_TS, skills: manySkills });
+  assert.equal(truncatedSkills.length, 32, 'every skill in the oversized catalog should be truncated');
+  for (const notice of truncatedSkills) {
+    assert.equal(notice.capBytes, expectedCap);
+  }
+  assert.ok(prompt.includes(`truncated at ${expectedCap} bytes`));
+  // Control: with only ONE such skill, the flat cap is never shrunk.
+  const { truncatedSkills: soloTruncated } = buildReviewPrompt({ ...INPUT_TS, skills: [manySkills[0]] });
+  assert.equal(soloTruncated.length, 0, 'a single skill under the flat cap must not be truncated at all');
+});
+
+test('buildReviewPrompt: truncatedSkills is empty when nothing is cut', () => {
+  const { truncatedSkills } = buildReviewPrompt(INPUT_TS);
+  assert.deepEqual(truncatedSkills, []);
 });
 
 // ---------------------------------------------------------------------------

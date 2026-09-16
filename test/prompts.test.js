@@ -7,6 +7,7 @@ import { parse as parseYaml } from 'yaml';
 import { reviewPrompt } from '../src/core/prompts.js';
 import { renderFile, templateLanguage } from '../src/core/render.js';
 import { DEFAULT_MAX_SKILL_BYTES } from '../src/core/prompt-builder.js';
+import { MAX_REVIEW_CONTEXT_BYTES } from '../src/core/review-context.js';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(PKG_ROOT, 'templates');
@@ -98,6 +99,40 @@ test('reviewPrompt instructs the CI review to ground every critical (notary atte
   // The three grounding forms are all named.
   for (const kind of ['quote', 'reproduction', 'invariant']) {
     assert.match(out, new RegExp(`\`${kind}\``), `missing grounding form: ${kind}`);
+  }
+});
+
+// --- clud-bug#262 item 4: `reviewContext` was a no-op on the shipped
+// Action path — `git grep -c reviewContext -- templates/` finds it in no
+// template while `.clud-bug.json`'s `strictMode`/`ciChecks` keys are read
+// live every run. Fix: the prompt itself now teaches the agent to read
+// `reviewContext` off the same base-ref-pinned `.claude/skills/.clud-bug.json`
+// it already reads `strictMode`/`ciChecks` from — no new plumbing through
+// `init`/`update`, matching the pattern those two keys already use.
+
+test('reviewPrompt teaches the CI review to read reviewContext from base-ref .clud-bug.json (SPEC §4.1)', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  assert.match(out, /reviewContext/);
+  assert.match(out, /\.claude\/skills\/\.clud-bug\.json/);
+  assert.match(out, /SPEC §4\.1/);
+  // Trusted because it's read from the base ref, same guarantee as the
+  // skill catalog itself — never the PR's own copy.
+  assert.match(out, /BASE ref/);
+});
+
+test('reviewPrompt states the reviewContext byte cap as MAX_REVIEW_CONTEXT_BYTES — one owner, not a restated number', () => {
+  const out = reviewPrompt({ projectDescription: 'p' });
+  const capMatch = out.match(/Capped at\s+(\d+) bytes/);
+  assert.ok(capMatch, 'prompt must state the reviewContext byte cap');
+  assert.equal(Number(capMatch[1]), MAX_REVIEW_CONTEXT_BYTES);
+});
+
+test('rendered workflow templates carry the reviewContext instruction into the CI prompt', async () => {
+  for (const tmpl of ['workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    const out = await renderFile(join(TEMPLATES, tmpl), {
+      REVIEW_PROMPT: reviewPrompt({ projectDescription: 'p', language: templateLanguage(tmpl) }),
+    });
+    assert.match(out, /reviewContext/, `${tmpl}: missing reviewContext instruction`);
   }
 });
 

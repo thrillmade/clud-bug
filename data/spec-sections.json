@@ -1,0 +1,258 @@
+{
+  "specVersion": "2.0.0",
+  "source": "thrillmade/protocol SPEC.md",
+  "sections": [
+    {
+      "number": "0",
+      "title": "What this is"
+    },
+    {
+      "number": "0.1",
+      "title": "The parts"
+    },
+    {
+      "number": "0.2",
+      "title": "The loop"
+    },
+    {
+      "number": "0.3",
+      "title": "What is built, and what is planned"
+    },
+    {
+      "number": "0.4",
+      "title": "Conformance"
+    },
+    {
+      "number": "0.5",
+      "title": "Terms"
+    },
+    {
+      "number": "1",
+      "title": "Orient — what an agent reads before it acts"
+    },
+    {
+      "number": "1.1",
+      "title": "The instruction file"
+    },
+    {
+      "number": "1.2",
+      "title": "Per-tool files"
+    },
+    {
+      "number": "1.3",
+      "title": "The decision record"
+    },
+    {
+      "number": "1.4",
+      "title": "The derived views"
+    },
+    {
+      "number": "1.5",
+      "title": "The cold-start payload"
+    },
+    {
+      "number": "1.6",
+      "title": "Configuration"
+    },
+    {
+      "number": "1.7",
+      "title": "Finding the skills that apply"
+    },
+    {
+      "number": "1.8",
+      "title": "Finding the agents it can call on"
+    },
+    {
+      "number": "2",
+      "title": "Work — skills, agents, and the tools they use"
+    },
+    {
+      "number": "2.1",
+      "title": "The skill file"
+    },
+    {
+      "number": "2.2",
+      "title": "`kind` routes a skill to a pass"
+    },
+    {
+      "number": "2.3",
+      "title": "`tools:` is advisory"
+    },
+    {
+      "number": "2.4",
+      "title": "The roster"
+    },
+    {
+      "number": "2.5",
+      "title": "Rules for a role nobody is watching"
+    },
+    {
+      "number": "2.6",
+      "title": "The tool surface"
+    },
+    {
+      "number": "2.7",
+      "title": "Token discipline"
+    },
+    {
+      "number": "2.8",
+      "title": "Truncation leaves a mark"
+    },
+    {
+      "number": "3",
+      "title": "Record"
+    },
+    {
+      "number": "3.1",
+      "title": "What a decision records"
+    },
+    {
+      "number": "3.2",
+      "title": "Where decisions live"
+    },
+    {
+      "number": "3.3",
+      "title": "The history and the map"
+    },
+    {
+      "number": "3.4",
+      "title": "Steering commits through the log"
+    },
+    {
+      "number": "4",
+      "title": "Review"
+    },
+    {
+      "number": "4.1",
+      "title": "What a review examines"
+    },
+    {
+      "number": "4.2",
+      "title": "What counts as a finding"
+    },
+    {
+      "number": "4.3",
+      "title": "What a review emits"
+    },
+    {
+      "number": "4.4",
+      "title": "What a review may claim about itself"
+    },
+    {
+      "number": "4.5",
+      "title": "Certifying a review"
+    },
+    {
+      "number": "4.6",
+      "title": "Fixing what it found"
+    },
+    {
+      "number": "4.7",
+      "title": "Evidence from CI"
+    },
+    {
+      "number": "4.8",
+      "title": "The design pass"
+    },
+    {
+      "number": "4.9",
+      "title": "What a review may cost"
+    },
+    {
+      "number": "5",
+      "title": "Propagate"
+    },
+    {
+      "number": "5.1",
+      "title": "Distribution"
+    },
+    {
+      "number": "5.2",
+      "title": "What a new repository starts with"
+    },
+    {
+      "number": "5.3",
+      "title": "Raising work in both directions"
+    },
+    {
+      "number": "5.4",
+      "title": "The steward"
+    },
+    {
+      "number": "6",
+      "title": "Gates"
+    },
+    {
+      "number": "6.1",
+      "title": "The branch ruleset"
+    },
+    {
+      "number": "6.2",
+      "title": "The checks"
+    },
+    {
+      "number": "6.3",
+      "title": "A gate is never satisfiable by the change it judges"
+    },
+    {
+      "number": "6.4",
+      "title": "Turning required checks on"
+    },
+    {
+      "number": "6.5",
+      "title": "When a gate cannot run"
+    },
+    {
+      "number": "6.6",
+      "title": "The bypass"
+    },
+    {
+      "number": "6.7",
+      "title": "The local gate, before work is published"
+    },
+    {
+      "number": "7",
+      "title": "Versioning"
+    },
+    {
+      "number": "7.1",
+      "title": "The document's version"
+    },
+    {
+      "number": "7.2",
+      "title": "Cutting a version"
+    },
+    {
+      "number": "7.3",
+      "title": "What a tool declares"
+    },
+    {
+      "number": "7.4",
+      "title": "A breaking change"
+    },
+    {
+      "number": "7.5",
+      "title": "Removing a surface"
+    },
+    {
+      "number": "7.6",
+      "title": "The compatibility record"
+    },
+    {
+      "number": "8",
+      "title": "Trust boundaries"
+    },
+    {
+      "number": "8.1",
+      "title": "What an attestation proves"
+    },
+    {
+      "number": "8.2",
+      "title": "A clean review cannot be attested"
+    },
+    {
+      "number": "8.3",
+      "title": "What a single operator cannot prove"
+    }
+  ]
+}

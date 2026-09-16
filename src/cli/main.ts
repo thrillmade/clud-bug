@@ -25,7 +25,8 @@ import { renderFile, pickTemplate, templateLanguage } from '../core/render.js';
 import { REGISTRATION_PATHS, isRegistrationPathCommittable } from '../core/attestation.js';
 import { reviewPrompt } from '../core/prompts.js';
 import { SPEC_VERSION, renderVersionDeclaration } from '../core/spec-version.js';
-import { SkillsClient, rankAndCap } from '../core/skills.js';
+import { SkillsClient, rankAndCap, stripFrontmatter } from '../core/skills.js';
+import { deriveSkillCap, DEFAULT_MAX_TOTAL_SKILL_BYTES } from '../core/prompt-builder.js';
 import {
   writeSkills, writeSkill, loadBaseline, loadDesignKit,
   readManifest, writeManifest, removeSkill, listInstalled, diffManifest,
@@ -2197,6 +2198,38 @@ async function runList(_args) {
       log(`  • ${s.slug}${s.description ? `  — ${s.description}` : ''}`);
     }
   }
+
+  // clud-bug#301 items 2-3: warn HERE, at install/list time, when a skill's
+  // body will be truncated in the reviewer's prompt under the derived
+  // per-skill cap — the reviewer already marks a cut when it happens (SPEC
+  // §2.8), but a skill author who never reads that comment never learns
+  // their SKILL.md was cut. One owner for the cap math: deriveSkillCap
+  // (src/core/prompt-builder.ts) — never restated here.
+  const allSlugs = [...groups.baseline, ...groups.remote].map((e) => e.slug)
+    .concat(groups.custom.map((c) => c.slug));
+  const cap = deriveSkillCap(allSlugs.length);
+  const truncated = [];
+  for (const slug of allSlugs) {
+    let raw;
+    try {
+      raw = await readFile(join(skillsDir, slug, 'SKILL.md'), 'utf8');
+    } catch {
+      continue; // manifest entry with no file on disk — nothing to measure
+    }
+    const bodyBytes = Buffer.byteLength(stripFrontmatter(raw).trim(), 'utf8');
+    if (bodyBytes > cap) truncated.push({ slug, bodyBytes });
+  }
+  if (truncated.length) {
+    log('');
+    const derivedNote = allSlugs.length > 1
+      ? ` (derived from ${allSlugs.length} installed skills sharing a ${DEFAULT_MAX_TOTAL_SKILL_BYTES}-byte total budget)`
+      : '';
+    log(`⚠ ${truncated.length} skill${truncated.length === 1 ? '' : 's'} will be truncated in the reviewer's prompt at ${cap} bytes${derivedNote}:`);
+    for (const t of truncated) {
+      log(`  • ${t.slug} — ${t.bodyBytes} bytes, ${t.bodyBytes - cap} bytes would be omitted`);
+    }
+  }
+
   ok(`list: ${total} skills (baseline=${groups.baseline.length}, remote=${groups.remote.length}, custom=${groups.custom.length})`);
 }
 

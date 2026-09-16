@@ -55,6 +55,42 @@ export const MAX_PATCH_BYTES_PER_FILE = 16 * 1024; // 16 KiB
 export const DEFAULT_MAX_SKILL_BYTES = 8192;
 
 /**
+ * clud-bug#301 items 2-3: a flat per-skill cap serves neither a 4-skill
+ * repo nor a 24-skill one — the thing that actually bounds prompt cost is
+ * the SKILLS SECTION as a whole, not any one skill's slice of it. This is
+ * the ONE number the per-skill cap is derived FROM (`deriveSkillCap`
+ * below) whenever more skills are installed than fit at the flat cap.
+ *
+ * 16 × DEFAULT_MAX_SKILL_BYTES: a catalog of up to 16 skills gets the full
+ * flat cap each (matches today's behavior exactly); past 16 the per-skill
+ * share starts shrinking rather than the total growing unbounded.
+ */
+export const DEFAULT_MAX_TOTAL_SKILL_BYTES = 16 * DEFAULT_MAX_SKILL_BYTES;
+
+/**
+ * Derives the effective per-skill byte cap for a catalog of `skillCount`
+ * installed skills, given a flat per-skill ceiling and a total budget for
+ * the combined skills section.
+ *
+ * Only ever SHRINKS the flat cap, and only when `skillCount` skills at the
+ * flat cap would exceed the total budget — a repo with few skills keeps
+ * the full flat cap on each, exactly like before this existed. One owner
+ * for both numbers: a caller (the CLI's `list`/`audit` surfaces included)
+ * computes the same cap a review would use by calling this function
+ * rather than restating the arithmetic.
+ */
+export function deriveSkillCap(
+  skillCount: number,
+  opts: { maxSkillBytes?: number | undefined; maxTotalSkillBytes?: number | undefined } = {},
+): number {
+  const flatCap = opts.maxSkillBytes ?? DEFAULT_MAX_SKILL_BYTES;
+  if (skillCount <= 0) return flatCap;
+  const totalBudget = opts.maxTotalSkillBytes ?? DEFAULT_MAX_TOTAL_SKILL_BYTES;
+  const share = Math.floor(totalBudget / skillCount);
+  return Math.max(1, Math.min(flatCap, share));
+}
+
+/**
  * Status taxonomy mirrors `PullRequestFile["status"]` from `@octokit/rest`.
  * We accept the wider GitHub union so callers can pass octokit's raw status
  * verbatim.
@@ -134,6 +170,15 @@ export interface BuildReviewPromptInput {
    */
   maxSkillBytes?: number;
   /**
+   * clud-bug#301 items 2-3: total byte budget for the combined skills
+   * section. Defaults to `DEFAULT_MAX_TOTAL_SKILL_BYTES`. The effective
+   * per-skill cap is `deriveSkillCap(skills.length, { maxSkillBytes,
+   * maxTotalSkillBytes })` — this only ever shrinks `maxSkillBytes`, and
+   * only once the installed catalog is large enough that the flat cap
+   * would blow the total.
+   */
+  maxTotalSkillBytes?: number;
+  /**
    * H2 — TRUSTED standing review instructions from `.clud-bug.json` `reviewContext`.
    * Rendered UNFENCED as a trusted "Reviewer context" section, so the CALLER MUST
    * read it from the PR BASE ref — never the head ref (the same base-ref rule the
@@ -153,6 +198,21 @@ export interface BuildReviewPromptInput {
   untrustedContext?: string;
 }
 
+/**
+ * clud-bug#301 item 3: one entry per skill whose body was cut to fit its
+ * derived cap — the "author-visible" half of the fix. A caller (the CLI's
+ * `list` surface, an audit report, a future App notice) uses this to tell
+ * a skill author their SKILL.md was truncated, without waiting for a PR
+ * review to say so.
+ */
+export interface TruncatedSkillNotice {
+  slug: string;
+  /** The derived per-skill cap this skill was measured against. */
+  capBytes: number;
+  /** Bytes of the trimmed body that did not fit under `capBytes`. */
+  omittedBytes: number;
+}
+
 export interface BuiltPrompt {
   system: string;
   prompt: string;
@@ -160,6 +220,8 @@ export interface BuiltPrompt {
   includedSkillSlugs: string[];
   /** Files skipped because their patch was empty (binary, too large). */
   skippedFiles: string[];
+  /** Skills whose body was truncated to fit the derived per-skill cap. */
+  truncatedSkills: TruncatedSkillNotice[];
 }
 
 /**
@@ -193,8 +255,11 @@ Rules:
  * Builds the system + user prompt pair for the review call.
  */
 export function buildReviewPrompt(input: BuildReviewPromptInput): BuiltPrompt {
-  const { repo, pr, diff, skills, maxSkillBytes, reviewContext, untrustedContext } = input;
-  const skillCap = maxSkillBytes ?? DEFAULT_MAX_SKILL_BYTES;
+  const { repo, pr, diff, skills, maxSkillBytes, maxTotalSkillBytes, reviewContext, untrustedContext } = input;
+  // clud-bug#301 items 2-3: the per-skill cap is derived from the total
+  // skills-section budget once the installed catalog is big enough that
+  // the flat cap would blow it — see `deriveSkillCap`'s own doc comment.
+  const skillCap = deriveSkillCap(skills.length, { maxSkillBytes, maxTotalSkillBytes });
 
   // H2 — contextual review instructions. Trusted standing config injects as a
   // plain directive; untrusted per-PR focus is fenced (may focus, never disarm).
@@ -203,11 +268,20 @@ export function buildReviewPrompt(input: BuildReviewPromptInput): BuiltPrompt {
 
   const includedSkillSlugs: string[] = [];
   const skippedFiles: string[] = [];
+  const truncatedSkills: TruncatedSkillNotice[] = [];
 
   // ---- Skills section -----------------------------------------------------
-  const skillsBlock = renderSkillsBlock(skills, diff.files, skillCap, (slug) => {
-    includedSkillSlugs.push(slug);
-  });
+  const skillsBlock = renderSkillsBlock(
+    skills,
+    diff.files,
+    skillCap,
+    (slug) => {
+      includedSkillSlugs.push(slug);
+    },
+    (notice) => {
+      truncatedSkills.push(notice);
+    },
+  );
 
   // ---- Diff section -------------------------------------------------------
   const diffBlock = renderDiffBlock(diff.files, (path) => {
@@ -249,6 +323,7 @@ export function buildReviewPrompt(input: BuildReviewPromptInput): BuiltPrompt {
     prompt,
     includedSkillSlugs,
     skippedFiles,
+    truncatedSkills,
   };
 }
 
@@ -257,6 +332,7 @@ function renderSkillsBlock(
   changedFiles: ChangedFile[],
   maxSkillBytes: number,
   noteIncluded: (slug: string) => void,
+  noteTruncated: (notice: TruncatedSkillNotice) => void,
 ): string {
   if (skills.length === 0) {
     return 'No skills are installed at the PR base ref. The repository has not been initialized for clud-bug review yet. Return `findings: []` with `status_header: "bare"`.';
@@ -297,11 +373,20 @@ function renderSkillsBlock(
     // UTF-16 code units; for multi-byte content (CJK, emoji) the result
     // can exceed the byte budget by up to 4×, defeating the cap. clud-bug-
     // review #158 flagged the original code-unit slice as a bug.
+    //
+    // SPEC §2.8 requires the marker say WHAT was cut AND HOW MUCH — a cap
+    // alone tells the model where the cut is, not how much it lost. Mirror
+    // truncatePatch's `(N bytes omitted)` shape below rather than restating
+    // only the ceiling.
     const trimmedBody = body.trim();
-    const cappedBody =
-      Buffer.byteLength(trimmedBody, 'utf8') > maxSkillBytes
-        ? `${sliceUtf8Bytes(trimmedBody, maxSkillBytes)}\n\n_(truncated at ${maxSkillBytes} bytes — see SKILL.md for full body)_`
-        : trimmedBody;
+    const bodySize = Buffer.byteLength(trimmedBody, 'utf8');
+    let cappedBody = trimmedBody;
+    if (bodySize > maxSkillBytes) {
+      const sliced = sliceUtf8Bytes(trimmedBody, maxSkillBytes);
+      const omitted = bodySize - Buffer.byteLength(sliced, 'utf8');
+      cappedBody = `${sliced}\n\n_(truncated at ${maxSkillBytes} bytes — ${omitted} bytes omitted — see SKILL.md for full body)_`;
+      noteTruncated({ slug, capBytes: maxSkillBytes, omittedBytes: omitted });
+    }
     blocks.push(`${header}\n\n${cappedBody}`);
   }
 
@@ -514,19 +599,30 @@ export interface BuildCrossCheckPromptInput extends BuildReviewPromptInput {
 export function buildCrossCheckPrompt(
   input: BuildCrossCheckPromptInput,
 ): BuiltPrompt {
-  const { repo, pr, diff, skills, pass1Findings, maxSkillBytes, reviewContext, untrustedContext } = input;
-  const skillCap = maxSkillBytes ?? DEFAULT_MAX_SKILL_BYTES;
+  const { repo, pr, diff, skills, pass1Findings, maxSkillBytes, maxTotalSkillBytes, reviewContext, untrustedContext } = input;
+  // Same derivation as buildReviewPrompt — Pass 2 sees the identical skill
+  // catalog, so it MUST use the identical cap (clud-bug#301 items 2-3).
+  const skillCap = deriveSkillCap(skills.length, { maxSkillBytes, maxTotalSkillBytes });
 
   const includedSkillSlugs: string[] = [];
   const skippedFiles: string[] = [];
+  const truncatedSkills: TruncatedSkillNotice[] = [];
 
   // H2 — Pass 2 carries the same contextual instructions as Pass 1.
   const trustedCtx = (reviewContext ?? '').trim();
   const fencedCtx = fenceUntrustedContext(untrustedContext ?? '');
 
-  const skillsBlock = renderSkillsBlock(skills, diff.files, skillCap, (slug) => {
-    includedSkillSlugs.push(slug);
-  });
+  const skillsBlock = renderSkillsBlock(
+    skills,
+    diff.files,
+    skillCap,
+    (slug) => {
+      includedSkillSlugs.push(slug);
+    },
+    (notice) => {
+      truncatedSkills.push(notice);
+    },
+  );
   const diffBlock = renderDiffBlock(diff.files, (path) => {
     skippedFiles.push(path);
   });
@@ -567,6 +663,7 @@ export function buildCrossCheckPrompt(
     prompt,
     includedSkillSlugs,
     skippedFiles,
+    truncatedSkills,
   };
 }
 

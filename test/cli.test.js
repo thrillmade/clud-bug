@@ -220,6 +220,27 @@ test('init --offline --accept-all in a fresh repo writes workflow + manifest', a
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+// clud-bug#262 item 4: `reviewContext` was a no-op on the shipped Action
+// path — a user setting `reviewContext` in `.clud-bug.json` saw it wired
+// into the local hook only, never the CI-reviewed pull requests that are
+// the default experience. Boots the BUILT cli (dist/, via bin/clud-bug.js)
+// end to end: init must render a review workflow whose embedded prompt
+// teaches the agent to read reviewContext.
+test('init writes a review workflow whose prompt reads reviewContext from base-ref .clud-bug.json', async () => {
+  const dir = await makeRepo({
+    'package.json': JSON.stringify({ name: 'demo' }),
+  });
+  try {
+    const r = run(dir, ['init', '--offline', '--accept-all', '--no-set-protection']);
+    assert.equal(r.status, 0, `init failed: ${r.stderr}`);
+    const wf = await readFile(join(dir, '.github/workflows/clud-bug-review.yml'), 'utf8');
+    assert.match(wf, /reviewContext/);
+    assert.match(wf, /\.claude\/skills\/\.clud-bug\.json/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('init: fresh install gets strictMode: true (v0.4 default)', async () => {
   const dir = await makeRepo({ 'package.json': '{}' });
   try {
@@ -276,6 +297,30 @@ test('list shows baseline + custom after init + hand-authored skill', async () =
     assert.match(r.stdout, /Baseline/);
     assert.match(r.stdout, /Custom/);
     assert.match(r.stdout, /my-team-rules/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// clud-bug#301 item 3: "surface truncation where the author sees it" — a
+// custom skill whose body is bigger than the cap it will actually be read
+// at must warn on `list`, not just at review time (SPEC §2.8 already
+// covers the review-time marker; this is the install-time one the thread
+// asked for). Boots the BUILT cli end to end.
+test('list warns when a custom skill body exceeds the derived per-skill cap', async () => {
+  const dir = await makeRepo({ 'package.json': '{}' });
+  try {
+    run(dir, ['init', '--offline', '--accept-all', '--no-set-protection']);
+    const customDir = join(dir, '.claude/skills/oversize-rules');
+    await mkdir(customDir, { recursive: true });
+    // Flat DEFAULT_MAX_SKILL_BYTES is 8192; a body well past that (and
+    // small enough total catalog that the flat cap still applies) must
+    // trip the warning.
+    const body = 'x'.repeat(9000);
+    await writeFile(join(customDir, 'SKILL.md'), `---\nname: oversize-rules\ndescription: too big\n---\n${body}\n`);
+    const r = run(dir, ['list']);
+    assert.equal(r.status, 0, `list failed: ${r.stderr}`);
+    assert.match(r.stdout, /oversize-rules/);
+    assert.match(r.stdout, /will be truncated/);
+    assert.match(r.stdout, /8192 bytes/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
