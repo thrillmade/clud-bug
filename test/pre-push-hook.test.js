@@ -137,6 +137,17 @@ describe('buildPrePushHookScript', () => {
     expect(PREPUSH.match(/npx /g)).toHaveLength(1);
     expect(PREPUSH).toMatch(/cmd="npx clud-bug@next review-prompt/);
   });
+
+  // #253 ruling 2 — the three PUSH BLOCKED messages point at the command
+  // (`tests` is agent-settable; SPEC §1.6:260 wants a command, not a
+  // hand-edit), never at "add this to the JSON file by hand".
+  it('the three PUSH BLOCKED messages point at `clud-bug config set tests`, not a hand-edit', () => {
+    // One mention each in the first and third messages, two in the second
+    // (it offers both the command form and the `none` form) — four total.
+    expect(PREPUSH.match(/clud-bug config set tests/g)?.length).toBe(4);
+    expect(PREPUSH).not.toMatch(/Add "tests"/);
+    expect(PREPUSH).not.toMatch(/Declare the real command in \.claude/);
+  });
 });
 
 describe('planPrePushInstall', () => {
@@ -410,6 +421,70 @@ describe('pre-push hook — integration (real git state)', () => {
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/mechanical check \(6\.7 — tests before review\): true/);
     expect(r.stderr).toMatch(/review-prompt --trigger push/);
+  });
+
+  // #253 residual (ruling 1): the hook resolves `tests` through the SAME
+  // precedence `readTestsDeclaration` (src/core/tests-declaration.ts) gives
+  // it — .logmind/config.yml wins where it declares one, else
+  // .claude/skills/.clud-bug.json — instead of an inline parser that only
+  // ever read the clud-bug file.
+
+  it('#253: .logmind/config.yml WINS over .clud-bug.json when both declare a command', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [], tests: 'echo clud-bug-command' })).origin;
+    await mkdir(join(origin, '.logmind'), { recursive: true });
+    await writeFile(join(origin, '.logmind', 'config.yml'), 'tests: echo logmind-command\n');
+    git(origin, ['add', '.logmind']);
+    git(origin, ['commit', '-q', '-m', 'declare tests via logmind too']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: w']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/mechanical check \(6\.7 — tests before review\): echo logmind-command/);
+    expect(r.stderr).not.toMatch(/clud-bug-command/);
+  });
+
+  it('#253: a .logmind/config.yml with no top-level "tests:" key falls back to .clud-bug.json', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [], tests: 'echo clud-bug-fallback' })).origin;
+    await mkdir(join(origin, '.logmind'), { recursive: true });
+    // Present, but declares something else entirely — no top-level `tests:`.
+    await writeFile(join(origin, '.logmind', 'config.yml'), 'branch_routing:\n  main: main\n');
+    git(origin, ['add', '.logmind']);
+    git(origin, ['commit', '-q', '-m', 'logmind config with no tests key']);
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: x']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/mechanical check \(6\.7 — tests before review\): echo clud-bug-fallback/);
+  });
+
+  it('#253: an ABSENT .logmind/config.yml still reads .clud-bug.json (no regression on a repo with no logmind)', async () => {
+    const origin = (await makeClonePair({ version: 1, installed: [], tests: 'echo only-clud-bug' })).origin;
+    const clone = join(origin, '..', `${origin.split('/').pop()}-clone2`);
+    git(origin, ['clone', '-q', origin, clone]);
+    git(clone, ['config', 'user.email', 'test@test']);
+    git(clone, ['config', 'user.name', 'Test']);
+    git(clone, ['config', 'commit.gpgsign', 'false']);
+    const remoteOid = git(clone, ['rev-parse', 'HEAD']);
+    git(clone, ['commit', '-q', '--allow-empty', '-m', 'feat: y']);
+    const head = git(clone, ['rev-parse', 'HEAD']);
+
+    const r = await runPrePush(clone, [`refs/heads/main ${head} refs/heads/main ${remoteOid}`]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/mechanical check \(6\.7 — tests before review\): echo only-clud-bug/);
   });
 
   it('§6.7 (#319): a filename merely CONTAINING "test" (e.g. "latest.txt") is not a false-positive suite match', async () => {

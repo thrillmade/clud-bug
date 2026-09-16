@@ -22,7 +22,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { CONFIG_KEYS, CONFIG_KEY_NAMES } from '../src/core/config-schema.js';
-import { TEST_FILE_PATTERN } from '../src/core/detect.js';
+import { TEST_FILE_PATTERN, NPM_INIT_TEST_PLACEHOLDER_PATTERN } from '../src/core/detect.js';
+import { LOGMIND_TESTS_LINE_PATTERN } from '../src/core/tests-declaration.js';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const CLI = join(ROOT, 'bin', 'clud-bug.js');
@@ -199,18 +200,47 @@ test('nothing writes the manifest path except the rename in writeManifestBytes',
 // §6.7 detection has one meaning, and the pre-push hook owns the expression:
 // `clud-bug config set tests none` refuses on exactly what that hook will
 // detect at push time, or the command hands back a declaration the next push
-// blocks. The hook's copy is embedded in shell, so it cannot import this one —
-// what keeps them one fact is this test.
-test('the working-tree test-file detector matches the hook’s base-ref pattern exactly', async () => {
+// blocks.
+//
+// #253 residual (ruling 1): the hook no longer hand-copies this pattern — it
+// `import`s TEST_FILE_PATTERN from src/core/detect.ts and renders it into the
+// generated shell script at generation time, so the two are literally the
+// same binding, not two literals a future edit can let drift. Two checks,
+// because either alone proves less:
+//   STATIC — hooks.ts must import the pattern, not re-declare a local copy
+//            (a control against the exact regression this ruling fixed).
+//   OUTPUT — the byte-for-byte pin ruling 1 asked to keep: the GENERATED
+//            script's own grep expression, not just the source text, must
+//            carry the identical pattern.
+test('hooks.ts imports TEST_FILE_PATTERN from core/detect rather than re-declaring it', async () => {
   const hooks = await readFile(join(ROOT, 'src', 'cli', 'hooks.ts'), 'utf8');
-  const match = /^const TEST_FILE_PATTERN =\s*([\s\S]*?);$/m.exec(hooks);
-  assert.ok(match, 'control: no TEST_FILE_PATTERN in src/cli/hooks.ts — the scan is broken');
-  const expr = match[1].trim();
-  // Only single-quoted literals joined by `+`, so evaluating it runs no code
-  // the file did not already spell out as a string.
-  assert.match(expr, /^(?:'(?:[^'\\]|\\.)*'\s*\+?\s*)+$/, `unexpected shape: ${expr}`);
-  // eslint-disable-next-line no-new-func
-  const fromHook = new Function(`return ${expr}`)();
-  assert.ok(fromHook.length > 20, `control: hook pattern came back empty: ${fromHook}`);
-  assert.equal(TEST_FILE_PATTERN, fromHook);
+  assert.match(hooks, /import\s*\{[^}]*\bTEST_FILE_PATTERN\b[^}]*\}\s*from\s*['"]\.\.\/core\/detect\.js['"]/);
+  assert.doesNotMatch(hooks, /^const TEST_FILE_PATTERN\s*=/m, 'a second, hand-copied literal has crept back in');
+});
+
+test('the working-tree test-file detector matches the hook’s base-ref pattern exactly (generated script)', async () => {
+  const { buildPrePushHookScript } = await import('../src/cli/hooks.js');
+  const script = buildPrePushHookScript();
+  const match = /grep -Eiq '([^']*)'/.exec(script);
+  assert.ok(match, 'control: no grep -Eiq call in the generated pre-push script — the scan is broken');
+  assert.ok(match[1].length > 20, `control: hook pattern came back empty: ${match[1]}`);
+  assert.equal(TEST_FILE_PATTERN, match[1]);
+});
+
+// Same ONE-owner rule, the other two patterns the pre-push hook shares with
+// src/core rather than hand-copying (#253 residual, ruling 1): the npm-init
+// test-script placeholder (also shared with detectPackageTestScript, the
+// working-tree twin `clud-bug config set tests`'s honesty check uses), and
+// the .logmind/config.yml line pattern (shared with parseLogmindTests).
+test('hooks.ts imports NPM_INIT_TEST_PLACEHOLDER_PATTERN and LOGMIND_TESTS_LINE_PATTERN rather than hand-copying them', async () => {
+  const hooks = await readFile(join(ROOT, 'src', 'cli', 'hooks.ts'), 'utf8');
+  assert.match(hooks, /import\s*\{[^}]*\bNPM_INIT_TEST_PLACEHOLDER_PATTERN\b[^}]*\}\s*from\s*['"]\.\.\/core\/detect\.js['"]/);
+  assert.match(hooks, /import\s*\{[^}]*\bLOGMIND_TESTS_LINE_PATTERN\b[^}]*\}\s*from\s*['"]\.\.\/core\/tests-declaration\.js['"]/);
+});
+
+test('the generated pre-push script embeds NPM_INIT_TEST_PLACEHOLDER_PATTERN and LOGMIND_TESTS_LINE_PATTERN byte-for-byte', async () => {
+  const { buildPrePushHookScript } = await import('../src/cli/hooks.js');
+  const script = buildPrePushHookScript();
+  assert.ok(script.includes(NPM_INIT_TEST_PLACEHOLDER_PATTERN), 'control: the placeholder pattern is not embedded verbatim');
+  assert.ok(script.includes(LOGMIND_TESTS_LINE_PATTERN), 'control: the logmind line pattern is not embedded verbatim');
 });

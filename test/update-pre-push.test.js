@@ -14,14 +14,18 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runUpdate } from '../src/cli/update.js';
-import { buildPrePushHookScript, CLUD_BUG_PREPUSH_MARKER } from '../src/cli/hooks.js';
+import {
+  buildPrePushHookScript, CLUD_BUG_PREPUSH_MARKER, buildCommitReviewCommand, mergeLocalReviewHook,
+} from '../src/cli/hooks.js';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATES = join(REPO_ROOT, 'templates');
 const BASELINE = join(TEMPLATES, 'skills', 'baseline');
 const offlineLoadBaseline = { cacheDir: null, fetch: async () => { throw new Error('test: no network'); } };
 
-async function makeGitRepo() {
+// `reviewTrigger` is optional (omitted → no key at all, matching a pre-#253
+// manifest) so every existing call below keeps its original fixture shape.
+async function makeGitRepo(reviewTrigger) {
   const dir = await mkdtemp(join(tmpdir(), 'clud-bug-update-prepush-'));
   const r = spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
@@ -33,6 +37,7 @@ async function makeGitRepo() {
     // would make every assertion below vacuously "pass" by never running.
     JSON.stringify({
       version: 1,
+      ...(reviewTrigger !== undefined ? { reviewTrigger } : {}),
       installed: [
         { slug: 'critical-issues-only', name: 'critical-issues-only', source: 'bundled', kind: 'bundled', description: '' },
       ],
@@ -44,6 +49,7 @@ async function makeGitRepo() {
 }
 
 const hookPath = (dir) => join(dir, '.git', 'hooks', 'pre-push');
+const settingsPath = (dir) => join(dir, '.claude', 'settings.json');
 
 const update = (dir) =>
   runUpdate({
@@ -100,4 +106,42 @@ test('runUpdate: leaves a FOREIGN pre-push hook completely alone', async () => {
 
   await update(dir);
   assert.equal(await readFile(hookPath(dir), 'utf8'), foreign);
+});
+
+// #253 ruling 2 — the advisory points at `clud-bug config set tests`, not
+// "set it by hand".
+test('runUpdate: the missing-"tests" advisory points at `clud-bug config set tests`, not a hand-edit', async () => {
+  const dir = await makeGitRepo();
+  await mkdir(join(dir, '.git', 'hooks'), { recursive: true });
+  await writeFile(hookPath(dir), buildPrePushHookScript());
+  await chmod(hookPath(dir), 0o755);
+
+  const r = await update(dir);
+  const advisory = (r.advisories ?? []).find((a) => a.includes('no "tests" declared'));
+  assert.ok(advisory, 'expected the missing-tests advisory to fire');
+  assert.match(advisory, /clud-bug config set tests/);
+  assert.doesNotMatch(advisory, /by hand/);
+});
+
+// #253 ruling 2 (negative case) — the advisory is gated on `wantsPrePushHook`
+// (update.ts ~:385): a repo whose `review.trigger` names ONLY the commit
+// surface has no pre-push mechanical gate installed or about to be, so a
+// missing "tests" declaration is nothing for THIS hook to block on. Pins the
+// gate the other direction from the test above, which only proves the
+// advisory fires when the pre-push hook is real.
+test('runUpdate: reviewTrigger "commit" with only the commit hook installed — no missing-"tests" advisory', async () => {
+  const dir = await makeGitRepo('commit');
+  await mkdir(join(dir, '.claude'), { recursive: true });
+  await writeFile(settingsPath(dir), JSON.stringify(mergeLocalReviewHook(undefined, buildCommitReviewCommand())));
+
+  const r = await update(dir);
+  let prePushInstalled = true;
+  try {
+    await access(hookPath(dir));
+  } catch {
+    prePushInstalled = false;
+  }
+  assert.equal(prePushInstalled, false, 'commit-only repo must gain no pre-push hook');
+  const advisory = (r.advisories ?? []).find((a) => a.includes('no "tests" declared'));
+  assert.equal(advisory, undefined, 'the pre-push-only advisory must not fire for a commit-only trigger');
 });

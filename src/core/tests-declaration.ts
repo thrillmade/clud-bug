@@ -40,6 +40,16 @@ export function readTestsDeclaration(input: ReadTestsDeclarationInput): TestsDec
 }
 
 /**
+ * The top-level `tests:` line pattern `parseLogmindTests` scans for — a plain
+ * string, not a RegExp, exported so the pre-push hook's shell-embedded copy
+ * (src/cli/hooks.ts, which cannot `import` this module) can share the
+ * identical literal instead of hand-copying it, the same trick
+ * `TEST_FILE_PATTERN` (src/core/detect.ts) already uses. Pinned equal by
+ * test/config-parity.test.js.
+ */
+export const LOGMIND_TESTS_LINE_PATTERN = '^tests\\s*:(.*)$';
+
+/**
  * Read a top-level `tests:` scalar out of `.logmind/config.yml`.
  *
  * Deliberately a line reader rather than a YAML parse: this runs in the same
@@ -50,10 +60,11 @@ export function readTestsDeclaration(input: ReadTestsDeclarationInput): TestsDec
  */
 export function parseLogmindTests(text: string | null | undefined): string | null {
   if (typeof text !== 'string' || !text) return null;
+  const lineRe = new RegExp(LOGMIND_TESTS_LINE_PATTERN);
   for (const line of text.split(/\r?\n/)) {
     // Top level only: an indented `tests:` belongs to whatever block it is
     // under, and reading it would let an unrelated key declare the gate.
-    const match = /^tests\s*:(.*)$/.exec(line);
+    const match = lineRe.exec(line);
     if (!match) continue;
     const value = stripComment((match[1] ?? '').trim());
     return value || null;
