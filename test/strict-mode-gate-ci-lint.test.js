@@ -80,6 +80,46 @@ test('#291: the actionlint loop actually lints the generated probe file', async 
   );
 });
 
+// ---------------------------------------------------------------------------
+// CI LINT COVERAGE — ci.yml's "Render templates with placeholder values"
+// step used to loop `templates/workflow*.yml.tmpl` only, so
+// audit.yml.tmpl, fork-notice.yml.tmpl, and self-update.yml.tmpl shipped
+// unlinted by this job — excluded by NAME, not because any of the three
+// needs different rendering. Widened to every `templates/*.yml.tmpl`.
+// ---------------------------------------------------------------------------
+
+async function renderTemplatesStep() {
+  const doc = parseYaml(await readFile(join(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8'));
+  const steps = doc.jobs.actionlint.steps;
+  const step = steps.find((s) => s && s.name === 'Render templates with placeholder values');
+  assert.ok(step, "ci.yml actionlint job: no 'Render templates with placeholder values' step");
+  return step;
+}
+
+test('CI LINT COVERAGE: the render loop globs every templates/*.yml.tmpl, not just workflow*', async () => {
+  const step = await renderTemplatesStep();
+  assert.match(step.run, /for tmpl in templates\/\*\.yml\.tmpl; do/, "render loop must iterate 'templates/*.yml.tmpl'");
+  assert.doesNotMatch(
+    step.run,
+    /for tmpl in templates\/workflow\*\.yml\.tmpl; do/,
+    'render loop still scoped to templates/workflow*.yml.tmpl — audit/fork-notice/self-update would ship unlinted again',
+  );
+});
+
+test('CI LINT COVERAGE: every *.yml.tmpl file actually checked into templates/ matches the render loop glob', async () => {
+  const templatesDir = join(REPO_ROOT, 'templates');
+  const files = (await import('node:fs')).readdirSync(templatesDir).filter((f) => f.endsWith('.yml.tmpl'));
+  assert.ok(files.length >= 6, `control: expected at least 6 *.yml.tmpl files under templates/, found ${files.length} — did the fixture list drift?`);
+  // `templates/*.yml.tmpl` is a plain, non-recursive shell glob — every file
+  // directly under templates/ ending in .yml.tmpl matches it by construction.
+  // The assertion that matters is that ci.yml's loop text says exactly that
+  // glob (checked above), not a per-name enumeration that a new template
+  // could fall outside of the same way workflow* did.
+  for (const name of ['audit.yml.tmpl', 'fork-notice.yml.tmpl', 'self-update.yml.tmpl', 'workflow.yml.tmpl', 'workflow-ts.yml.tmpl', 'workflow-py.yml.tmpl']) {
+    assert.ok(files.includes(name), `control: expected ${name} under templates/ — fixture list is stale`);
+  }
+});
+
 test('#291: the actionlint loop does not reference a nonexistent workflow file', async () => {
   const step = await lintOwnWorkflowsStep();
   const forLoopMatch = step.run.match(/for wf in([\s\S]*?)do/);
