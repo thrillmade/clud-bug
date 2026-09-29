@@ -113,6 +113,7 @@ clud-bug
 │   ├── review-schema-zod.test.js
 │   ├── review-writeback.test.js
 │   ├── review.test.js
+│   ├── setup-logmind-token.test.js
 │   ├── skill-authoring-docs.test.js
 │   ├── skill-read-cap-allowlist.test.js
 │   ├── skill-usage-aggregation.test.js
