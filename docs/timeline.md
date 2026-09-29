@@ -13,10 +13,10 @@ PR's CI run, so this file is always coherent with current `main`.
 ---
 
 
-## 2026-09 (18 decisions)
+## 2026-09 (19 decisions)
 
-- **2026-09-15** — Review passes resolve to dispatched roles from the agent roster; the tier config becomes the deprecated fallback (#268) *(feat/268-roster-reader)* — [decisions-branches/feat__268-roster-reader.md](decisions-branches/feat__268-roster-reader.md)
-- *... 16 more decisions ...*
+- **2026-09-28** — The notary retry test controls its failure shape: every fake server closes the connection (#353) *(fix/353-notary-retry-test-determinism)* — [decisions-branches/fix__353-notary-retry-test-determinism.md](decisions-branches/fix__353-notary-retry-test-determinism.md)
+- *... 17 more decisions ...*
 - **2026-09-15** — Sync dev with main (22 commits): dev's content is the truth, plus main's dependency bumps including vitest 5 *(sync/main-into-dev-2026-09-15)* — [decisions-branches/sync__main-into-dev-2026-09-15.md](decisions-branches/sync__main-into-dev-2026-09-15.md)
 
 ## 2026-08 (27 decisions)
