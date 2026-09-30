@@ -89,3 +89,25 @@ jobs:
                     .github/workflows/clud-bug-self-update.yml; do
             if [ -f "$wf" ]; then ./actionlint "$wf"; fi
           done
+
+  # Required by the org-wide "CI must pass" ruleset: a status check named
+  # exactly `ci` must exist and pass before merge into main or dev. This
+  # job doesn't duplicate `test`/`actionlint` — it just waits on them and
+  # reports the name the ruleset checks for. check-decisions.yml,
+  # check-doc-links.yml and regen-timeline.yml also gate PRs here but live
+  # in separate workflows, so they can't be added to this `needs:` — see PR
+  # notes.
+  ci:
+    name: ci
+    needs: [test, actionlint]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all gating jobs to have passed
+        run: |
+          for result in "${{ needs.test.result }}" "${{ needs.actionlint.result }}"; do
+            if [ "$result" != "success" ]; then
+              echo "a required job did not succeed: $result"
+              exit 1
+            fi
+          done
