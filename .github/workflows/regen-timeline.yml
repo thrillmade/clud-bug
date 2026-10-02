@@ -58,6 +58,8 @@ jobs:
           token: ${{ secrets.LOGMIND_AUTO_REGEN_PAT || secrets.GITHUB_TOKEN }}
 
       - uses: thrillmade/setup-logmind@v1.0.1
+        with:
+          token: ${{ github.token }}
 
       - name: Regenerate derived docs
         run: |

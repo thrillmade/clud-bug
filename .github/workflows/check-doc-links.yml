@@ -23,6 +23,8 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: thrillmade/setup-logmind@v1.0.1
+        with:
+          token: ${{ github.token }}
 
       - name: Check markdown link integrity
         run: logmind check-links
