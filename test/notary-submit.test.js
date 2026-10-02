@@ -51,6 +51,14 @@ function run(cwd, args, env = {}) {
 async function withServer(handler, fn) {
   const requests = [];
   const server = createServer((req, res) => {
+    // clud-bug#353 — tell the client up front that this connection will not
+    // be reused, so its fetch agent never PICKS this socket for the next
+    // retry round in the first place. Relying on the `destroy()` below alone
+    // raced the CLI's own keep-alive reuse on CI (Node 20): the client could
+    // already be mid-send on the next round when the server tore the socket
+    // down, surfacing as ECONNRESET (a network error) instead of the 503
+    // response the retried round is meant to see.
+    res.setHeader('Connection', 'close');
     let raw = '';
     req.on('data', (c) => (raw += c));
     req.on('end', () => {
