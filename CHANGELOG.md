@@ -4,6 +4,11 @@ All notable changes to clud-bug. Format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Changed
+
+- **Bundled `respect-existing-conventions` SKILL.md refreshed** from `thrillmade/agent-skills@3fde7fd`. `BASELINE_SKILLS_REF` in `src/cli/skills.ts` pinned to the same commit so the install-time fetch path and the bundled offline-fallback path resolve to byte-identical content. Auto-synced by `agent-skills/.github/workflows/notify-clud-bug.yml`.
+
+
 ### Added
 
 - **A `pre-push` local review surface (#276).** There was none: `git grep -inE 'pre-push|prePush|pre_push' origin/main -- src/ templates/` returned **0 hits** (control probe `PostToolUse` → 2 files, so the search itself worked), while SPEC 2.0 §4.1 says "A reviewer MUST support both, and **push is the default**" and §6.7 names the mechanism: "Git allows one `pre-push` hook, so ownership follows what is installed."
